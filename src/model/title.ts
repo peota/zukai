@@ -6,12 +6,13 @@ const LINE_LIMIT = 4096;
 
 /** First non-empty line (trimmed), cut to 30 code points with an ellipsis. Scans a bounded prefix only. */
 export function deriveTitle(content: string): string {
-  const end = Math.min(content.length, SCAN_LIMIT);
+  const s =
+    content.length > SCAN_LIMIT ? content.slice(0, SCAN_LIMIT) : content;
   let pos = 0;
-  while (pos < end) {
-    const nl = content.indexOf("\n", pos);
-    const lineEnd = nl === -1 || nl > end ? end : nl;
-    const line = content.slice(pos, Math.min(lineEnd, pos + LINE_LIMIT)).trim();
+  while (pos < s.length) {
+    const nl = s.indexOf("\n", pos);
+    const lineEnd = nl === -1 ? s.length : nl;
+    const line = s.slice(pos, Math.min(lineEnd, pos + LINE_LIMIT)).trim();
     if (line) return cut(line);
     pos = lineEnd + 1;
   }
