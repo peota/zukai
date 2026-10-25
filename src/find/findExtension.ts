@@ -5,6 +5,12 @@ import { getSearchQuery, search, type SearchQuery } from "@codemirror/search";
 
 export type FindMode = "find" | "replace";
 
+/** A Mod+F / Mod+H press; `seq` changes on every press. */
+export interface FindRequest {
+  mode: FindMode;
+  seq: number;
+}
+
 interface Range {
   from: number;
   to: number;

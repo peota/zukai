@@ -25,7 +25,11 @@ import type { LanguageId, TabState } from "../model/types";
 import { zukaiTheme } from "./theme";
 import { loadLanguage } from "./languages";
 import { GUESS_PREFIX, guessLanguage } from "./guess";
-import { findExtension, type FindMode } from "../find/findExtension";
+import {
+  findExtension,
+  type FindMode,
+  type FindRequest,
+} from "../find/findExtension";
 import {
   EMPTY_FIND,
   FindBar,
@@ -45,7 +49,7 @@ export interface EditorHostProps {
   /** Bump to move focus back to the active editor (e.g. after a popup). */
   focusSignal?: number;
   /** Mod+F / Mod+H: open the find bar on the active Tab when `seq` changes. */
-  findRequest?: { mode: FindMode; seq: number } | null;
+  findRequest?: FindRequest | null;
 }
 
 interface OpenBar {

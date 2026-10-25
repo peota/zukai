@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveTitle, displayTitle } from "./title";
-import { newTabState } from "./workspace";
+import { deriveTitle } from "./title";
 
 describe("deriveTitle", () => {
   it("returns Untitled for empty or blank content", () => {
@@ -35,19 +34,5 @@ describe("deriveTitle prefix bound", () => {
     const t0 = performance.now();
     expect(deriveTitle("\n".repeat(5_000_000))).toBe("Untitled");
     expect(performance.now() - t0).toBeLessThan(200);
-  });
-});
-
-describe("displayTitle", () => {
-  it("uses tab.title when renamed", () => {
-    const tab = { ...newTabState("a"), title: "Mine", renamed: true };
-    expect(displayTitle(tab, "other")).toBe("Mine");
-  });
-  it("derives from content when not renamed", () => {
-    expect(displayTitle(newTabState("a"), "hi there")).toBe("hi there");
-  });
-  it("falls back to tab.title when content is undefined", () => {
-    const tab = { ...newTabState("a"), title: "Cached" };
-    expect(displayTitle(tab, undefined)).toBe("Cached");
   });
 });

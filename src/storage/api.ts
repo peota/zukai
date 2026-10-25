@@ -1,12 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ClosedFile } from "../model/session";
 
-/** Error shape serialized by the Rust storage commands. */
-export interface StorageError {
-  kind: "invalid_id" | "io";
-  message: string;
-}
-
 export const readScratchpad = (id: string): Promise<string> =>
   invoke<string>("scratchpad_read", { id });
 

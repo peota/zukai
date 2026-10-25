@@ -12,6 +12,7 @@ import {
   useWindowTitle,
 } from "./workspaceEffects";
 import type { TabState, WorkspaceState } from "../model/types";
+import type { FindRequest } from "../find/findExtension";
 import * as ws from "../model/workspace";
 import { deriveTitle } from "../model/title";
 import { toSessionFile } from "../model/session";
@@ -30,18 +31,11 @@ import {
   type SaveStatus,
 } from "../storage/autosave";
 
-export interface FindRequest {
-  mode: "find" | "replace";
-  seq: number;
-}
-
 const EMPTY: WorkspaceState = { tabs: [], activeId: "", closed: [] };
 const freshId = (): string => crypto.randomUUID();
 
 export interface Workspace {
   state: WorkspaceState;
-  /** Loaded text of a Tab, or undefined while it hasn't been read yet. */
-  contentOf(id: string): string | undefined;
   loadContent(id: string): Promise<string>;
   setContent(id: string, text: string): void;
   updateTab(id: string, patch: Partial<TabState>): void;
@@ -63,9 +57,10 @@ export function useWorkspace(): Workspace {
   const [state, setState] = useState<WorkspaceState>(EMPTY);
   const [ready, setReady] = useState(false);
   const [findRequest, setFindRequest] = useState<FindRequest | null>(null);
-  // Contents live in a ref (async commands need the latest); this re-renders.
-  const [, setContentVersion] = useState(0);
+  // Contents live in a ref: async commands need the latest, and typing must
+  // not re-render the App.
   const stateRef = useRef(state);
+  const readyRef = useRef(false);
   const contents = useRef(new Map<string, string>());
   const loads = useRef(new Map<string, Promise<string>>());
   /** Text known to be on disk per id (last loaded or successfully written). */
@@ -128,8 +123,6 @@ export function useWorkspace(): Workspace {
     [commit],
   );
 
-  const contentOf = useCallback((id: string) => contents.current.get(id), []);
-
   const loadContent = useCallback(
     (id: string): Promise<string> => {
       const have = contents.current.get(id);
@@ -140,7 +133,6 @@ export function useWorkspace(): Workspace {
           .then((text) => {
             if (!onDisk.has(id)) onDisk.set(id, text);
             if (!contents.current.has(id)) contents.current.set(id, text);
-            setContentVersion((v) => v + 1);
             const loaded = contents.current.get(id)!;
             keepTitle(id, loaded);
             return loaded;
@@ -156,7 +148,6 @@ export function useWorkspace(): Workspace {
   const setContent = useCallback(
     (id: string, text: string) => {
       contents.current.set(id, text);
-      setContentVersion((v) => v + 1);
       saver.schedule(id, () => contents.current.get(id) ?? text);
       keepTitle(id, text);
     },
@@ -285,6 +276,8 @@ export function useWorkspace(): Workspace {
 
   const run = useCallback(
     async (cmd: Command) => {
+      // Before restore there is no Session to act on.
+      if (!readyRef.current) return;
       const s = stateRef.current;
       switch (cmd.type) {
         case "newTab":
@@ -328,6 +321,7 @@ export function useWorkspace(): Workspace {
       }
       if (cancelled) return;
       commit(next);
+      readyRef.current = true;
       setReady(true);
       const mark = (event: string) =>
         startupMark(event).catch(logError("startup log"));
@@ -362,7 +356,6 @@ export function useWorkspace(): Workspace {
 
   return {
     state,
-    contentOf,
     loadContent,
     setContent,
     updateTab,

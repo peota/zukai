@@ -89,7 +89,8 @@ beforeEach(() => {
 async function mount() {
   const r = renderHook(() => useWorkspace());
   await waitFor(() => expect(r.result.current.ready).toBe(true));
-  await waitFor(() => expect(r.result.current.contentOf("a")).toBe("alpha"));
+  await waitFor(() => expect(m.readScratchpad).toHaveBeenCalledWith("a"));
+  expect(await r.result.current.loadContent("a")).toBe("alpha");
   return r;
 }
 
@@ -136,7 +137,7 @@ describe("useWorkspace close", () => {
   it("loads a never-loaded Tab before deciding how to close it", async () => {
     disk.b = "note";
     const { result } = await mount();
-    expect(result.current.contentOf("b")).toBeUndefined();
+    expect(m.readScratchpad).not.toHaveBeenCalledWith("b");
     await act(() => result.current.closeTab("b"));
     const readB = m.readScratchpad.mock.calls.findIndex(([id]) => id === "b");
     expect(readB).toBeGreaterThanOrEqual(0);
@@ -272,5 +273,20 @@ describe("useWorkspace startup", () => {
         "shown",
       ]),
     );
+  });
+});
+
+describe("useWorkspace before restore", () => {
+  it("ignores commands until the Session is restored", async () => {
+    const gate = deferred();
+    m.readSession.mockImplementation(() => gate.promise.then(() => null));
+    const { result } = renderHook(() => useWorkspace());
+    await act(() => result.current.run({ type: "newTab" }));
+    await act(() => result.current.run({ type: "find" }));
+    expect(result.current.state.tabs).toEqual([]);
+    expect(result.current.findRequest).toBeNull();
+    gate.resolve();
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(tabIds(result)).toEqual(["a", "b"]);
   });
 });
