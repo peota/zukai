@@ -116,4 +116,47 @@ describe("createSaver", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(saver.status()).toBe("saved");
   });
+
+  it("scheduleDuringStopIsIgnored", async () => {
+    let release!: () => void;
+    const write = vi.fn(() => new Promise<void>((r) => (release = r)));
+    const saver = createSaver(write, 300);
+    saver.schedule("a", () => "old");
+    const stopping = saver.stop("a");
+    await vi.advanceTimersByTimeAsync(0);
+    saver.schedule("a", () => "new");
+    release();
+    await stopping;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("flushRejectsWhenWriteFails", async () => {
+    const write = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("disk"))
+      .mockResolvedValue(undefined);
+    const saver = createSaver(write, 300);
+    saver.schedule("a", () => "v1");
+    await expect(saver.flush()).rejects.toThrow("disk");
+    expect(saver.status()).toBe("error");
+    await saver.flush("a");
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(saver.status()).toBe("saved");
+  });
+
+  it("stopRejectsAndStaysActiveWhenWriteFails", async () => {
+    const write = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("disk"))
+      .mockResolvedValue(undefined);
+    const saver = createSaver(write, 300);
+    saver.schedule("a", () => "v1");
+    await expect(saver.stop("a")).rejects.toThrow("disk");
+    saver.schedule("a", () => "v2");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write).toHaveBeenLastCalledWith("a", "v2");
+    expect(saver.status()).toBe("saved");
+  });
 });

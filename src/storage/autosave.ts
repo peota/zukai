@@ -27,6 +27,7 @@ interface Entry {
   queued: number;
   chain: Promise<void>;
   failed: boolean;
+  lastError: unknown;
   stopped: boolean;
 }
 
@@ -47,6 +48,7 @@ export function createSaver(
         queued: 0,
         chain: Promise.resolve(),
         failed: false,
+        lastError: undefined,
         stopped: false,
       };
       entries.set(id, e);
@@ -83,8 +85,9 @@ export function createSaver(
       try {
         await write(id, getContent());
         e.failed = false;
-      } catch {
+      } catch (err) {
         e.failed = true;
+        e.lastError = err;
       } finally {
         e.queued--;
         emit();
@@ -99,6 +102,7 @@ export function createSaver(
     }
     await e.chain;
     emit();
+    if (e.failed) throw e.lastError;
   };
 
   return {
@@ -123,8 +127,14 @@ export function createSaver(
     },
     async stop(id) {
       const e = entry(id);
-      await flushEntry(id, e);
+      // Stop first so a schedule arriving mid-flush cannot arm a new timer.
       e.stopped = true;
+      try {
+        await flushEntry(id, e);
+      } catch (err) {
+        e.stopped = false; // keep autosave retrying; caller must abort the close
+        throw err;
+      }
     },
     resume(id) {
       entry(id).stopped = false;
