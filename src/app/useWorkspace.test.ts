@@ -262,3 +262,15 @@ describe("useWorkspace find", () => {
     expect(result.current.findRequest).toEqual({ mode: "find", seq: 3 });
   });
 });
+
+describe("useWorkspace startup", () => {
+  it("records restore and show in the startup log", async () => {
+    await mount();
+    await waitFor(() =>
+      expect(m.startupMark.mock.calls.map(([e]) => e)).toEqual([
+        "restored",
+        "shown",
+      ]),
+    );
+  });
+});

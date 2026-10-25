@@ -1,6 +1,7 @@
 pub mod atomic;
 pub mod scratchpads;
 pub mod session;
+pub mod startup_log;
 
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 use std::path::PathBuf;

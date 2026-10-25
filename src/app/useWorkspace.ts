@@ -20,6 +20,7 @@ import {
   deleteScratchpad,
   readScratchpad,
   reopenScratchpad,
+  startupMark,
   writeScratchpad,
 } from "../storage/api";
 import {
@@ -328,7 +329,16 @@ export function useWorkspace(): Workspace {
       if (cancelled) return;
       commit(next);
       setReady(true);
-      await getCurrentWindow().show().catch(logError("show window"));
+      const mark = (event: string) =>
+        startupMark(event).catch(logError("startup log"));
+      void mark("restored");
+      try {
+        await getCurrentWindow().show();
+        void mark("shown");
+      } catch (err) {
+        logError("show window")(err);
+        void mark("show failed");
+      }
     })();
     return () => {
       cancelled = true;
