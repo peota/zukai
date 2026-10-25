@@ -105,4 +105,36 @@ describe("restoreWorkspace", () => {
     expect(state.tabs).toEqual([newTabState("fresh")]);
     expect(state.activeId).toBe("fresh");
   });
+  it("dedupes tabs by id keeping the first", () => {
+    const file = {
+      ...toSessionFile(ws),
+      tabs: [ws.tabs[0], { ...ws.tabs[0], title: "dup" }, ws.tabs[1]],
+    };
+    const { state } = restoreWorkspace(file, [], fresh, 0);
+    expect(state.tabs).toEqual([ws.tabs[0], ws.tabs[1]]);
+  });
+
+  it("drops closed entries that are open tabs and dedupes closed", () => {
+    const e = (id: string, closedAt: number): ClosedEntry => ({
+      tab: newTabState(id),
+      index: 0,
+      closedAt,
+    });
+    const file = {
+      ...toSessionFile(ws),
+      closed: [e("a", 5), e("c", 4), e("c", 3)],
+    };
+    const { state } = restoreWorkspace(file, [], fresh, 10);
+    expect(state.closed).toEqual([e("c", 4)]);
+  });
+
+  it("handles a session file with no tabs", () => {
+    const file = { version: 1 as const, tabs: [], activeId: "", closed: [] };
+    const withOrphans = restoreWorkspace(file, ["q"], fresh, 0).state;
+    expect(withOrphans.tabs.map((t) => t.id)).toEqual(["q"]);
+    expect(withOrphans.activeId).toBe("q");
+    const empty = restoreWorkspace(file, [], fresh, 0).state;
+    expect(empty.tabs.map((t) => t.id)).toEqual(["fresh"]);
+    expect(empty.activeId).toBe("fresh");
+  });
 });
