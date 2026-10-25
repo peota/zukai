@@ -26,6 +26,18 @@ describe("deriveTitle", () => {
   });
 });
 
+describe("deriveTitle prefix bound", () => {
+  it("ignores text that appears only after the scan limit", () => {
+    expect(deriveTitle(" ".repeat(70_000) + "late")).toBe("Untitled");
+    expect(deriveTitle("\n".repeat(70_000) + "late")).toBe("Untitled");
+  });
+  it("is fast on 5 MB of newlines", () => {
+    const t0 = performance.now();
+    expect(deriveTitle("\n".repeat(5_000_000))).toBe("Untitled");
+    expect(performance.now() - t0).toBeLessThan(50);
+  });
+});
+
 describe("displayTitle", () => {
   it("uses tab.title when renamed", () => {
     const tab = { ...newTabState("a"), title: "Mine", renamed: true };
