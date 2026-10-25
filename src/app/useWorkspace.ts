@@ -45,6 +45,8 @@ export interface Workspace {
   closeTab(id: string): Promise<void>;
   moveTab(id: string, toIndex: number): void;
   rename(id: string, name: string): Promise<void>;
+  /** True while a close is in progress; the editor should be read-only. */
+  isClosing(id: string): boolean;
   saveStatus: SaveStatus;
   ready: boolean;
 }
@@ -57,12 +59,34 @@ export function useWorkspace(): Workspace {
   const stateRef = useRef(state);
   const contents = useRef(new Map<string, string>());
   const loads = useRef(new Map<string, Promise<string>>());
+  /** Text known to be on disk per id (last loaded or successfully written). */
+  const [onDisk] = useState(() => new Map<string, string>());
   const closing = useRef(new Set<string>());
-  const [saver] = useState(() => createSaver(writeScratchpad));
+  const [closingIds, setClosingIds] = useState<ReadonlySet<string>>(new Set());
+  /** Close/reopen operations in flight; exit waits for them. */
+  const inFlight = useRef(new Set<Promise<void>>());
+  const [saver] = useState(() =>
+    createSaver(async (id, text) => {
+      await writeScratchpad(id, text);
+      onDisk.set(id, text);
+    }),
+  );
   const [savers] = useState(() => [saver, sessionSaver]);
 
+  const track = useCallback((p: Promise<void>): Promise<void> => {
+    inFlight.current.add(p);
+    void p.finally(() => inFlight.current.delete(p));
+    return p;
+  }, []);
+
+  const settleInFlight = useCallback(async () => {
+    while (inFlight.current.size > 0) {
+      await Promise.allSettled([...inFlight.current]);
+    }
+  }, []);
+
   const saveStatus = useCombinedSaveStatus(savers);
-  useExitHandshake(savers);
+  useExitHandshake(savers, settleInFlight);
   useFlushOnBlur(savers);
 
   /** Every state change goes through here so async code sees it at once. */
@@ -105,6 +129,7 @@ export function useWorkspace(): Workspace {
       if (!p) {
         p = readScratchpad(id)
           .then((text) => {
+            if (!onDisk.has(id)) onDisk.set(id, text);
             if (!contents.current.has(id)) contents.current.set(id, text);
             setContentVersion((v) => v + 1);
             const loaded = contents.current.get(id)!;
@@ -116,7 +141,7 @@ export function useWorkspace(): Workspace {
       }
       return p;
     },
-    [keepTitle],
+    [keepTitle, onDisk],
   );
 
   const setContent = useCallback(
@@ -161,20 +186,43 @@ export function useWorkspace(): Workspace {
     commit(ws.newTab(stateRef.current, id));
   }, [commit]);
 
+  const setClosing = useCallback((id: string, on: boolean) => {
+    if (on) closing.current.add(id);
+    else closing.current.delete(id);
+    setClosingIds(new Set(closing.current));
+  }, []);
+
   /**
-   * Close order: know the content, stop (= final write) its autosave, then
-   * delete or move the file, then update the Session. Any failure leaves the
-   * Tab open so no text is lost; autosave keeps retrying.
+   * Close order: know the content, stop (= final write) its autosave, write
+   * anything typed meanwhile, then delete or move the file, then update the
+   * Session. Any failure leaves the Tab open so no text is lost; autosave
+   * keeps retrying.
    */
   const closeTab = useCallback(
-    async (id: string) => {
-      if (closing.current.has(id)) return;
-      if (!stateRef.current.tabs.some((t) => t.id === id)) return;
-      closing.current.add(id);
-      try {
-        const text = await loadContent(id);
+    (id: string): Promise<void> => {
+      if (closing.current.has(id)) return Promise.resolve();
+      if (!stateRef.current.tabs.some((t) => t.id === id)) {
+        return Promise.resolve();
+      }
+      setClosing(id, true);
+      const work = async () => {
+        await loadContent(id);
         await saver.stop(id);
-        const isEmpty = (contents.current.get(id) ?? text) === "";
+        // The stopped saver ignores edits made during its final write.
+        let disk = onDisk.get(id) ?? "";
+        const latest = contents.current.get(id) ?? disk;
+        if (latest !== disk) {
+          try {
+            await writeScratchpad(id, latest);
+          } catch (err) {
+            saver.resume(id);
+            saver.schedule(id, () => contents.current.get(id) ?? latest);
+            throw err;
+          }
+          onDisk.set(id, latest);
+          disk = latest;
+        }
+        const isEmpty = disk === "";
         try {
           await (isEmpty ? deleteScratchpad(id) : closeScratchpad(id));
         } catch (err) {
@@ -188,33 +236,43 @@ export function useWorkspace(): Workspace {
           Date.now(),
         );
         contents.current.delete(id);
+        onDisk.delete(id);
         commit(ws.ensureOneTab(next, freshId()));
         await saveSessionNow();
-      } catch (err) {
-        console.error("close tab aborted", err);
-      } finally {
-        closing.current.delete(id);
-      }
+      };
+      return track(
+        work()
+          .catch((err) => console.error("close tab aborted", err))
+          .finally(() => setClosing(id, false)),
+      );
     },
-    [commit, loadContent, saveSessionNow, saver],
+    [commit, loadContent, onDisk, saveSessionNow, saver, setClosing, track],
   );
 
-  const reopenTab = useCallback(async () => {
+  const reopenTab = useCallback((): Promise<void> => {
     const entry = stateRef.current.closed[0];
-    if (!entry) return;
+    if (!entry) return Promise.resolve();
     const id = entry.tab.id;
-    try {
-      await reopenScratchpad(id);
-    } catch (err) {
-      console.error("reopen tab failed", err);
-      return;
-    }
-    // Another command may have run meanwhile; only reopen the same entry.
-    if (stateRef.current.closed[0]?.tab.id !== id) return;
-    saver.resume(id);
-    commit(ws.reopenClosed(stateRef.current).state);
-    await saveSessionNow();
-  }, [commit, saveSessionNow, saver]);
+    const work = async () => {
+      try {
+        await reopenScratchpad(id);
+      } catch (err) {
+        console.error("reopen tab failed", err);
+        return;
+      }
+      // Another command may have run meanwhile; only reopen the same entry.
+      if (stateRef.current.closed[0]?.tab.id !== id) return;
+      saver.resume(id);
+      commit(ws.reopenClosed(stateRef.current).state);
+      await saveSessionNow();
+    };
+    return track(work());
+  }, [commit, saveSessionNow, saver, track]);
+
+  const isClosing = useCallback(
+    (id: string) => closingIds.has(id),
+    [closingIds],
+  );
 
   const run = useCallback(
     async (cmd: Command) => {
@@ -294,6 +352,7 @@ export function useWorkspace(): Workspace {
     closeTab,
     moveTab,
     rename,
+    isClosing,
     saveStatus,
     ready,
   };

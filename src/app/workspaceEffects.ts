@@ -42,12 +42,23 @@ export async function restoreSession(
   return state;
 }
 
-/** Install the flush-before-exit handshake once; rejections keep the app open. */
-export function useExitHandshake(savers: Saver[]): void {
+/**
+ * Install the flush-before-exit handshake once; rejections keep the app open.
+ * Waits for in-flight closes/reopens first, so session.json and the moved
+ * files agree when the app exits.
+ */
+export function useExitHandshake(
+  savers: Saver[],
+  settleInFlight: () => Promise<void>,
+): void {
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
-    installExitHandshake(() => flushAll(savers)).then((u) => {
+    const flush = async () => {
+      await settleInFlight();
+      await flushAll(savers);
+    };
+    installExitHandshake(flush).then((u) => {
       if (cancelled) u();
       else unlisten = u;
     }, logError("install exit handshake"));
@@ -55,7 +66,7 @@ export function useExitHandshake(savers: Saver[]): void {
       cancelled = true;
       unlisten?.();
     };
-    // savers are created once per mount
+    // savers and settleInFlight are stable for the hook's lifetime
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }

@@ -70,6 +70,7 @@ export default function App() {
             autoFocus
             spellCheck={false}
             wrap={active.wrap ? "soft" : "off"}
+            readOnly={w.isClosing(active.id)}
             value={text}
             onChange={(e) => {
               w.setContent(active.id, e.target.value);
