@@ -3,7 +3,61 @@
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/700.css";
 
-@theme {
+/* "Paper" palette (spec section 6). Every color in the app comes from here. */
+:root {
+  --z-editor: #ffffff;
+  --z-chrome: #f7f6f3;
+  --z-surface: #ffffff;
+  --z-hairline: #ebeae6;
+  --z-text: #37352f;
+  --z-muted: #787774;
+  --z-faint: #b4b3af;
+  --z-accent: #2383e2;
+  --z-accent-soft: rgb(35 131 226 / 0.2);
+  --z-danger: #c4554d;
+
+  --z-shadow-float: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 12px rgb(0 0 0 / 0.08);
+  --z-radius-tab: 6px;
+  --z-radius-float: 8px;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --z-editor: #191919;
+    --z-chrome: #202020;
+    --z-surface: #2c2c2c;
+    --z-hairline: #2a2a2a;
+    --z-text: #e6e3de;
+    --z-muted: #9b9893;
+    --z-faint: #5f5d59;
+    --z-accent: #529cca;
+    --z-accent-soft: rgb(82 156 202 / 0.2);
+    --z-danger: #df8a83;
+
+    --z-shadow-float: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.35);
+
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-editor: var(--z-editor);
+  --color-chrome: var(--z-chrome);
+  --color-surface: var(--z-surface);
+  --color-hairline: var(--z-hairline);
+  --color-text: var(--z-text);
+  --color-muted: var(--z-muted);
+  --color-faint: var(--z-faint);
+  --color-accent: var(--z-accent);
+  --color-accent-soft: var(--z-accent-soft);
+  --color-danger: var(--z-danger);
+
+  --shadow-float: var(--z-shadow-float);
+  --radius-tab: var(--z-radius-tab);
+  --radius-float: var(--z-radius-float);
+
   --font-sans: "Inter Variable", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
@@ -16,5 +70,26 @@ body,
 }
 
 body {
+  background: var(--z-chrome);
+  color: var(--z-text);
   font-family: var(--font-sans);
+  font-size: 12.5px;
+  overflow: hidden;
+}
+
+::selection {
+  background: var(--z-accent-soft);
+}
+
+.z-editor-font {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.z-no-scrollbar {
+  scrollbar-width: none;
+}
+
+.z-no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
