@@ -1,5 +1,3 @@
-import type { TabState } from "./types";
-
 const MAX_TITLE = 30;
 const SCAN_LIMIT = 64 * 1024;
 const LINE_LIMIT = 4096;
@@ -29,12 +27,4 @@ function cut(line: string): string {
   }
   if (i >= line.length) return line;
   return line.slice(0, i) + "…";
-}
-
-export function displayTitle(
-  tab: TabState,
-  content: string | undefined,
-): string {
-  if (tab.renamed || content === undefined) return tab.title;
-  return deriveTitle(content);
 }

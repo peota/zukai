@@ -101,11 +101,6 @@ body {
   background: var(--z-accent-soft);
 }
 
-.z-editor-font {
-  font-family: var(--font-mono);
-  font-size: 13px;
-}
-
 .z-no-scrollbar {
   scrollbar-width: none;
 }
