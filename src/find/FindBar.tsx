@@ -229,6 +229,7 @@ export function FindBar({
     <div
       role="search"
       aria-label="Find in text"
+      data-find-bar
       className="z-fade-in absolute top-3 right-3 z-10 flex w-[380px] max-w-[calc(100%-24px)] flex-col gap-1 rounded-float bg-surface p-1.5 text-[12px] text-text shadow-float"
     >
       <div className="flex items-center gap-1">

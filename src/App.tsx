@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWorkspace } from "./app/useWorkspace";
 import { detectPlatform, matchShortcut } from "./app/shortcuts";
+import {
+  allowsContextMenu,
+  blocksBrowserKey,
+  isEditorTarget,
+} from "./app/browserGuard";
 import type { LanguageId } from "./model/types";
 import { EditorHost } from "./editor/EditorHost";
 import { TabBar } from "./ui/TabBar";
@@ -26,12 +31,23 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const cmd = matchShortcut(e, platform);
-      if (!cmd) return;
-      e.preventDefault();
-      void run(cmd);
+      if (cmd) {
+        e.preventDefault();
+        void run(cmd);
+      } else if (blocksBrowserKey(e, platform, isEditorTarget(e.target))) {
+        // No reload, print or browser find inside the app.
+        e.preventDefault();
+      }
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      if (!allowsContextMenu(e.target)) e.preventDefault();
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("contextmenu", onContextMenu);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("contextmenu", onContextMenu);
+    };
   }, [run]);
 
   const active = w.state.tabs.find((t) => t.id === activeId);
