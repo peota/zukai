@@ -4,7 +4,14 @@ import { installExitHandshake } from "./exit";
 import type { SaveStatus, Saver } from "../storage/autosave";
 import { parseSessionFile, restoreWorkspace } from "../model/session";
 import type { WorkspaceState } from "../model/types";
-import { listScratchpads, purgeClosed, readSession } from "../storage/api";
+import {
+  backupSession,
+  listClosedScratchpads,
+  listScratchpads,
+  purgeClosed,
+  readSession,
+  reopenScratchpad,
+} from "../storage/api";
 
 export const logError = (what: string) => (err: unknown) =>
   console.error(what, err);
@@ -15,24 +22,59 @@ export function flushAll(savers: Saver[]): Promise<void> {
 }
 
 /**
- * Read the scratchpad list and session.json, rebuild the workspace, and purge
- * expired Recently Closed files. A failed read of either source degrades to
- * "nothing there": the other source still recovers what it can.
+ * Read the scratchpad lists and session.json, rebuild the workspace, and purge
+ * expired Recently Closed files. A failed read of any source degrades to
+ * "nothing there": the others still recover what they can.
+ *
+ * - An open Tab whose file sits in `closed/` (a crash between moving it and
+ *   writing the Session) has its file moved back before anything loads it.
+ * - Files in `closed/` that the Session doesn't mention become Recently Closed.
+ * - A session.json that exists but can't be read or parsed is copied to
+ *   session.json.bak before the rebuilt Session overwrites it.
  */
 export async function restoreSession(
   freshId: () => string,
 ): Promise<WorkspaceState> {
-  const [ids, json] = await Promise.allSettled([
+  const [ids, json, closedList] = await Promise.allSettled([
     listScratchpads(),
     readSession(),
+    listClosedScratchpads(),
   ]);
   if (ids.status === "rejected") logError("list scratchpads")(ids.reason);
   if (json.status === "rejected") logError("read session")(json.reason);
+  if (closedList.status === "rejected") {
+    logError("list closed")(closedList.reason);
+  }
+  const file = parseSessionFile(
+    json.status === "fulfilled" ? json.value : null,
+  );
+  const broken =
+    json.status === "rejected" || (json.value !== null && file === null);
+  if (broken) await backupSession().catch(logError("back up session"));
+
+  const open = new Set(ids.status === "fulfilled" ? ids.value : []);
+  let closedFiles = closedList.status === "fulfilled" ? closedList.value : null;
+  if (file && closedFiles) {
+    const inClosed = new Set(closedFiles.map((f) => f.id));
+    for (const tab of file.tabs) {
+      if (open.has(tab.id) || !inClosed.has(tab.id)) continue;
+      try {
+        await reopenScratchpad(tab.id);
+        open.add(tab.id);
+        inClosed.delete(tab.id);
+      } catch (err) {
+        logError("move back stranded scratchpad")(err);
+      }
+    }
+    closedFiles = closedFiles.filter((f) => inClosed.has(f.id));
+  }
+
   const { state, expired } = restoreWorkspace(
-    parseSessionFile(json.status === "fulfilled" ? json.value : null),
-    ids.status === "fulfilled" ? ids.value : [],
+    file,
+    [...open],
     freshId,
     Date.now(),
+    closedFiles,
   );
   if (expired.length > 0) {
     await purgeClosed(expired.map((e) => e.tab.id)).catch(

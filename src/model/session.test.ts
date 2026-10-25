@@ -138,3 +138,83 @@ describe("restoreWorkspace", () => {
     expect(empty.activeId).toBe("fresh");
   });
 });
+
+describe("restoreWorkspace with the closed/ folder", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const now = 3 * day;
+
+  it("turns unreferenced closed files into Recently Closed entries", () => {
+    const { state } = restoreWorkspace(
+      toSessionFile(ws),
+      ["a", "b"],
+      fresh,
+      now,
+      [
+        { id: "c", modifiedMs: 1000 },
+        { id: "lost", modifiedMs: now - day },
+      ],
+    );
+    // Newest first; recovered entries reopen at the end of the tab bar.
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["lost", "c"]);
+    expect(state.closed[0]).toEqual({
+      tab: newTabState("lost"),
+      index: 2,
+      closedAt: now - day,
+    });
+  });
+
+  it("applies the 30-day purge to recovered entries by file time", () => {
+    const { state, expired } = restoreWorkspace(null, ["a"], fresh, now, [
+      { id: "old", modifiedMs: now - CLOSED_TTL_MS - 1 },
+      { id: "new", modifiedMs: now - 1 },
+    ]);
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["new"]);
+    expect(expired.map((e) => e.tab.id)).toEqual(["old"]);
+  });
+
+  it("recovers every closed file when session.json is unreadable", () => {
+    const { state } = restoreWorkspace(
+      parseSessionFile("{corrupt"),
+      ["a"],
+      fresh,
+      now,
+      [
+        { id: "x", modifiedMs: now - 2 },
+        { id: "y", modifiedMs: now - 1 },
+      ],
+    );
+    expect(state.tabs.map((t) => t.id)).toEqual(["a"]);
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["y", "x"]);
+  });
+
+  it("drops closed entries whose file is gone, so Reopen is never stuck", () => {
+    const file = {
+      ...toSessionFile(ws),
+      closed: [
+        { tab: newTabState("c"), index: 1, closedAt: now - 2 },
+        { tab: newTabState("d"), index: 0, closedAt: now - 1 },
+      ],
+    };
+    const { state } = restoreWorkspace(file, ["a", "b"], fresh, now, [
+      { id: "c", modifiedMs: 1 },
+    ]);
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["c"]);
+    // Without a listing of closed/, the Session's list is trusted as is.
+    const trusted = restoreWorkspace(file, ["a", "b"], fresh, now).state;
+    expect(trusted.closed.map((e) => e.tab.id)).toEqual(["d", "c"]);
+  });
+
+  it("never lists an open Tab as closed", () => {
+    const { state } = restoreWorkspace(
+      toSessionFile(ws),
+      ["a", "b"],
+      fresh,
+      now,
+      [
+        { id: "a", modifiedMs: 5 },
+        { id: "c", modifiedMs: 5 },
+      ],
+    );
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["c"]);
+  });
+});

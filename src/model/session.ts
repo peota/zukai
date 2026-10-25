@@ -111,11 +111,25 @@ export function purgeExpired(
   return { kept, expired };
 }
 
+/** A file in `closed/`, as listed by the storage layer. */
+export interface ClosedFile {
+  id: string;
+  modifiedMs: number;
+}
+
+/**
+ * Rebuild the workspace from session.json and the files on disk.
+ * `closedFiles` (when known) is the content of `closed/`: entries whose file
+ * is gone are dropped, and files the Session doesn't mention become Recently
+ * Closed entries (closedAt = file time, reopened at the end), so no closed
+ * text is ever stranded and the 30-day purge reaches it.
+ */
 export function restoreWorkspace(
   file: SessionFile | null,
   scratchpadIds: string[],
   freshId: () => string,
   now: number,
+  closedFiles: ClosedFile[] | null = null,
 ): { state: WorkspaceState; expired: ClosedEntry[] } {
   const base = file ?? { tabs: [], activeId: "", closed: [] };
   const known = new Set<string>();
@@ -132,7 +146,23 @@ export function restoreWorkspace(
   const activeId = tabs.some((t) => t.id === base.activeId)
     ? base.activeId
     : (tabs[0]?.id ?? "");
-  const { kept, expired } = purgeExpired(base.closed, now);
+  const onDisk = closedFiles && new Set(closedFiles.map((f) => f.id));
+  const listed = onDisk
+    ? base.closed.filter((e) => onDisk.has(e.tab.id))
+    : base.closed;
+  const mentioned = new Set([
+    ...tabs.map((t) => t.id),
+    ...listed.map((e) => e.tab.id),
+  ]);
+  const recovered: ClosedEntry[] = (closedFiles ?? [])
+    .filter((f) => !mentioned.has(f.id))
+    .map((f) => ({
+      tab: newTabState(f.id),
+      index: tabs.length,
+      closedAt: f.modifiedMs,
+    }));
+  const all = [...listed, ...recovered].sort((x, y) => y.closedAt - x.closedAt);
+  const { kept, expired } = purgeExpired(all, now);
   const open = new Set(tabs.map((t) => t.id));
   const closed = kept.filter((e) => {
     if (open.has(e.tab.id)) return false;

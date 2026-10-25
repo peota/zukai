@@ -14,9 +14,12 @@ vi.mock("../storage/api", () => ({
   closeScratchpad: vi.fn(),
   reopenScratchpad: vi.fn(),
   listScratchpads: vi.fn(),
+  listClosedScratchpads: vi.fn(),
   purgeClosed: vi.fn(),
   readSession: vi.fn(),
   writeSession: vi.fn(),
+  backupSession: vi.fn(),
+  startupMark: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -66,6 +69,9 @@ beforeEach(() => {
   h.flushAll = null;
   disk = { a: "alpha", b: "" };
   m.listScratchpads.mockResolvedValue(["a", "b"]);
+  m.listClosedScratchpads.mockResolvedValue([]);
+  m.backupSession.mockResolvedValue(undefined);
+  m.startupMark.mockResolvedValue(undefined);
   m.readSession.mockResolvedValue(null);
   m.readScratchpad.mockImplementation(async (id) => disk[id] ?? "");
   m.writeScratchpad.mockImplementation(async (id, text) => {
