@@ -1,0 +1,152 @@
+import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { installExitHandshake } from "./exit";
+import type { SaveStatus, Saver } from "../storage/autosave";
+import { parseSessionFile, restoreWorkspace } from "../model/session";
+import type { WorkspaceState } from "../model/types";
+import {
+  backupSession,
+  listClosedScratchpads,
+  listScratchpads,
+  purgeClosed,
+  readSession,
+  reopenScratchpad,
+} from "../storage/api";
+
+export const logError = (what: string) => (err: unknown) =>
+  console.error(what, err);
+
+/** Flush both savers; rejects if either has a failed write. */
+export function flushAll(savers: Saver[]): Promise<void> {
+  return Promise.all(savers.map((s) => s.flush())).then(() => {});
+}
+
+/**
+ * Read the scratchpad lists and session.json, rebuild the workspace, and purge
+ * expired Recently Closed files. A failed read of any source degrades to
+ * "nothing there": the others still recover what they can.
+ *
+ * - An open Tab whose file sits in `closed/` (a crash between moving it and
+ *   writing the Session) has its file moved back before anything loads it.
+ * - Files in `closed/` that the Session doesn't mention become Recently Closed.
+ * - A session.json that exists but can't be read or parsed is copied to
+ *   session.json.bak before the rebuilt Session overwrites it.
+ */
+export async function restoreSession(
+  freshId: () => string,
+): Promise<WorkspaceState> {
+  const [ids, json, closedList] = await Promise.allSettled([
+    listScratchpads(),
+    readSession(),
+    listClosedScratchpads(),
+  ]);
+  if (ids.status === "rejected") logError("list scratchpads")(ids.reason);
+  if (json.status === "rejected") logError("read session")(json.reason);
+  if (closedList.status === "rejected") {
+    logError("list closed")(closedList.reason);
+  }
+  const file = parseSessionFile(
+    json.status === "fulfilled" ? json.value : null,
+  );
+  const broken =
+    json.status === "rejected" || (json.value !== null && file === null);
+  if (broken) await backupSession().catch(logError("back up session"));
+
+  const open = new Set(ids.status === "fulfilled" ? ids.value : []);
+  let closedFiles = closedList.status === "fulfilled" ? closedList.value : null;
+  if (file && closedFiles) {
+    const inClosed = new Set(closedFiles.map((f) => f.id));
+    for (const tab of file.tabs) {
+      if (open.has(tab.id) || !inClosed.has(tab.id)) continue;
+      try {
+        await reopenScratchpad(tab.id);
+        open.add(tab.id);
+        inClosed.delete(tab.id);
+      } catch (err) {
+        logError("move back stranded scratchpad")(err);
+      }
+    }
+    closedFiles = closedFiles.filter((f) => inClosed.has(f.id));
+  }
+
+  const { state, expired } = restoreWorkspace(
+    file,
+    [...open],
+    freshId,
+    Date.now(),
+    closedFiles,
+  );
+  if (expired.length > 0) {
+    await purgeClosed(expired.map((e) => e.tab.id)).catch(
+      logError("purge closed"),
+    );
+  }
+  return state;
+}
+
+/**
+ * Install the flush-before-exit handshake once; rejections keep the app open.
+ * Waits for in-flight closes/reopens first, so session.json and the moved
+ * files agree when the app exits.
+ */
+export function useExitHandshake(
+  savers: Saver[],
+  settleInFlight: () => Promise<void>,
+): void {
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    const flush = async () => {
+      await settleInFlight();
+      await flushAll(savers);
+    };
+    installExitHandshake(flush).then((u) => {
+      if (cancelled) u();
+      else unlisten = u;
+    }, logError("install exit handshake"));
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+    // savers and settleInFlight are stable for the hook's lifetime
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
+/** Write everything as soon as the window loses focus. */
+export function useFlushOnBlur(savers: Saver[]): void {
+  useEffect(() => {
+    const onBlur = () => {
+      for (const s of savers) s.flush().catch(logError("flush on blur"));
+    };
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
+export function useWindowTitle(title: string | null): void {
+  useEffect(() => {
+    if (title === null) return;
+    getCurrentWindow()
+      .setTitle(`${title} — Zukai`)
+      .catch(logError("set window title"));
+  }, [title]);
+}
+
+/** "error" if any saver failed, else "pending" if any is busy, else "saved". */
+export function useCombinedSaveStatus(savers: Saver[]): SaveStatus {
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      const offs = savers.map((s) => s.onStatus(cb));
+      return () => offs.forEach((off) => off());
+    },
+    [savers],
+  );
+  const snapshot = useCallback((): SaveStatus => {
+    const all = savers.map((s) => s.status());
+    if (all.includes("error")) return "error";
+    return all.includes("pending") ? "pending" : "saved";
+  }, [savers]);
+  return useSyncExternalStore(subscribe, snapshot);
+}
