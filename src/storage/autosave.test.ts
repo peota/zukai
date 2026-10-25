@@ -159,4 +159,33 @@ describe("createSaver", () => {
     expect(write).toHaveBeenLastCalledWith("a", "v2");
     expect(saver.status()).toBe("saved");
   });
+
+  it("flushAllWaitsForEveryIdBeforeRejecting", async () => {
+    let release!: () => void;
+    let bDone = false;
+    const write = vi.fn((id: string) => {
+      if (id === "a") return Promise.reject(new Error("disk"));
+      return new Promise<void>((r) => {
+        release = () => {
+          bDone = true;
+          r();
+        };
+      });
+    });
+    const saver = createSaver(write, 300);
+    saver.schedule("a", () => "x");
+    saver.schedule("b", () => "y");
+    let settled = false;
+    const p = saver.flush().then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    await p;
+    expect(bDone).toBe(true);
+    await expect(saver.flush()).rejects.toThrow("disk");
+  });
 });
