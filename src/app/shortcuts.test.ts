@@ -94,3 +94,55 @@ describe("platform differences", () => {
       matchShortcut(ev("Tab", { ctrlKey: true, metaKey: true }), "other"),
     ).toBeNull());
 });
+
+describe("keyboard layouts", () => {
+  it("AZERTY Ctrl+A (physical KeyQ) does not quit", () =>
+    expect(
+      matchShortcut(ev("KeyQ", { key: "a", ctrlKey: true }), "other"),
+    ).toBeNull());
+  it("AZERTY Ctrl+Z (physical KeyW) does not close the Tab", () =>
+    expect(
+      matchShortcut(ev("KeyW", { key: "z", ctrlKey: true }), "other"),
+    ).toBeNull());
+  it("AZERTY Ctrl+Q (physical KeyA) quits", () =>
+    expect(
+      matchShortcut(ev("KeyA", { key: "q", ctrlKey: true }), "other"),
+    ).toEqual({ type: "quit" }));
+  it("AZERTY Ctrl+W (physical KeyZ) closes the Tab", () =>
+    expect(
+      matchShortcut(ev("KeyZ", { key: "w", ctrlKey: true }), "other"),
+    ).toEqual({ type: "closeTab" }));
+  it("Dvorak Ctrl+D (physical KeyH) does not open Replace", () =>
+    expect(
+      matchShortcut(ev("KeyH", { key: "d", ctrlKey: true }), "other"),
+    ).toBeNull());
+  it("Dvorak Cmd+Shift+T uses the typed letter", () =>
+    expect(
+      matchShortcut(
+        ev("KeyK", { key: "T", metaKey: true, shiftKey: true }),
+        "mac",
+      ),
+    ).toEqual({ type: "reopenTab" }));
+  it("Cyrillic Ctrl+N falls back to the physical key", () =>
+    expect(
+      matchShortcut(ev("KeyN", { key: "т", ctrlKey: true }), "other"),
+    ).toEqual({ type: "newTab" }));
+  it("AltGr (Ctrl+Alt) letters and digits are left alone on other", () => {
+    for (const [code, key] of [
+      ["KeyQ", "@"],
+      ["KeyE", "€"],
+      ["KeyN", "n"],
+      ["KeyW", "w"],
+      ["Digit2", "@"],
+      ["Digit1", "1"],
+    ]) {
+      expect(
+        matchShortcut(ev(code, { key, ctrlKey: true, altKey: true }), "other"),
+      ).toBeNull();
+    }
+  });
+  it("digits match by physical key (AZERTY Ctrl+& is Ctrl+1)", () =>
+    expect(
+      matchShortcut(ev("Digit1", { key: "&", ctrlKey: true }), "other"),
+    ).toEqual({ type: "goToTab", n: 1 }));
+});
