@@ -1,0 +1,66 @@
+use crate::storage::{self, Result, StorageError, scratchpads, session};
+use std::path::PathBuf;
+use tauri::AppHandle;
+
+async fn blocking<T, F>(app: AppHandle, f: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(PathBuf) -> Result<T> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || f(storage::data_dir(&app)?))
+        .await
+        .map_err(|e| StorageError::Io(std::io::Error::other(e)))?
+}
+
+#[tauri::command]
+pub async fn scratchpad_read(app: AppHandle, id: String) -> Result<String> {
+    storage::validate_id(&id)?;
+    blocking(app, move |b| scratchpads::read(&b, &id)).await
+}
+
+#[tauri::command]
+pub async fn scratchpad_write(app: AppHandle, id: String, content: String) -> Result<()> {
+    storage::validate_id(&id)?;
+    blocking(app, move |b| scratchpads::write(&b, &id, &content)).await
+}
+
+#[tauri::command]
+pub async fn scratchpad_delete(app: AppHandle, id: String) -> Result<()> {
+    storage::validate_id(&id)?;
+    blocking(app, move |b| scratchpads::delete(&b, &id)).await
+}
+
+#[tauri::command]
+pub async fn scratchpad_close(app: AppHandle, id: String) -> Result<()> {
+    storage::validate_id(&id)?;
+    blocking(app, move |b| scratchpads::close(&b, &id)).await
+}
+
+#[tauri::command]
+pub async fn scratchpad_reopen(app: AppHandle, id: String) -> Result<()> {
+    storage::validate_id(&id)?;
+    blocking(app, move |b| scratchpads::reopen(&b, &id)).await
+}
+
+#[tauri::command]
+pub async fn scratchpad_list(app: AppHandle) -> Result<Vec<String>> {
+    blocking(app, |b| scratchpads::list(&b)).await
+}
+
+#[tauri::command]
+pub async fn scratchpad_purge_closed(app: AppHandle, ids: Vec<String>) -> Result<()> {
+    for id in &ids {
+        storage::validate_id(id)?;
+    }
+    blocking(app, move |b| scratchpads::purge_closed(&b, &ids)).await
+}
+
+#[tauri::command]
+pub async fn session_read(app: AppHandle) -> Result<Option<String>> {
+    blocking(app, |b| session::read(&b)).await
+}
+
+#[tauri::command]
+pub async fn session_write(app: AppHandle, json: String) -> Result<()> {
+    blocking(app, move |b| session::write(&b, &json)).await
+}
