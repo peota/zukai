@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ClosedFile } from "../model/session";
 
 /** Error shape serialized by the Rust storage commands. */
 export interface StorageError {
@@ -24,6 +25,9 @@ export const reopenScratchpad = (id: string): Promise<void> =>
 export const listScratchpads = (): Promise<string[]> =>
   invoke<string[]>("scratchpad_list");
 
+export const listClosedScratchpads = (): Promise<ClosedFile[]> =>
+  invoke<ClosedFile[]>("scratchpad_list_closed");
+
 export const purgeClosed = (ids: string[]): Promise<void> =>
   invoke<void>("scratchpad_purge_closed", { ids });
 
@@ -32,3 +36,11 @@ export const readSession = (): Promise<string | null> =>
 
 export const writeSession = (json: string): Promise<void> =>
   invoke<void>("session_write", { json });
+
+/** Copy session.json to session.json.bak before a broken one is overwritten. */
+export const backupSession = (): Promise<void> =>
+  invoke<void>("session_backup");
+
+/** Append a startup milestone to the diagnostic startup.log. */
+export const startupMark = (event: string): Promise<void> =>
+  invoke<void>("app_startup_mark", { event });

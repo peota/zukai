@@ -41,9 +41,11 @@ pub fn run() {
             commands::scratchpad_close,
             commands::scratchpad_reopen,
             commands::scratchpad_list,
+            commands::scratchpad_list_closed,
             commands::scratchpad_purge_closed,
             commands::session_read,
             commands::session_write,
+            commands::session_backup,
             app_exit_after_flush,
         ])
         .build(tauri::generate_context!())

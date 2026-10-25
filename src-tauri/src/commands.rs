@@ -48,6 +48,11 @@ pub async fn scratchpad_list(app: AppHandle) -> Result<Vec<String>> {
 }
 
 #[tauri::command]
+pub async fn scratchpad_list_closed(app: AppHandle) -> Result<Vec<scratchpads::ClosedFile>> {
+    blocking(app, |b| scratchpads::list_closed(&b)).await
+}
+
+#[tauri::command]
 pub async fn scratchpad_purge_closed(app: AppHandle, ids: Vec<String>) -> Result<()> {
     for id in &ids {
         storage::validate_id(id)?;
@@ -63,4 +68,9 @@ pub async fn session_read(app: AppHandle) -> Result<Option<String>> {
 #[tauri::command]
 pub async fn session_write(app: AppHandle, json: String) -> Result<()> {
     blocking(app, move |b| session::write(&b, &json)).await
+}
+
+#[tauri::command]
+pub async fn session_backup(app: AppHandle) -> Result<()> {
+    blocking(app, |b| session::backup(&b)).await
 }
