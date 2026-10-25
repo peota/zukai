@@ -44,6 +44,7 @@ export function StatusBar({
       <button
         type="button"
         tabIndex={-1}
+        data-language-button
         onClick={onPickLanguage}
         className="ml-auto rounded-[4px] px-1.5 py-0.5 hover:bg-surface hover:text-muted"
       >
