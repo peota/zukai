@@ -11,7 +11,7 @@ export type Command =
   | { type: "toggleWrap" }
   | { type: "quit" };
 
-type KeyInfo = Pick<
+export type KeyInfo = Pick<
   KeyboardEvent,
   "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey"
 >;
@@ -21,7 +21,7 @@ type KeyInfo = Pick<
  * letter (so AZERTY/Dvorak users get the letter printed on the key), else the
  * physical key (non-Latin layouts such as Cyrillic, or macOS Option symbols).
  */
-function letterOf(e: KeyInfo): string | null {
+export function letterOf(e: KeyInfo): string | null {
   if (/^[a-z]$/i.test(e.key)) return e.key.toLowerCase();
   const m = /^Key([A-Z])$/.exec(e.code);
   return m ? m[1].toLowerCase() : null;
