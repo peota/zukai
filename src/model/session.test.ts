@@ -1,0 +1,108 @@
+import { describe, expect, it } from "vitest";
+import {
+  CLOSED_TTL_MS,
+  parseSessionFile,
+  purgeExpired,
+  restoreWorkspace,
+  toSessionFile,
+} from "./session";
+import { newTabState } from "./workspace";
+import type { ClosedEntry, TabState, WorkspaceState } from "./types";
+
+const ws: WorkspaceState = {
+  tabs: [
+    newTabState("a"),
+    { ...newTabState("b"), title: "Notes", renamed: true },
+  ],
+  activeId: "b",
+  closed: [{ tab: newTabState("c"), index: 1, closedAt: 1000 }],
+};
+
+const fresh = () => "fresh";
+
+describe("session file", () => {
+  it("round trips", () => {
+    expect(parseSessionFile(JSON.stringify(toSessionFile(ws)))).toEqual({
+      version: 1,
+      ...ws,
+    });
+  });
+
+  it("returns null for bad input", () => {
+    expect(parseSessionFile(null)).toBeNull();
+    expect(parseSessionFile("{")).toBeNull();
+    expect(parseSessionFile('{"version":2}')).toBeNull();
+    const noId: Partial<TabState> = newTabState("x");
+    delete noId.id;
+    expect(
+      parseSessionFile(
+        JSON.stringify({ version: 1, tabs: [noId], activeId: "x", closed: [] }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("purgeExpired", () => {
+  const entry = (closedAt: number): ClosedEntry => ({
+    tab: newTabState("z"),
+    index: 0,
+    closedAt,
+  });
+  it("keeps exactly 30 days, expires 30 days + 1 ms", () => {
+    const now = 10 * CLOSED_TTL_MS;
+    const keep = entry(now - CLOSED_TTL_MS);
+    const drop = entry(now - CLOSED_TTL_MS - 1);
+    expect(purgeExpired([keep, drop], now)).toEqual({
+      kept: [keep],
+      expired: [drop],
+    });
+  });
+});
+
+describe("restoreWorkspace", () => {
+  it("opens all scratchpads sorted when the session is unreadable", () => {
+    const { state } = restoreWorkspace(
+      parseSessionFile("{corrupt"),
+      ["b", "a"],
+      fresh,
+      0,
+    );
+    expect(state.tabs.map((t) => t.id)).toEqual(["a", "b"]);
+    expect(state.activeId).toBe("a");
+  });
+
+  it("appends orphans at the end", () => {
+    const { state } = restoreWorkspace(
+      toSessionFile(ws),
+      ["o", "a", "b"],
+      fresh,
+      0,
+    );
+    expect(state.tabs.map((t) => t.id)).toEqual(["a", "b", "o"]);
+    expect(state.activeId).toBe("b");
+  });
+
+  it("repairs a missing activeId", () => {
+    const file = { ...toSessionFile(ws), activeId: "gone" };
+    const { state } = restoreWorkspace(file, ["a", "b"], fresh, 0);
+    expect(state.activeId).toBe("a");
+  });
+
+  it("purges expired closed entries", () => {
+    const now = 1000 + CLOSED_TTL_MS + 1;
+    const { state, expired } = restoreWorkspace(
+      toSessionFile(ws),
+      ["a", "b"],
+      fresh,
+      now,
+    );
+    expect(state.closed).toEqual([]);
+    expect(expired).toHaveLength(1);
+  });
+
+  it("yields one fresh tab when empty", () => {
+    const { state } = restoreWorkspace(null, [], fresh, 0);
+    expect(state.tabs).toEqual([newTabState("fresh")]);
+    expect(state.activeId).toBe("fresh");
+  });
+});
