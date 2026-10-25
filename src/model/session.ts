@@ -118,16 +118,27 @@ export function restoreWorkspace(
   now: number,
 ): { state: WorkspaceState; expired: ClosedEntry[] } {
   const base = file ?? { tabs: [], activeId: "", closed: [] };
-  const known = new Set(base.tabs.map((t) => t.id));
+  const known = new Set<string>();
+  const uniqueTabs = base.tabs.filter((t) => {
+    if (known.has(t.id)) return false;
+    known.add(t.id);
+    return true;
+  });
   const orphans = [...scratchpadIds]
     .sort()
     .filter((id) => !known.has(id))
     .map(newTabState);
-  const tabs = [...base.tabs, ...orphans];
+  const tabs = [...uniqueTabs, ...orphans];
   const activeId = tabs.some((t) => t.id === base.activeId)
     ? base.activeId
     : (tabs[0]?.id ?? "");
   const { kept, expired } = purgeExpired(base.closed, now);
-  const state = ensureOneTab({ tabs, activeId, closed: kept }, freshId());
+  const open = new Set(tabs.map((t) => t.id));
+  const closed = kept.filter((e) => {
+    if (open.has(e.tab.id)) return false;
+    open.add(e.tab.id);
+    return true;
+  });
+  const state = ensureOneTab({ tabs, activeId, closed }, freshId());
   return { state, expired };
 }
