@@ -16,6 +16,17 @@ type KeyInfo = Pick<
   "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey"
 >;
 
+/**
+ * The letter a Mod shortcut means: the typed character when it is an ASCII
+ * letter (so AZERTY/Dvorak users get the letter printed on the key), else the
+ * physical key (non-Latin layouts such as Cyrillic, or macOS Option symbols).
+ */
+function letterOf(e: KeyInfo): string | null {
+  if (/^[a-z]$/i.test(e.key)) return e.key.toLowerCase();
+  const m = /^Key([A-Z])$/.exec(e.code);
+  return m ? m[1].toLowerCase() : null;
+}
+
 export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
   const mac = p === "mac";
   // Ctrl+Tab cycling uses Ctrl on every platform.
@@ -38,27 +49,30 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
   const otherMod = mac ? e.ctrlKey : e.metaKey;
   if (!modDown || otherMod) return null;
 
+  const letter = letterOf(e);
+
   if (e.altKey) {
-    // Mod+Alt+F is Replace on macOS only.
-    return mac && e.code === "KeyF" && !e.shiftKey ? { type: "replace" } : null;
+    // Mod+Alt+F is Replace on macOS only. Ctrl+Alt elsewhere is AltGr.
+    return mac && letter === "f" && !e.shiftKey ? { type: "replace" } : null;
   }
 
   if (e.shiftKey) {
-    return e.code === "KeyT" ? { type: "reopenTab" } : null;
+    return letter === "t" ? { type: "reopenTab" } : null;
   }
 
-  switch (e.code) {
-    case "KeyN":
+  switch (letter) {
+    case "n":
       return { type: "newTab" };
-    case "KeyW":
+    case "w":
       return { type: "closeTab" };
-    case "KeyF":
+    case "f":
       return { type: "find" };
-    case "KeyH":
+    case "h":
       return mac ? null : { type: "replace" };
-    case "KeyQ":
+    case "q":
       return { type: "quit" };
   }
+  // Digits by physical key: AZERTY types symbols on the number row.
   const digit = /^Digit([1-9])$/.exec(e.code);
   if (digit) return { type: "goToTab", n: Number(digit[1]) };
   return null;
