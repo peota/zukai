@@ -123,7 +123,11 @@ export function createSaver(
         if (e) await flushEntry(id, e);
         return;
       }
-      await Promise.all([...entries].map(([eid, e]) => flushEntry(eid, e)));
+      const results = await Promise.allSettled(
+        [...entries].map(([eid, e]) => flushEntry(eid, e)),
+      );
+      const bad = results.find((r) => r.status === "rejected");
+      if (bad) throw (bad as PromiseRejectedResult).reason;
     },
     async stop(id) {
       const e = entry(id);
