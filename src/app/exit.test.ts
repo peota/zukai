@@ -73,6 +73,37 @@ describe("installExitHandshake", () => {
     ]);
   });
 
+  it("failedFlushKeepsAppOpenOnce", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const flushAll = vi.fn(async () => {
+      throw new Error("disk full");
+    });
+    await installExitHandshake(flushAll);
+    const preventDefault = vi.fn();
+    await closeHandler!({ preventDefault });
+    expect(preventDefault).toHaveBeenCalled();
+    expect(calls).toEqual([]);
+    expect(err).toHaveBeenCalled();
+    await closeHandler!({ preventDefault });
+    expect(flushAll).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual(["invoke:app_exit_after_flush"]);
+    err.mockRestore();
+  });
+
+  it("concurrentTriggersFlushOnce", async () => {
+    let release!: () => void;
+    const flushAll = vi.fn(() => new Promise<void>((r) => (release = r)));
+    await installExitHandshake(flushAll);
+    beforeExitHandler!();
+    const closing = closeHandler!({ preventDefault: vi.fn() });
+    await tick();
+    release();
+    await closing;
+    await tick();
+    expect(flushAll).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["invoke:app_exit_after_flush"]);
+  });
+
   it("returns an unlisten function that removes both listeners", async () => {
     const off = await installExitHandshake(async () => {});
     off();
