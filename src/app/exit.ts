@@ -12,12 +12,28 @@ export const BEFORE_EXIT_EVENT = "zukai://before-exit";
 export async function installExitHandshake(
   flushAll: () => Promise<void>,
 ): Promise<() => void> {
-  const flushThenExit = async () => {
-    try {
-      await flushAll();
-    } finally {
+  let inFlight: Promise<void> | null = null;
+  let failedOnce = false;
+
+  // Concurrent triggers share one in-flight flush. A failed first flush keeps
+  // the app open; any later attempt exits whatever the flush result.
+  const flushThenExit = (): Promise<void> => {
+    if (inFlight) return inFlight;
+    inFlight = (async () => {
+      try {
+        await flushAll();
+      } catch (err) {
+        console.error("flush before exit failed", err);
+        if (!failedOnce) {
+          failedOnce = true;
+          return;
+        }
+      }
       await invoke("app_exit_after_flush");
-    }
+    })().finally(() => {
+      inFlight = null;
+    });
+    return inFlight;
   };
 
   const unlistenEvent = await listen(BEFORE_EXIT_EVENT, () => {
