@@ -14,6 +14,7 @@
   --z-faint: #b4b3af;
   --z-accent: #2383e2;
   --z-accent-soft: rgb(35 131 226 / 0.2);
+  --z-search-current: rgb(35 131 226 / 0.4);
   --z-danger: #c4554d;
   --z-active-line: rgb(55 53 47 / 0.03);
   --z-selection-match: rgb(35 131 226 / 0.1);
@@ -44,6 +45,7 @@
     --z-faint: #5f5d59;
     --z-accent: #529cca;
     --z-accent-soft: rgb(82 156 202 / 0.2);
+    --z-search-current: rgb(82 156 202 / 0.42);
     --z-danger: #df8a83;
     --z-active-line: rgb(255 255 255 / 0.03);
     --z-selection-match: rgb(82 156 202 / 0.12);

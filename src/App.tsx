@@ -81,6 +81,7 @@ export default function App() {
             onCursor={onCursor}
             isClosing={w.isClosing}
             focusSignal={focusSignal}
+            findRequest={w.findRequest}
           />
         )}
       </main>
