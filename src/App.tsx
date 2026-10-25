@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
-import type { SyntheticEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useWorkspace } from "./app/useWorkspace";
 import { detectPlatform, matchShortcut } from "./app/shortcuts";
+import type { LanguageId } from "./model/types";
+import { EditorHost } from "./editor/EditorHost";
 import { TabBar } from "./ui/TabBar";
 import { StatusBar } from "./ui/StatusBar";
+import { LanguagePicker } from "./ui/LanguagePicker";
 
 const platform = detectPlatform();
 
@@ -13,20 +15,13 @@ interface Cursor {
   col: number;
 }
 
-function cursorOf(el: HTMLTextAreaElement, id: string): Cursor {
-  const before = el.value.slice(0, el.selectionEnd);
-  const lineStart = before.lastIndexOf("\n") + 1;
-  return {
-    id,
-    line: before.split("\n").length,
-    col: before.length - lineStart + 1,
-  };
-}
-
 export default function App() {
   const w = useWorkspace();
-  const { run } = w;
+  const { run, updateTab } = w;
+  const activeId = w.state.activeId;
   const [cursor, setCursor] = useState<Cursor | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [focusSignal, setFocusSignal] = useState(0);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -39,22 +34,35 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [run]);
 
-  const active = w.state.tabs.find((t) => t.id === w.state.activeId);
-  const text = active ? w.contentOf(active.id) : undefined;
+  const active = w.state.tabs.find((t) => t.id === activeId);
   const here =
     active && cursor?.id === active.id ? cursor : { line: 1, col: 1 };
 
-  const trackCursor = (e: SyntheticEvent<HTMLTextAreaElement>) => {
-    if (active) setCursor(cursorOf(e.currentTarget, active.id));
-  };
+  const onCursor = useCallback(
+    (line: number, col: number) => setCursor({ id: activeId, line, col }),
+    [activeId],
+  );
+
+  const closePicker = useCallback(() => {
+    setPicking(false);
+    setFocusSignal((n) => n + 1);
+  }, []);
+
+  const pickLanguage = useCallback(
+    (language: LanguageId) => {
+      if (activeId) updateTab(activeId, { language, languagePicked: true });
+      closePicker();
+    },
+    [activeId, updateTab, closePicker],
+  );
 
   return (
-    <div className="flex h-full flex-col bg-chrome text-text">
+    <div className="relative flex h-full flex-col bg-chrome text-text">
       <TabBar
         tabs={w.state.tabs.map((t) => ({
           id: t.id,
           title: t.title,
-          active: t.id === w.state.activeId,
+          active: t.id === activeId,
         }))}
         onActivate={w.activate}
         onClose={(id) => void w.closeTab(id)}
@@ -63,21 +71,16 @@ export default function App() {
         onRename={(id, name) => void w.rename(id, name)}
       />
       <main className="min-h-0 flex-1 bg-editor">
-        {active && text !== undefined && (
-          // Placeholder editor; Task 10 replaces it with CodeMirror.
-          <textarea
-            key={active.id}
-            autoFocus
-            spellCheck={false}
-            wrap={active.wrap ? "soft" : "off"}
-            readOnly={w.isClosing(active.id)}
-            value={text}
-            onChange={(e) => {
-              w.setContent(active.id, e.target.value);
-              trackCursor(e);
-            }}
-            onSelect={trackCursor}
-            className="z-editor-font block size-full resize-none bg-editor px-6 py-4 text-text outline-none"
+        {w.ready && (
+          <EditorHost
+            tabs={w.state.tabs}
+            activeId={activeId}
+            loadContent={w.loadContent}
+            onChange={w.setContent}
+            onTabPatch={updateTab}
+            onCursor={onCursor}
+            isClosing={w.isClosing}
+            focusSignal={focusSignal}
           />
         )}
       </main>
@@ -86,7 +89,13 @@ export default function App() {
         col={here.col}
         language={active?.language ?? "plaintext"}
         saveStatus={w.saveStatus}
-        onPickLanguage={() => {}}
+        onPickLanguage={() => (picking ? closePicker() : setPicking(true))}
+      />
+      <LanguagePicker
+        open={picking}
+        current={active?.language ?? "plaintext"}
+        onPick={pickLanguage}
+        onClose={closePicker}
       />
     </div>
   );
