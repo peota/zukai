@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { act, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
 import { EditorHost, type EditorHostProps } from "./EditorHost";
 import type { TabState } from "../model/types";
@@ -146,5 +152,47 @@ describe("EditorHost", () => {
     rerender({ tabs: [tab("b", { wrap: true })] });
     expect(a.dom.isConnected).toBe(false);
     expect(viewsIn(container)).toEqual([b]);
+  });
+});
+
+describe("EditorHost find bar", () => {
+  it("opens prefilled from the selection, remembers per Tab, and F3 works after Esc", async () => {
+    const { container, rerender } = setup({
+      tabs: [tab("a", { selection: { anchor: 0, head: 4 } }), tab("b")],
+      loadContent: (id) => Promise.resolve(`text of ${id} text`),
+    });
+    const v = await activeView(container, "text of a text");
+    rerender({ findRequest: { mode: "find", seq: 1 } });
+    const input = screen.getByRole("textbox", { name: "Find" });
+    expect(input).toHaveValue("text");
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Replace" })).toBeNull();
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("search")).toBeNull();
+    expect(v.state.selection.main).toMatchObject({ from: 0, to: 4 });
+
+    // F3 in the editor uses the last query with the bar closed.
+    act(() => {
+      fireEvent.keyDown(v.contentDOM, { key: "F3", code: "F3" });
+    });
+    expect(v.state.selection.main).toMatchObject({ from: 10, to: 14 });
+
+    // With no selection, Mod+H reuses the Tab's last term, in replace mode.
+    act(() => v.dispatch({ selection: { anchor: 5 } }));
+    rerender({ findRequest: { mode: "replace", seq: 2 } });
+    expect(screen.getByRole("textbox", { name: "Find" })).toHaveValue("text");
+    expect(
+      screen.getByRole("textbox", { name: "Replace" }),
+    ).toBeInTheDocument();
+  });
+
+  it("F3 with no search yet opens the bar", async () => {
+    const { container } = setup();
+    const v = await activeView(container, "text of a");
+    act(() => {
+      fireEvent.keyDown(v.contentDOM, { key: "F3", code: "F3" });
+    });
+    expect(screen.getByRole("textbox", { name: "Find" })).toHaveValue("");
   });
 });

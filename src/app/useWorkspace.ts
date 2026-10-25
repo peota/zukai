@@ -29,6 +29,11 @@ import {
   type SaveStatus,
 } from "../storage/autosave";
 
+export interface FindRequest {
+  mode: "find" | "replace";
+  seq: number;
+}
+
 const EMPTY: WorkspaceState = { tabs: [], activeId: "", closed: [] };
 const freshId = (): string => crypto.randomUUID();
 
@@ -47,6 +52,8 @@ export interface Workspace {
   rename(id: string, name: string): Promise<void>;
   /** True while a close is in progress; the editor should be read-only. */
   isClosing(id: string): boolean;
+  /** The latest Mod+F / Mod+H request; `seq` changes on every press. */
+  findRequest: FindRequest | null;
   saveStatus: SaveStatus;
   ready: boolean;
 }
@@ -54,6 +61,7 @@ export interface Workspace {
 export function useWorkspace(): Workspace {
   const [state, setState] = useState<WorkspaceState>(EMPTY);
   const [ready, setReady] = useState(false);
+  const [findRequest, setFindRequest] = useState<FindRequest | null>(null);
   // Contents live in a ref (async commands need the latest); this re-renders.
   const [, setContentVersion] = useState(0);
   const stateRef = useRef(state);
@@ -299,7 +307,8 @@ export function useWorkspace(): Workspace {
           return;
         case "find":
         case "replace":
-          return; // Task 11
+          setFindRequest((r) => ({ mode: cmd.type, seq: (r?.seq ?? 0) + 1 }));
+          return;
       }
     },
     [closeTab, commit, newTab, reopenTab],
@@ -353,6 +362,7 @@ export function useWorkspace(): Workspace {
     moveTab,
     rename,
     isClosing,
+    findRequest,
     saveStatus,
     ready,
   };

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
   EditorView,
@@ -25,6 +25,13 @@ import type { LanguageId, TabState } from "../model/types";
 import { zukaiTheme } from "./theme";
 import { loadLanguage } from "./languages";
 import { GUESS_PREFIX, guessLanguage } from "./guess";
+import { findExtension, type FindMode } from "../find/findExtension";
+import {
+  EMPTY_FIND,
+  FindBar,
+  initialFindState,
+  type FindState,
+} from "../find/FindBar";
 
 export interface EditorHostProps {
   tabs: TabState[];
@@ -37,6 +44,16 @@ export interface EditorHostProps {
   isClosing?(id: string): boolean;
   /** Bump to move focus back to the active editor (e.g. after a popup). */
   focusSignal?: number;
+  /** Mod+F / Mod+H: open the find bar on the active Tab when `seq` changes. */
+  findRequest?: { mode: FindMode; seq: number } | null;
+}
+
+interface OpenBar {
+  tabId: string;
+  view: EditorView;
+  mode: FindMode;
+  initial: FindState;
+  seq: number;
 }
 
 /** Selection and scroll are reported back this long after they settle. */
@@ -91,8 +108,13 @@ function clampSelection(state: TabState, length: number) {
 }
 
 export function EditorHost(props: EditorHostProps) {
-  const { tabs, activeId, isClosing, focusSignal } = props;
+  const { tabs, activeId, isClosing, focusSignal, findRequest } = props;
   const container = useRef<HTMLDivElement>(null);
+  const barBox = useRef<HTMLDivElement>(null);
+  /** Each Tab's last search term and toggles, for this run of the app. */
+  const findStates = useRef(new Map<string, FindState>());
+  const barSeq = useRef(0);
+  const [bar, setBar] = useState<OpenBar | null>(null);
   const views = useRef(new Map<string, Entry>());
   const creating = useRef(new Set<string>());
   /** Latest props, for listeners and async callbacks. */
@@ -153,6 +175,22 @@ export function EditorHost(props: EditorHostProps) {
     );
   };
 
+  /** Open (or refocus) the find bar on a Tab's view. */
+  const openBar = (id: string, mode: FindMode) => {
+    const e = views.current.get(id);
+    if (!e) return;
+    const last = findStates.current.get(id) ?? EMPTY_FIND;
+    // Pressed again while typing in the bar: keep its text, just refocus.
+    const inBar = barBox.current?.contains(document.activeElement) ?? false;
+    const initial = inBar ? last : initialFindState(e.view, last);
+    setBar({ tabId: id, view: e.view, mode, initial, seq: ++barSeq.current });
+  };
+
+  const rememberFind = (id: string, state: FindState) => {
+    findStates.current.set(id, state);
+    setBar((b) => (b && b.tabId === id ? { ...b, initial: state } : b));
+  };
+
   const createView = (tab: TabState, text: string): Entry => {
     const id = tab.id;
     const readOnly = latest.current.isClosing?.(id) ?? false;
@@ -189,6 +227,7 @@ export function EditorHost(props: EditorHostProps) {
           entry.language.of([]),
           entry.wrap.of(wrapExt(tab.wrap)),
           entry.readOnly.of(readOnlyExt(readOnly)),
+          findExtension((mode) => openBar(id, mode)),
           listener,
         ],
       }),
@@ -291,6 +330,11 @@ export function EditorHost(props: EditorHostProps) {
     views.current.get(latest.current.activeId)?.view.focus();
   }, [focusSignal]);
 
+  // Each new request (a new seq) opens the bar on the active Tab.
+  useEffect(() => {
+    if (findRequest) openBar(latest.current.activeId, findRequest.mode);
+  }, [findRequest]);
+
   // Unmount: flush what's pending and tear every view down.
   useEffect(() => {
     const map = views.current;
@@ -303,5 +347,26 @@ export function EditorHost(props: EditorHostProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <div ref={container} className="size-full" />;
+  const showBar =
+    bar && bar.tabId === activeId && tabs.some((t) => t.id === bar.tabId);
+  return (
+    <div className="relative size-full">
+      <div ref={container} className="size-full" />
+      <div ref={barBox} className="contents">
+        {showBar && (
+          <FindBar
+            key={bar.seq}
+            view={bar.view}
+            mode={bar.mode}
+            initial={bar.initial}
+            onChange={(s) => rememberFind(bar.tabId, s)}
+            onClose={(s) => {
+              findStates.current.set(bar.tabId, s);
+              setBar(null);
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
 }

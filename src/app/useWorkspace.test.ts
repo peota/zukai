@@ -243,3 +243,16 @@ describe("useWorkspace titles", () => {
     expect(result.current.state.tabs[0].renamed).toBe(true);
   });
 });
+
+describe("useWorkspace find", () => {
+  it("turns find and replace commands into a new find request each time", async () => {
+    const { result } = await mount();
+    expect(result.current.findRequest).toBeNull();
+    await act(() => result.current.run({ type: "find" }));
+    expect(result.current.findRequest).toEqual({ mode: "find", seq: 1 });
+    await act(() => result.current.run({ type: "replace" }));
+    expect(result.current.findRequest).toEqual({ mode: "replace", seq: 2 });
+    await act(() => result.current.run({ type: "find" }));
+    expect(result.current.findRequest).toEqual({ mode: "find", seq: 3 });
+  });
+});
