@@ -110,6 +110,56 @@ export function selectMatch(view: EditorView, range: Range) {
   });
 }
 
+/** Expand `$&`, `$$` and `$n` like CodeMirror's regex replacement does. */
+function expandReplacement(replace: string, match: RegExpExecArray): string {
+  return replace.replace(/\$([$&]|\d+)/g, (m, i: string) => {
+    if (i === "&") return match[0];
+    if (i === "$") return "$";
+    for (let l = i.length; l > 0; l--) {
+      const n = +i.slice(0, l);
+      if (n > 0 && n < match.length) return (match[n] ?? "") + i.slice(l);
+    }
+    return m;
+  });
+}
+
+/**
+ * Replace the match under the selection and select the next one. If the
+ * selection isn't a match, just go to the next match. Unlike CodeMirror's
+ * `replaceNext`, this moves past empty matches (`^` → `> ` works line by
+ * line). Returns false when nothing happened.
+ */
+export function replaceCurrent(view: EditorView): boolean {
+  const { state } = view;
+  const query = getSearchQuery(state);
+  if (!query.valid || state.readOnly) return false;
+  const { from, to } = state.selection.main;
+  const r = query.getCursor(state, from).next();
+  const m = r.done
+    ? null
+    : (r.value as { from: number; to: number; match?: RegExpExecArray });
+  if (!m || m.from !== from || m.to !== to) return findNextMatch(view);
+  const insert = m.match
+    ? expandReplacement(query.replace, m.match)
+    : query.replace;
+  const end = from + insert.length;
+  const after = state.update({
+    changes: { from, to, insert },
+    selection: { anchor: end },
+  }).state;
+  const next = nextMatch(after, query);
+  const selection = next
+    ? EditorSelection.single(next.from, next.to)
+    : EditorSelection.single(end);
+  view.dispatch({
+    changes: { from, to, insert },
+    selection,
+    effects: EditorView.scrollIntoView(selection.main.from, { y: "center" }),
+    userEvent: "input.replace",
+  });
+  return true;
+}
+
 /** Go to the next match of the current query. False if there is none. */
 export function findNextMatch(view: EditorView): boolean {
   const r = nextMatch(view.state, getSearchQuery(view.state));
