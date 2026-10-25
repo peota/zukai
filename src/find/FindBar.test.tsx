@@ -21,12 +21,18 @@ afterEach(() => {
   view = undefined;
 });
 
-function setup(mode: "find" | "replace" = "find", initial = EMPTY) {
+function setup(
+  mode: "find" | "replace" = "find",
+  initial = EMPTY,
+  doc = "foo bar foo",
+  cursor = 0,
+) {
   const parent = document.createElement("div");
   document.body.appendChild(parent);
   view = new EditorView({
     state: EditorState.create({
-      doc: "foo bar foo",
+      doc,
+      selection: { anchor: cursor },
       extensions: [history(), findExtension(() => {})],
     }),
     parent,
@@ -133,6 +139,62 @@ describe("FindBar", () => {
     fireEvent.change(replace, { target: { value: text } });
     fireEvent.click(screen.getByRole("button", { name: /^Replace all/ }));
     expect(view.state.doc.toString()).toBe(`${text} bar ${text}`);
+  });
+
+  it("keeps working after the document shrinks while the bar is open", () => {
+    const { view, input } = setup("replace", EMPTY, "foo bar foo", 11);
+    fireEvent.change(input, { target: { value: "foo" } });
+    const replace = screen.getByRole("textbox", { name: "Replace" });
+    fireEvent.change(replace, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Replace all/ }));
+    expect(view.state.doc.toString()).toBe(" bar ");
+    fireEvent.change(input, { target: { value: "bar" } });
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "zzz" } });
+    expect(screen.getByText("No results")).toBeInTheDocument();
+    // Edits made in the editor itself are followed too.
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length } });
+    fireEvent.change(input, { target: { value: "zz" } });
+    expect(view.state.selection.main.head).toBe(0);
+  });
+
+  it("Replace steps past empty matches", () => {
+    const { view, input } = setup(
+      "replace",
+      { ...EMPTY, regexp: true },
+      "a\nb",
+    );
+    fireEvent.change(input, { target: { value: "^" } });
+    const replace = screen.getByRole("textbox", { name: "Replace" });
+    fireEvent.change(replace, { target: { value: "> " } });
+    fireEvent.keyDown(replace, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: /^Replace$/ }));
+    expect(view.state.doc.toString()).toBe("> a\n> b");
+  });
+
+  it("Replace keeps regex groups", () => {
+    const { view, input } = setup("replace", { ...EMPTY, regexp: true });
+    fireEvent.change(input, { target: { value: "f(o+)" } });
+    const replace = screen.getByRole("textbox", { name: "Replace" });
+    fireEvent.change(replace, { target: { value: "<$1|$&>" } });
+    fireEvent.keyDown(replace, { key: "Enter" });
+    expect(view.state.doc.toString()).toBe("<oo|foo> bar foo");
+    expect(sel(view)).toEqual({ from: 13, to: 16 });
+  });
+
+  it("F3 and Shift+F3 step from inside the bar", () => {
+    const { view, input } = setup();
+    fireEvent.change(input, { target: { value: "foo" } });
+    const ev = new KeyboardEvent("keydown", {
+      key: "F3",
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(sel(view)).toEqual({ from: 8, to: 11 });
+    fireEvent.keyDown(input, { key: "F3", shiftKey: true });
+    expect(sel(view)).toEqual({ from: 0, to: 3 });
   });
 
   it("Alt+C, Alt+W and Alt+R flip their toggles", () => {

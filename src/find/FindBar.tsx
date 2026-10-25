@@ -11,7 +11,6 @@ import {
   closeSearchPanel,
   openSearchPanel,
   replaceAll,
-  replaceNext,
   searchPanelOpen,
   setSearchQuery,
 } from "@codemirror/search";
@@ -19,6 +18,7 @@ import { countMatches, type MatchCount } from "./count";
 import {
   findNextMatch,
   findPreviousMatch,
+  replaceCurrent,
   firstMatchAtOrAfter,
   onViewUpdate,
   selectMatch,
@@ -113,11 +113,14 @@ export function FindBar({
   const stateRef = useRef(state);
   const findInput = useRef<HTMLInputElement>(null);
   const replaceInput = useRef<HTMLInputElement>(null);
-  /** Where the bar was opened; typing searches from here. */
-  const [origin] = useState(() => ({
+  /**
+   * Where the bar was opened; typing searches from here. Mapped through
+   * every document change, so it stays inside the document.
+   */
+  const origin = useRef({
     anchor: view.state.selection.main.anchor,
     head: view.state.selection.main.head,
-  }));
+  });
 
   const recount = () =>
     setCount(countMatches(view.state, toQuery(stateRef.current)));
@@ -130,13 +133,12 @@ export function FindBar({
     const query = toQuery(next);
     view.dispatch({ effects: setSearchQuery.of(query) });
     if (jump) {
-      const m = firstMatchAtOrAfter(
-        view.state,
-        query,
-        Math.min(origin.anchor, origin.head),
-      );
+      const len = view.state.doc.length;
+      const anchor = Math.min(origin.current.anchor, len);
+      const head = Math.min(origin.current.head, len);
+      const m = firstMatchAtOrAfter(view.state, query, Math.min(anchor, head));
       if (m) selectMatch(view, m);
-      else view.dispatch({ selection: origin });
+      else view.dispatch({ selection: { anchor, head } });
     }
     recount();
   };
@@ -147,6 +149,13 @@ export function FindBar({
     if (!searchPanelOpen(view.state)) openSearchPanel(view);
     apply(stateRef.current, true);
     const off = onViewUpdate(view, (u) => {
+      if (u.docChanged) {
+        const o = origin.current;
+        origin.current = {
+          anchor: u.changes.mapPos(o.anchor),
+          head: u.changes.mapPos(o.head),
+        };
+      }
       if (u.docChanged || u.selectionSet) recount();
     });
     const input =
@@ -197,9 +206,15 @@ export function FindBar({
         return;
       }
     }
+    if (e.key === "F3") {
+      // Also keeps WebView2's own find bar from opening.
+      e.preventDefault();
+      step(e.shiftKey ? -1 : 1);
+      return;
+    }
     if (e.key === "Enter" && !e.altKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
-      if (field === "replace") replaceNext(view);
+      if (field === "replace") replaceCurrent(view);
       else step(e.shiftKey ? -1 : 1);
     }
   };
@@ -214,7 +229,7 @@ export function FindBar({
     <div
       role="search"
       aria-label="Find in text"
-      className="z-fade-in absolute top-3 right-3 z-10 flex w-[380px] max-w-[calc(100%-24px)] flex-col gap-1 rounded-float border border-hairline bg-surface p-1.5 text-[12px] text-text shadow-float"
+      className="z-fade-in absolute top-3 right-3 z-10 flex w-[380px] max-w-[calc(100%-24px)] flex-col gap-1 rounded-float bg-surface p-1.5 text-[12px] text-text shadow-float"
     >
       <div className="flex items-center gap-1">
         <button
@@ -313,7 +328,7 @@ export function FindBar({
             className={`${iconButton} px-2`}
             title="Replace (Enter)"
             onMouseDown={keepFocus}
-            onClick={() => replaceNext(view)}
+            onClick={() => replaceCurrent(view)}
           >
             Replace
           </button>
