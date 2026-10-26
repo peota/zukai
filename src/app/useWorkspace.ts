@@ -365,7 +365,8 @@ export function useWorkspace(): Workspace {
         case "closeTab":
           return closeTab(s.activeId);
         case "reopenTab":
-          return reopenEntry(0);
+          // The newest entry.
+          return s.closed[0] ? reopenEntry(s.closed[0].tab.id) : undefined;
         case "cycleTab":
           return commit(ws.cycle(s, cmd.dir));
         case "goToTab":

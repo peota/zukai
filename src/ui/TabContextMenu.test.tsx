@@ -107,11 +107,11 @@ describe("TabContextMenu", () => {
     ).toBeInTheDocument();
   });
 
-  it("clicking an entry reopens it by index", () => {
+  it("clicking an entry reopens it by its Tab id", () => {
     const p = setup("a", [entry(0), entry(1), entry(2)]);
     const list = openRecent();
     fireEvent.click(within(list).getByText("Closed 2"));
-    expect(p.onReopenEntry).toHaveBeenCalledWith(2);
+    expect(p.onReopenEntry).toHaveBeenCalledWith("c2");
     expect(p.onDismiss).toHaveBeenCalled();
   });
 

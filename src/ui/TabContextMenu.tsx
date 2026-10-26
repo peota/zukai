@@ -18,7 +18,8 @@ export interface TabContextMenuProps {
   onClose(id: string): void;
   onCloseOthers(id: string): void;
   onReopen(): void;
-  onReopenEntry(index: number): void;
+  /** The entry's Tab id: the list may change before the click lands. */
+  onReopenEntry(id: string): void;
   onDismiss(): void;
 }
 
@@ -36,10 +37,10 @@ export function TabContextMenu({
   onReopenEntry,
   onDismiss,
 }: TabContextMenuProps) {
-  const recent: MenuItem[] = closed.slice(0, RECENT_LIMIT).map((e, i) => ({
+  const recent: MenuItem[] = closed.slice(0, RECENT_LIMIT).map((e) => ({
     label: e.tab.title,
     detail: e.tab.file?.path,
-    onSelect: () => onReopenEntry(i),
+    onSelect: () => onReopenEntry(e.tab.id),
   }));
   const items: MenuItem[] = [
     {

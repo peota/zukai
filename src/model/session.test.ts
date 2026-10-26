@@ -121,6 +121,24 @@ describe("restoreWorkspace", () => {
     expect(state.tabs).toEqual([ws.tabs[0], ws.tabs[1]]);
   });
 
+  it("dedupes open File Tabs by path key, keeping the first", () => {
+    const fileOf = (path: string): FileInfo => ({
+      path,
+      format: { encoding: "utf-8", bom: false, lineEnding: "lf", mixed: false },
+      fingerprint: null,
+      held: null,
+    });
+    const f1 = { ...newTabState("f1"), file: fileOf("C:\\d\\A.txt") };
+    const f2 = { ...newTabState("f2"), file: fileOf("c:\\d\\a.txt") };
+    const f3 = { ...newTabState("f3"), file: fileOf("C:\\d\\B.txt") };
+    const file = { ...toSessionFile(ws), tabs: [f1, f2, f3], activeId: "f2" };
+    const { state } = restore(file, [], fresh, 0, null, null, (p) =>
+      pathKey(p, "windows"),
+    );
+    expect(state.tabs.map((t) => t.id)).toEqual(["f1", "f3"]);
+    expect(state.activeId).toBe("f1");
+  });
+
   it("drops closed entries that are open tabs and dedupes closed", () => {
     const e = (id: string, closedAt: number): ClosedEntry => ({
       tab: newTabState(id),

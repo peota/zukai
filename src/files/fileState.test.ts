@@ -86,6 +86,16 @@ describe("onWriteOutcome", () => {
     expect(out.fingerprint).toEqual(fp("z"));
     expect(out.held).toBeNull();
   });
+  it("clears Mixed on written (the File now has one Line ending)", () => {
+    const mixed = file();
+    mixed.format = { ...mixed.format, mixed: true };
+    const out = onWriteOutcome(mixed, {
+      kind: "written",
+      fingerprint: fp("z"),
+    });
+    expect(out.format.mixed).toBe(false);
+    expect(onWriteOutcome(mixed, { kind: "missing" }).format.mixed).toBe(true);
+  });
   it("holds on conflict, missing and unencodable", () => {
     expect(
       onWriteOutcome(file(), { kind: "conflict", fingerprint: fp("q") }).held,

@@ -264,7 +264,7 @@ export default function App() {
             }
           }}
           onReopen={() => void run({ type: "reopenTab" })}
-          onReopenEntry={(i) => void w.reopenEntry(i)}
+          onReopenEntry={(id) => void w.reopenEntry(id)}
           onDismiss={closeTabMenu}
         />
       )}
