@@ -348,6 +348,16 @@ describe("useFiles disk changes", () => {
     expect(await result.current.loadContent(id)).toBe("mine");
   });
 
+  it("hasPending is true only while the text differs from the disk", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    expect(result.current.hasPending(id)).toBe(false);
+    act(() => result.current.setContent(id, "typed"));
+    expect(result.current.hasPending(id)).toBe(true);
+    await settle();
+    expect(result.current.hasPending(id)).toBe(false);
+  });
+
   it("keepMineWritesAndClearsHeld", async () => {
     const { result } = await mount();
     const id = await openP(result);

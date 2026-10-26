@@ -100,6 +100,8 @@ export interface FilesApi {
   loadDiskVersion(id: string): Promise<void>;
   saveToOriginal(id: string): Promise<void>;
   reopenWithEncoding(id: string, label: string): Promise<void>;
+  /** Edits not yet in the File itself (held text counts); read on demand. */
+  hasPending(id: string): boolean;
   /** Asks the editor to apply the change as an undoable step. */
   convert(id: string, patch: Partial<FileFormat>): void;
   /** Resolves to an error message to show inline, or null on success. */
@@ -1109,6 +1111,7 @@ export function useFiles(
     loadDiskVersion,
     saveToOriginal,
     reopenWithEncoding,
+    hasPending,
     convert,
     renameFile,
     reopenEntry,
