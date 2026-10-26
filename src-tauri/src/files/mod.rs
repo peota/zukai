@@ -5,6 +5,8 @@ pub mod encoding;
 pub mod fingerprint;
 pub mod grants;
 pub mod io;
+pub mod open_paths;
+pub mod watch;
 
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
