@@ -196,8 +196,9 @@ export function restoreWorkspace(
     ? base.activeId
     : (tabs[0]?.id ?? "");
   const onDisk = closedFiles && new Set(closedFiles.map((f) => f.id));
+  // A closed File's text is on disk (or in its shadow), never in closed/.
   const listed = onDisk
-    ? base.closed.filter((e) => onDisk.has(e.tab.id))
+    ? base.closed.filter((e) => e.tab.file || onDisk.has(e.tab.id))
     : base.closed;
   const mentioned = new Set([
     ...tabs.map((t) => t.id),

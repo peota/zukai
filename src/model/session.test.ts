@@ -375,3 +375,18 @@ describe("restoreWorkspace closed File dedupe", () => {
     expect(exact.state.closed).toHaveLength(3);
   });
 });
+
+describe("restoreWorkspace closed Files and the closed/ folder", () => {
+  it("keeps closed File entries, whose text never lives in closed/", () => {
+    const file = toSessionFile({
+      tabs: [newTabState("a")],
+      activeId: "a",
+      closed: [
+        { tab: fileTab("f", "/p.txt"), index: 0, closedAt: 10 },
+        { tab: newTabState("s"), index: 0, closedAt: 9 },
+      ],
+    });
+    const { state } = restore(file, ["a"], fresh, 20, []);
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["f"]);
+  });
+});
