@@ -1,4 +1,5 @@
 pub mod commands;
+mod files;
 pub mod storage;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
