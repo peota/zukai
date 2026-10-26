@@ -73,6 +73,16 @@ export const fileRename = (path: string, newStem: string): Promise<string> =>
 export const fileFingerprint = (path: string): Promise<Fingerprint | null> =>
   invoke<Fingerprint | null>("file_fingerprint", { path });
 
+/**
+ * For re-checks only (never before a write): `expected` back unchanged,
+ * without hashing, when the file's time and size still match it.
+ */
+export const fileFingerprintQuick = (
+  path: string,
+  expected: Fingerprint,
+): Promise<Fingerprint | null> =>
+  invoke<Fingerprint | null>("file_fingerprint_quick", { path, expected });
+
 export const filePickOpen = (): Promise<string[]> =>
   invoke<string[]>("file_pick_open");
 

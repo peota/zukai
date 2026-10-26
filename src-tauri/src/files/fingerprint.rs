@@ -60,9 +60,81 @@ pub fn fingerprint_of(path: &Path) -> io::Result<Option<Fingerprint>> {
     }))
 }
 
+/// For re-checks only (never before a write): `expected` itself when the
+/// file's mtime and size still match it, without reading the file; otherwise
+/// a full `fingerprint_of`. An empty (unread) hash never short-cuts.
+pub fn fingerprint_quick(path: &Path, expected: &Fingerprint) -> io::Result<Option<Fingerprint>> {
+    let meta = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    if !expected.hash.is_empty()
+        && meta.is_file()
+        && mtime_ms(&meta) == expected.mtime_ms
+        && meta.len() == expected.size
+    {
+        return Ok(Some(expected.clone()));
+    }
+    fingerprint_of(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quick_fingerprint_skips_the_hash_only_when_time_and_size_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.txt");
+        assert_eq!(
+            fingerprint_quick(
+                &p,
+                &Fingerprint {
+                    mtime_ms: 1,
+                    size: 1,
+                    hash: "x".into()
+                }
+            )
+            .unwrap(),
+            None
+        );
+        std::fs::write(&p, b"hello").unwrap();
+        let real = fingerprint_of(&p).unwrap().unwrap();
+        // Same time and size: the expected one comes back as is, unhashed
+        // (a stand-in hash proves the file wasn't read).
+        let expected = Fingerprint {
+            hash: "stored".into(),
+            ..real.clone()
+        };
+        assert_eq!(
+            fingerprint_quick(&p, &expected).unwrap(),
+            Some(expected.clone())
+        );
+        // A different size or time: a full fingerprint.
+        let other_size = Fingerprint {
+            size: 4,
+            ..expected.clone()
+        };
+        assert_eq!(
+            fingerprint_quick(&p, &other_size).unwrap(),
+            Some(real.clone())
+        );
+        let other_time = Fingerprint {
+            mtime_ms: real.mtime_ms + 1,
+            ..expected.clone()
+        };
+        assert_eq!(
+            fingerprint_quick(&p, &other_time).unwrap(),
+            Some(real.clone())
+        );
+        // An unread (empty) hash never short-cuts.
+        let unread = Fingerprint {
+            hash: String::new(),
+            ..real.clone()
+        };
+        assert_eq!(fingerprint_quick(&p, &unread).unwrap(), Some(real));
+    }
 
     #[test]
     fn fingerprint_of_over_cap_file_is_unread_and_never_matches() {
