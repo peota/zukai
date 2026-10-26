@@ -122,18 +122,17 @@ export function parseSessionFile(json: string | null): SessionFile | null {
   }
   if (
     !Array.isArray(data.tabs) ||
-    !data.tabs.every(isTabState) ||
     typeof data.activeId !== "string" ||
-    !Array.isArray(data.closed) ||
-    !data.closed.every(isClosedEntry)
+    !Array.isArray(data.closed)
   ) {
     return null;
   }
+  // A malformed entry is dropped alone; the rest of the session survives.
   return {
     version: SESSION_VERSION,
-    tabs: data.tabs,
+    tabs: data.tabs.filter(isTabState),
     activeId: data.activeId,
-    closed: data.closed,
+    closed: data.closed.filter(isClosedEntry),
   };
 }
 
@@ -171,6 +170,7 @@ export function restoreWorkspace(
   now: number,
   closedFiles: ClosedFile[] | null = null,
   grantedPaths: ReadonlySet<string> | null = null,
+  keyOf: (path: string) => string = (p) => p,
 ): { state: WorkspaceState; expired: ClosedEntry[] } {
   const raw = file ?? { tabs: [], activeId: "", closed: [] };
   // Rust refuses to save a Session naming a File it hasn't granted.
@@ -210,7 +210,17 @@ export function restoreWorkspace(
       index: tabs.length,
       closedAt: now,
     }));
-  const all = [...listed, ...recovered].sort((x, y) => y.closedAt - x.closedAt);
+  const seenPaths = new Set<string>();
+  const all = [...listed, ...recovered]
+    .sort((x, y) => y.closedAt - x.closedAt)
+    .filter((e) => {
+      // Newest entry per File path wins.
+      if (!e.tab.file) return true;
+      const k = keyOf(e.tab.file.path);
+      if (seenPaths.has(k)) return false;
+      seenPaths.add(k);
+      return true;
+    });
   const { kept, expired } = purgeExpired(all, now);
   const open = new Set(tabs.map((t) => t.id));
   const closed = kept.filter((e) => {

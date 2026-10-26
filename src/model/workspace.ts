@@ -23,7 +23,7 @@ export function newTab(s: WorkspaceState, id: string): WorkspaceState {
 export function findByPath(
   s: WorkspaceState,
   key: string,
-  keyOf: (path: string) => string = (p) => p,
+  keyOf: (path: string) => string,
 ): TabState | undefined {
   return s.tabs.find((t) => t.file !== undefined && keyOf(t.file.path) === key);
 }
@@ -40,7 +40,7 @@ export function closeTab(
   id: string,
   isEmpty: boolean,
   now: number,
-  keyOf: (path: string) => string = (p) => p,
+  keyOf: (path: string) => string,
 ): { state: WorkspaceState; effect: "deleted" | "closed" } {
   const index = s.tabs.findIndex((t) => t.id === id);
   if (index === -1) return { state: s, effect: "deleted" };

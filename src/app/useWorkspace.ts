@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Command } from "./shortcuts";
+import { detectPlatform, type Command } from "./shortcuts";
+import { pathKey } from "../files/api";
 import { BEFORE_EXIT_EVENT } from "./exit";
 import {
   logError,
@@ -33,6 +34,8 @@ import {
 
 const EMPTY: WorkspaceState = { tabs: [], activeId: "", closed: [] };
 const freshId = (): string => crypto.randomUUID();
+
+const platform = detectPlatform();
 
 export interface Workspace {
   state: WorkspaceState;
@@ -234,6 +237,7 @@ export function useWorkspace(): Workspace {
           id,
           isEmpty,
           Date.now(),
+          (p) => pathKey(p, platform),
         );
         contents.current.delete(id);
         onDisk.delete(id);
