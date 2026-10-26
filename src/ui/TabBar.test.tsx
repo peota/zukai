@@ -1,26 +1,65 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { TabBar } from "./TabBar";
+import { TabBar, type TabBarItem, type TabBarProps } from "./TabBar";
 
 beforeAll(() => {
   // jsdom has no layout; TabBar scrolls the active Tab into view.
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-function setup() {
+function setup(
+  tabs: TabBarItem[] = [
+    { id: "a", title: "First", active: true },
+    { id: "b", title: "Second", active: false },
+  ],
+  over: Partial<TabBarProps> = {},
+) {
   const props = {
-    tabs: [
-      { id: "a", title: "First", active: true },
-      { id: "b", title: "Second", active: false },
-    ],
+    tabs,
     onActivate: vi.fn(),
     onClose: vi.fn(),
     onNew: vi.fn(),
     onMove: vi.fn(),
     onRename: vi.fn(),
+    onContextMenu: vi.fn(),
+    ...over,
   };
   render(<TabBar {...props} />);
   return props;
+}
+
+const FILE_TABS: TabBarItem[] = [
+  { id: "a", title: "First", active: true },
+  {
+    id: "f",
+    title: "config.json",
+    active: false,
+    file: { missing: false, path: "C:/data/config.json" },
+  },
+  {
+    id: "m",
+    title: "old-notes.md",
+    active: false,
+    file: { missing: true, path: "C:/data/old-notes.md" },
+  },
+];
+
+/** jsdom has no layout: give each Tab a 100px-wide box, left to right. */
+function layOut() {
+  screen.getAllByRole("tab").forEach((el, i) => {
+    el.getBoundingClientRect = () =>
+      ({
+        left: i * 100,
+        right: i * 100 + 100,
+        width: 100,
+        top: 0,
+        bottom: 28,
+        height: 28,
+        x: i * 100,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect;
+  });
 }
 
 describe("TabBar", () => {
@@ -73,5 +112,130 @@ describe("TabBar", () => {
     const p = setup();
     fireEvent.click(screen.getByRole("button", { name: "New Tab" }));
     expect(p.onNew).toHaveBeenCalled();
+  });
+
+  it("a File Tab shows the FILE badge and its path on hover", () => {
+    setup(FILE_TABS);
+    const tab = screen.getByText("config.json").closest("[role=tab]")!;
+    expect(tab).toHaveTextContent("FILE");
+    expect(tab).toHaveAttribute("title", "C:/data/config.json");
+    const scratch = screen.getByText("First").closest("[role=tab]")!;
+    expect(scratch).not.toHaveTextContent("FILE");
+  });
+
+  it("a missing File's title is struck through", () => {
+    setup(FILE_TABS);
+    expect(screen.getByText("old-notes.md").className).toMatch(/line-through/);
+    expect(screen.getByText("config.json").className).not.toMatch(
+      /line-through/,
+    );
+  });
+
+  it("renaming a File edits only the stem; the extension stays", async () => {
+    const onRename = vi.fn().mockResolvedValue(null);
+    setup(FILE_TABS, { onRename });
+    fireEvent.doubleClick(screen.getByText("config.json"));
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    expect(input.value).toBe("config");
+    expect(screen.getByText(".json")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "settings" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    expect(onRename).toHaveBeenCalledWith("f", "settings");
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("a File rename error shows inline and keeps the field open", async () => {
+    const onRename = vi.fn().mockResolvedValue("settings.json already exists");
+    setup(FILE_TABS, { onRename });
+    fireEvent.doubleClick(screen.getByText("config.json"));
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "settings" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "settings.json already exists",
+    );
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("an unchanged File stem doesn't rename", async () => {
+    const onRename = vi.fn().mockResolvedValue(null);
+    setup(FILE_TABS, { onRename });
+    fireEvent.doubleClick(screen.getByText("config.json"));
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    });
+    expect(onRename).not.toHaveBeenCalled();
+  });
+
+  it("a locked Tab can't be renamed", () => {
+    const p = setup([
+      { id: "a", title: "First", active: true },
+      { ...FILE_TABS[1], locked: true },
+    ]);
+    fireEvent.doubleClick(screen.getByText("config.json"));
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(p.onRename).not.toHaveBeenCalled();
+  });
+
+  it("right-click opens the context menu for a Tab or the empty bar", () => {
+    const p = setup();
+    fireEvent.contextMenu(screen.getByText("Second"), {
+      clientX: 5,
+      clientY: 6,
+    });
+    expect(p.onContextMenu).toHaveBeenCalledWith("b", 5, 6);
+    fireEvent.contextMenu(screen.getByRole("tablist"), {
+      clientX: 7,
+      clientY: 8,
+    });
+    expect(p.onContextMenu).toHaveBeenLastCalledWith(null, 7, 8);
+  });
+
+  it("dragging a Tab with the pointer moves it", () => {
+    const p = setup([
+      { id: "a", title: "First", active: true },
+      { id: "b", title: "Second", active: false },
+      { id: "c", title: "Third", active: false },
+    ]);
+    layOut();
+    const first = screen.getByText("First").closest("[role=tab]")!;
+    fireEvent.pointerDown(first, { button: 0, pointerId: 1, clientX: 50 });
+    fireEvent.pointerMove(first, { pointerId: 1, clientX: 120 });
+    fireEvent.pointerMove(first, { pointerId: 1, clientX: 260 });
+    fireEvent.pointerUp(first, { pointerId: 1, clientX: 260 });
+    // Its centre (50 + 210) is past Third's (250): last place.
+    expect(p.onMove).toHaveBeenCalledWith("a", 2);
+    fireEvent.click(first);
+    expect(p.onActivate).not.toHaveBeenCalled();
+  });
+
+  it("a small pointer wobble is still a click", () => {
+    const p = setup();
+    layOut();
+    const second = screen.getByText("Second").closest("[role=tab]")!;
+    fireEvent.pointerDown(second, { button: 0, pointerId: 1, clientX: 150 });
+    fireEvent.pointerMove(second, { pointerId: 1, clientX: 152 });
+    fireEvent.pointerUp(second, { pointerId: 1, clientX: 152 });
+    fireEvent.click(second);
+    expect(p.onMove).not.toHaveBeenCalled();
+    expect(p.onActivate).toHaveBeenCalledWith("b");
+  });
+
+  it("Esc cancels a pointer drag", () => {
+    const p = setup();
+    layOut();
+    const first = screen.getByText("First").closest("[role=tab]")!;
+    fireEvent.pointerDown(first, { button: 0, pointerId: 1, clientX: 50 });
+    fireEvent.pointerMove(first, { pointerId: 1, clientX: 200 });
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.pointerUp(first, { pointerId: 1, clientX: 200 });
+    expect(p.onMove).not.toHaveBeenCalled();
   });
 });
