@@ -168,9 +168,9 @@ export function restoreWorkspace(
   scratchpadIds: string[],
   freshId: () => string,
   now: number,
-  closedFiles: ClosedFile[] | null = null,
-  grantedPaths: ReadonlySet<string> | null = null,
-  keyOf: (path: string) => string = (p) => p,
+  closedFiles: ClosedFile[] | null,
+  grantedPaths: ReadonlySet<string> | null,
+  keyOf: (path: string) => string,
 ): { state: WorkspaceState; expired: ClosedEntry[] } {
   const raw = file ?? { tabs: [], activeId: "", closed: [] };
   // Rust refuses to save a Session naming a File it hasn't granted.
