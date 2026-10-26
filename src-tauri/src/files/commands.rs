@@ -1,5 +1,9 @@
 //! Tauri commands on user Files. Every path the webview sends must already be
 //! in the `Grants` allowlist; only the dialogs (shown from Rust) add to it here.
+//!
+//! Grant checks canonicalize paths, so they run inside `blocking` with the
+//! rest of the file work: a slow or unreachable path never stalls the async
+//! runtime, and the grants lock is never held across a file system call.
 
 use super::FileError;
 use super::encoding::FileFormat;
@@ -7,16 +11,16 @@ use super::fingerprint::{self, Fingerprint};
 use super::grants::Grants;
 use super::io::{self, FileRead, WriteOutcome};
 use std::path::{Path, PathBuf};
-use tauri::{State, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
-/// Runs blocking file work off the async runtime.
-async fn blocking<T, F>(f: F) -> Result<T, FileError>
+/// Runs blocking file work, with the allowlist, off the async runtime.
+async fn blocking<T, F>(app: AppHandle, f: F) -> Result<T, FileError>
 where
     T: Send + 'static,
-    F: FnOnce() -> Result<T, FileError> + Send + 'static,
+    F: FnOnce(&Grants) -> Result<T, FileError> + Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(f)
+    tauri::async_runtime::spawn_blocking(move || f(&app.state::<Grants>()))
         .await
         .map_err(|e| FileError::Io(std::io::Error::other(e)))?
 }
@@ -33,44 +37,48 @@ fn dialog_path(p: FilePath) -> Result<PathBuf, FileError> {
         .map_err(|e| FileError::Io(std::io::Error::other(e.to_string())))
 }
 
+/// Grants a path the user chose in a dialog and returns its canonical string.
+fn grant_picked(grants: &Grants, p: FilePath) -> Result<String, FileError> {
+    path_string(&grants.grant(&dialog_path(p)?)?)
+}
+
 #[tauri::command]
-pub async fn file_read(grants: State<'_, Grants>, path: String) -> Result<FileRead, FileError> {
-    let p = grants.check(&path)?;
-    blocking(move || io::read_file(&p)).await
+pub async fn file_read(app: AppHandle, path: String) -> Result<FileRead, FileError> {
+    blocking(app, move |g| io::read_file(&g.check(&path)?)).await
 }
 
 #[tauri::command]
 pub async fn file_reread_as(
-    grants: State<'_, Grants>,
+    app: AppHandle,
     path: String,
     encoding: String,
 ) -> Result<FileRead, FileError> {
-    let p = grants.check(&path)?;
-    blocking(move || io::reread_as(&p, &encoding)).await
+    blocking(app, move |g| io::reread_as(&g.check(&path)?, &encoding)).await
 }
 
 #[tauri::command]
 pub async fn file_write(
-    grants: State<'_, Grants>,
+    app: AppHandle,
     path: String,
     text: String,
     format: FileFormat,
     expected: Fingerprint,
 ) -> Result<WriteOutcome, FileError> {
-    let p = grants.check(&path)?;
-    blocking(move || io::write_file(&p, &text, &format, &expected)).await
+    blocking(app, move |g| {
+        io::write_file(&g.check(&path)?, &text, &format, &expected)
+    })
+    .await
 }
 
 /// `path` must have been granted by `file_pick_save`.
 #[tauri::command]
 pub async fn file_save_as(
-    grants: State<'_, Grants>,
+    app: AppHandle,
     path: String,
     text: String,
     format: FileFormat,
 ) -> Result<WriteOutcome, FileError> {
-    let p = grants.check(&path)?;
-    blocking(move || io::save_as(&p, &text, &format)).await
+    blocking(app, move |g| io::save_as(&g.check(&path)?, &text, &format)).await
 }
 
 /// Returns the new canonical path, which is granted. The old path stays
@@ -78,46 +86,55 @@ pub async fn file_save_as(
 /// may still name it.
 #[tauri::command]
 pub async fn file_rename(
-    grants: State<'_, Grants>,
+    app: AppHandle,
     path: String,
     new_stem: String,
 ) -> Result<String, FileError> {
-    let p = grants.check(&path)?;
-    let renamed = blocking(move || io::rename_no_replace(&p, &new_stem)).await?;
-    path_string(&grants.grant(&renamed)?)
+    blocking(app, move |g| {
+        let renamed = io::rename_no_replace(&g.check(&path)?, &new_stem)?;
+        path_string(&g.grant(&renamed)?)
+    })
+    .await
 }
 
+/// Over `MAX_OPEN_BYTES` the file isn't read: the fingerprint has the real
+/// mtime and size and an empty hash, which never matches (always "changed").
 #[tauri::command]
 pub async fn file_fingerprint(
-    grants: State<'_, Grants>,
+    app: AppHandle,
     path: String,
 ) -> Result<Option<Fingerprint>, FileError> {
-    let p = grants.check(&path)?;
-    blocking(move || Ok(fingerprint::fingerprint_of(&p)?)).await
+    blocking(app, move |g| {
+        Ok(fingerprint::fingerprint_of(&g.check(&path)?)?)
+    })
+    .await
 }
 
 /// The OS open dialog (multi-select). Grants and returns the chosen Files'
-/// canonical paths; cancelling returns none.
+/// canonical paths; cancelling returns none. A pick that can't be granted
+/// (a folder, a non-UTF-8 path) is skipped rather than failing the rest.
 #[tauri::command]
 pub async fn file_pick_open(
+    app: AppHandle,
     window: WebviewWindow,
-    grants: State<'_, Grants>,
 ) -> Result<Vec<String>, FileError> {
     let dialog = window.dialog().file().set_parent(&window);
-    let picked = blocking(move || Ok(dialog.blocking_pick_files())).await?;
-    let mut paths = Vec::new();
-    for p in picked.unwrap_or_default() {
-        paths.push(path_string(&grants.grant(&dialog_path(p)?)?)?);
-    }
-    Ok(paths)
+    blocking(app, move |g| {
+        let picked = dialog.blocking_pick_files().unwrap_or_default();
+        Ok(picked
+            .into_iter()
+            .filter_map(|p| grant_picked(g, p).ok())
+            .collect())
+    })
+    .await
 }
 
 /// The OS save dialog (which confirms any overwrite). Grants and returns the
 /// chosen path, or `None` if cancelled.
 #[tauri::command]
 pub async fn file_pick_save(
+    app: AppHandle,
     window: WebviewWindow,
-    grants: State<'_, Grants>,
     suggested_name: String,
 ) -> Result<Option<String>, FileError> {
     let dialog = window
@@ -125,8 +142,11 @@ pub async fn file_pick_save(
         .file()
         .set_parent(&window)
         .set_file_name(suggested_name);
-    let Some(picked) = blocking(move || Ok(dialog.blocking_save_file())).await? else {
-        return Ok(None);
-    };
-    Ok(Some(path_string(&grants.grant(&dialog_path(picked)?)?)?))
+    blocking(app, move |g| {
+        dialog
+            .blocking_save_file()
+            .map(|p| grant_picked(g, p))
+            .transpose()
+    })
+    .await
 }

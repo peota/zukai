@@ -1,8 +1,9 @@
 //! Cheap identity of a file's content: mtime + size, backed by an xxh3 hash.
 
+use super::io::read_capped;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, Metadata};
-use std::io::{self, Read};
+use std::io;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -33,22 +34,46 @@ pub fn from_parts(meta: &Metadata, bytes: &[u8]) -> Fingerprint {
     }
 }
 
-/// Fingerprint of the file at `path`, or `None` if it doesn't exist.
+/// The fingerprint of a file too large to read: its real mtime and size with
+/// an empty hash, which marks "never read" and never matches real content,
+/// so the UI always treats it as changed.
+pub fn unread(meta: &Metadata) -> Fingerprint {
+    Fingerprint {
+        mtime_ms: mtime_ms(meta),
+        size: meta.len(),
+        hash: String::new(),
+    }
+}
+
+/// Fingerprint of the file at `path`, or `None` if it doesn't exist. A file
+/// past `MAX_OPEN_BYTES` is not read: see `unread`.
 pub fn fingerprint_of(path: &Path) -> io::Result<Option<Fingerprint>> {
-    let mut f = match File::open(path) {
+    let f = match File::open(path) {
         Ok(f) => f,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e),
     };
     let meta = f.metadata()?;
-    let mut bytes = Vec::with_capacity(meta.len() as usize);
-    f.read_to_end(&mut bytes)?;
-    Ok(Some(from_parts(&meta, &bytes)))
+    Ok(Some(match read_capped(&f, meta.len())? {
+        Some(bytes) => from_parts(&meta, &bytes),
+        None => unread(&meta),
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fingerprint_of_over_cap_file_is_unread_and_never_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("big.txt");
+        let len = crate::files::io::MAX_OPEN_BYTES + 1;
+        File::create(&p).unwrap().set_len(len).unwrap();
+        let fp = fingerprint_of(&p).unwrap().unwrap();
+        assert_eq!(fp.size, len);
+        assert_eq!(fp.hash, "");
+    }
 
     #[test]
     fn fingerprint_missing_is_none_and_present_matches_content() {

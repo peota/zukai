@@ -6,6 +6,7 @@
 use super::FileError;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -13,7 +14,7 @@ use std::sync::{Mutex, MutexGuard};
 #[derive(Default)]
 pub struct Grants(Mutex<HashMap<String, PathBuf>>);
 
-/// The real path of `p`, without `\?\` verbatim prefixes on Windows. A path
+/// The real path of `p`, without `\\?\` verbatim prefixes on Windows. A path
 /// that doesn't exist yet (a Save As target) is its canonical parent joined
 /// with its file name.
 pub fn canonical(p: &Path) -> io::Result<PathBuf> {
@@ -76,49 +77,106 @@ impl Grants {
         Ok(path)
     }
 
-    /// The granted path `p` refers to, or `NotGranted`.
+    /// The granted path `p` refers to, or `NotGranted`. The lock is never
+    /// held across file system calls.
     pub fn check(&self, p: &str) -> Result<PathBuf, FileError> {
         let path = Path::new(p);
         if !path.is_absolute() {
             return Err(FileError::NotGranted);
         }
-        let map = self.map();
-        if let Some(granted) = map.get(&key(path)) {
+        if let Some(granted) = self.map().get(&key(path)) {
             return Ok(granted.clone());
         }
-        canonical(path)
-            .ok()
-            .and_then(|c| map.get(&key(&c)).cloned())
+        let canon = canonical(path).map_err(|_| FileError::NotGranted)?;
+        self.map()
+            .get(&key(&canon))
+            .cloned()
             .ok_or(FileError::NotGranted)
+    }
+
+    /// Like `check`, but `p` must be spelled exactly as the granted path.
+    /// A key match alone could be a different file (another case on a
+    /// case-sensitive folder, a Unicode case fold NTFS doesn't do).
+    pub fn check_exact(&self, p: &str) -> Result<PathBuf, FileError> {
+        let granted = self.check(p)?;
+        if granted.as_os_str() == OsStr::new(p) {
+            Ok(granted)
+        } else {
+            Err(FileError::NotGranted)
+        }
     }
 }
 
-/// The File paths in a Session JSON: `tabs[].file.path` and
-/// `closed[].tab.file.path`. Anything else (Scratchpads, a v1 Session,
-/// unknown shapes, invalid JSON) contributes none.
+/// The File path fields of a Session: `tabs[].file.path` and
+/// `closed[].tab.file.path`, when they hold strings. Anything else
+/// (Scratchpads, a v1 Session, unknown shapes) contributes none.
+fn path_slots(v: &mut Value) -> Vec<&mut Value> {
+    fn slot(tab: Option<&mut Value>) -> Option<&mut Value> {
+        let path = tab?.get_mut("file")?.get_mut("path")?;
+        path.is_string().then_some(path)
+    }
+    let (mut open, mut closed) = (Vec::new(), Vec::new());
+    let Some(obj) = v.as_object_mut() else {
+        return open;
+    };
+    // Fields are visited in map order; keep open Tabs before closed ones.
+    for (field, value) in obj.iter_mut() {
+        let Some(entries) = value.as_array_mut() else {
+            continue;
+        };
+        match field.as_str() {
+            "tabs" => open.extend(entries.iter_mut().filter_map(|t| slot(Some(t)))),
+            "closed" => closed.extend(entries.iter_mut().filter_map(|c| slot(c.get_mut("tab")))),
+            _ => {}
+        }
+    }
+    open.append(&mut closed);
+    open
+}
+
+/// The File paths in a Session JSON (see `path_slots`); none if it isn't JSON.
 pub fn extract_file_paths(json: &str) -> Vec<String> {
-    let Ok(v) = serde_json::from_str::<Value>(json) else {
+    let Ok(mut v) = serde_json::from_str::<Value>(json) else {
         return Vec::new();
     };
-    let entries = |field: &str| -> Vec<Value> {
-        v.get(field)
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
+    path_slots(&mut v)
+        .into_iter()
+        .filter_map(|p| p.as_str().map(str::to_owned))
+        .collect()
+}
+
+/// Grants every File path in the Session read from disk and rewrites each to
+/// its granted canonical spelling, so the UI holds exactly the strings
+/// `check_session` will accept (a File renamed in case, or reached through a
+/// changed symlink, would otherwise lock `session_write` out). A path that
+/// can't be granted is left as is. Unchanged JSON is returned verbatim.
+pub fn grant_session(grants: &Grants, json: String) -> String {
+    let Ok(mut v) = serde_json::from_str::<Value>(&json) else {
+        return json;
     };
-    let path_of = |tab: Option<&Value>| -> Option<String> {
-        tab?.get("file")?.get("path")?.as_str().map(str::to_owned)
-    };
-    let open = entries("tabs").into_iter().map(|t| path_of(Some(&t)));
-    let closed = entries("closed").into_iter().map(|c| path_of(c.get("tab")));
-    open.chain(closed).flatten().collect()
+    let mut changed = false;
+    for slot in path_slots(&mut v) {
+        let Some(path) = slot.as_str() else { continue };
+        let Ok(granted) = grants.grant(Path::new(path)) else {
+            continue;
+        };
+        if let Some(canon) = granted.to_str()
+            && canon != path
+        {
+            *slot = Value::String(canon.to_owned());
+            changed = true;
+        }
+    }
+    if changed { v.to_string() } else { json }
 }
 
 /// Refuses a Session that names a File the user never opened: otherwise the
-/// webview could grant itself paths through the next launch.
+/// webview could grant itself paths through the next launch. Each path must
+/// be byte-equal to its granted canonical path, because the next
+/// `session_read` grants exactly that spelling.
 pub fn check_session(grants: &Grants, json: &str) -> Result<(), FileError> {
     for path in extract_file_paths(json) {
-        grants.check(&path)?;
+        grants.check_exact(&path)?;
     }
     Ok(())
 }
@@ -234,6 +292,70 @@ mod tests {
         assert!(extract_file_paths(r#"{"tabs":[{"id":"a"}],"closed":[]}"#).is_empty());
         assert!(extract_file_paths("not json").is_empty());
         assert!(extract_file_paths(r#"{"tabs":{"file":{"path":"/x"}}}"#).is_empty());
+    }
+
+    #[test]
+    fn check_finds_other_spellings_of_a_granted_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let g = Grants::default();
+        let granted = g.grant(&abs(dir.path(), "a.txt")).unwrap();
+        let exact = granted.to_str().unwrap();
+        assert_eq!(g.check(exact).unwrap(), granted);
+        #[cfg(any(windows, target_os = "macos"))]
+        assert_eq!(g.check(&exact.to_uppercase()).unwrap(), granted);
+        #[cfg(windows)]
+        assert_eq!(g.check(&format!(r"\\?\{exact}")).unwrap(), granted);
+    }
+
+    #[test]
+    fn check_session_requires_the_exact_granted_spelling() {
+        let dir = tempfile::tempdir().unwrap();
+        let g = Grants::default();
+        let granted = g.grant(&abs(dir.path(), "a.txt")).unwrap();
+        let exact = granted.to_str().unwrap().to_owned();
+        let session = |path: &str| {
+            serde_json::json!({ "tabs": [{ "file": { "path": path } }], "closed": [] }).to_string()
+        };
+        assert!(check_session(&g, &session(&exact)).is_ok());
+        let upper = exact.replace("a.txt", "A.TXT");
+        assert!(matches!(
+            check_session(&g, &session(&upper)),
+            Err(FileError::NotGranted)
+        ));
+        #[cfg(windows)]
+        assert!(matches!(
+            check_session(&g, &session(&format!(r"\\?\{exact}"))),
+            Err(FileError::NotGranted)
+        ));
+    }
+
+    #[test]
+    fn grant_session_grants_and_canonicalizes_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        let a = abs(dir.path(), "a.txt");
+        let b = abs(dir.path(), "b.txt");
+        let roundabout = dir.path().join("sub").join("..").join("a.txt");
+        let g = Grants::default();
+        let canon_b = canonical(&b).unwrap();
+        let json = serde_json::json!({
+            "tabs": [{ "id": "s" }, { "file": { "path": roundabout } }],
+            "closed": [{ "tab": { "file": { "path": canon_b } } }],
+        })
+        .to_string();
+
+        let out = grant_session(&g, json);
+        let canon_a = canonical(&a).unwrap();
+        assert_eq!(
+            extract_file_paths(&out),
+            [canon_a.to_str().unwrap(), canon_b.to_str().unwrap()]
+        );
+        assert!(check_session(&g, &out).is_ok());
+
+        // Nothing to rewrite: returned byte for byte.
+        let v1 = r#"{ "tabs": [ {"id":"a"} ], "closed": [] }"#.to_string();
+        assert_eq!(grant_session(&g, v1.clone()), v1);
+        assert_eq!(grant_session(&g, "not json".into()), "not json");
     }
 
     #[test]
