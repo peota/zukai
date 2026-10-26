@@ -28,13 +28,84 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis",
+      "dmg",
+      "deb",
+      "appimage"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "fileAssociations": [
+      {
+        "name": "Text and Markdown",
+        "description": "Text or Markdown document",
+        "role": "Editor",
+        "ext": [
+          "txt",
+          "md",
+          "markdown",
+          "log"
+        ]
+      },
+      {
+        "name": "Data and Config",
+        "description": "Data or configuration file",
+        "role": "Editor",
+        "ext": [
+          "json",
+          "jsonc",
+          "xml",
+          "yaml",
+          "yml",
+          "ini",
+          "toml",
+          "conf",
+          "cfg",
+          "env",
+          "sql"
+        ]
+      },
+      {
+        "name": "Web and Source Code",
+        "description": "Source code file",
+        "role": "Editor",
+        "ext": [
+          "js",
+          "mjs",
+          "cjs",
+          "ts",
+          "tsx",
+          "jsx",
+          "css",
+          "html",
+          "htm",
+          "py"
+        ]
+      },
+      {
+        "name": "Shell and Batch Scripts",
+        "description": "Script file",
+        "role": "Editor",
+        "ext": [
+          "sh",
+          "bash",
+          "zsh",
+          "bat",
+          "cmd",
+          "ps1"
+        ]
+      }
     ]
   }
 }
