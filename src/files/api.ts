@@ -97,6 +97,10 @@ export const fileWatch = (paths: string[]): Promise<void> =>
 export const takeLaunchPaths = (): Promise<OpenPaths> =>
   invoke<OpenPaths>("take_launch_paths");
 
+/** The Session File paths Rust granted under exactly that spelling. */
+export const grantsFilter = (paths: string[]): Promise<string[]> =>
+  invoke<string[]>("grants_filter", { paths });
+
 export const onFileChanged = (
   cb: (e: FileChanged) => void,
 ): Promise<UnlistenFn> =>

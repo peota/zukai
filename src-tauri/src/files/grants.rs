@@ -107,6 +107,15 @@ impl Grants {
     }
 }
 
+/// The paths in `paths` that are granted under exactly that spelling, in
+/// order: the File paths of a Session the webview may keep and save back.
+pub fn filter_exact(grants: &Grants, paths: Vec<String>) -> Vec<String> {
+    paths
+        .into_iter()
+        .filter(|p| grants.check_exact(p).is_ok())
+        .collect()
+}
+
 /// The File path fields of a Session: `tabs[].file.path` and
 /// `closed[].tab.file.path`, when they hold strings. Anything else
 /// (Scratchpads, a v1 Session, unknown shapes) contributes none.
@@ -356,6 +365,27 @@ mod tests {
         let v1 = r#"{ "tabs": [ {"id":"a"} ], "closed": [] }"#.to_string();
         assert_eq!(grant_session(&g, v1.clone()), v1);
         assert_eq!(grant_session(&g, "not json".into()), "not json");
+    }
+
+    #[test]
+    fn filter_exact_keeps_only_exactly_granted_spellings() {
+        let dir = tempfile::tempdir().unwrap();
+        let g = Grants::default();
+        let a = g.grant(&abs(dir.path(), "a.txt")).unwrap();
+        let b = abs(dir.path(), "b.txt");
+        let exact = a.to_str().unwrap().to_owned();
+        let upper = exact.replace("a.txt", "A.TXT");
+        let out = filter_exact(
+            &g,
+            vec![
+                exact.clone(),
+                b.to_str().unwrap().to_owned(),
+                upper,
+                "relative.txt".into(),
+                exact.clone(),
+            ],
+        );
+        assert_eq!(out, [exact.clone(), exact]);
     }
 
     #[test]

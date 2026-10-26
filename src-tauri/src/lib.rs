@@ -220,6 +220,7 @@ pub fn run() {
             files::commands::file_fingerprint,
             files::commands::file_pick_open,
             files::commands::file_pick_save,
+            files::commands::grants_filter,
             files::watch::file_watch,
             files::open_paths::take_launch_paths,
             app_exit_after_flush,
