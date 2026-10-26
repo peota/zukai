@@ -35,7 +35,12 @@ import {
   highlightSelectionMatches,
   selectNextOccurrence,
 } from "@codemirror/search";
-import type { FileFormat, LanguageId, TabState } from "../model/types";
+import type {
+  FileFormat,
+  FileInfo,
+  LanguageId,
+  TabState,
+} from "../model/types";
 import { zukaiTheme } from "./theme";
 import { loadLanguage } from "./languages";
 import { GUESS_PREFIX, guessLanguage } from "./guess";
@@ -242,6 +247,12 @@ export function EditorHost(props: EditorHostProps) {
   const [bar, setBar] = useState<OpenBar | null>(null);
   const views = useRef(new Map<string, Entry>());
   const creating = useRef(new Set<string>());
+  /**
+   * Converts issued before the Tab's view existed, applied (undoably) once it
+   * does. Never patched directly: that couldn't be undone, and the Tab's
+   * text might not be loaded yet.
+   */
+  const heldConverts = useRef(new Map<string, Partial<FileFormat>>());
   /** Per Tab, the newest replace `seq` applied (or known to be stale). */
   const replaced = useRef(new Map<string, number>());
   /** Latest props, for listeners and async callbacks. */
@@ -398,6 +409,13 @@ export function EditorHost(props: EditorHostProps) {
     }
   };
 
+  /** A Convert as an undoable step (reported by the listener). */
+  const applyConvert = (e: Entry, file: FileInfo, patch: Partial<FileFormat>) =>
+    e.view.dispatch({
+      effects: setFormat.of({ ...file.format, ...patch }),
+      annotations: isolateHistory.of("full"),
+    });
+
   /** Open (or refocus) the find bar on a Tab's view. */
   const openBar = (id: string, mode: FindMode) => {
     const e = views.current.get(id);
@@ -505,6 +523,9 @@ export function EditorHost(props: EditorHostProps) {
   useEffect(() => {
     const ids = new Set(tabs.map((t) => t.id));
     for (const [id, e] of views.current) if (!ids.has(id)) destroy(id, e);
+    for (const id of heldConverts.current.keys()) {
+      if (!ids.has(id)) heldConverts.current.delete(id);
+    }
 
     showActive();
     if (!activeId || views.current.has(activeId)) return;
@@ -527,6 +548,10 @@ export function EditorHost(props: EditorHostProps) {
         const done = replaced.current.get(id) ?? 0;
         replaced.current.set(id, Math.max(done, known));
         applyReplaces();
+        const patch = heldConverts.current.get(id);
+        heldConverts.current.delete(id);
+        if (patch && tab.file)
+          applyConvert(e, tabOf(id)?.file ?? tab.file, patch);
         showActive();
       })
       .catch((err: unknown) => console.error("load scratchpad failed", err))
@@ -581,16 +606,14 @@ export function EditorHost(props: EditorHostProps) {
     const { id, patch } = convertRequest;
     const file = tabOf(id)?.file;
     if (!file) return;
-    const format = { ...file.format, ...patch };
     const e = views.current.get(id);
     if (!e) {
-      latest.current.onTabPatch(id, { file: { ...file, format } });
+      // Held until the view exists (its text has loaded by then).
+      const held = heldConverts.current.get(id);
+      heldConverts.current.set(id, { ...held, ...patch });
       return;
     }
-    e.view.dispatch({
-      effects: setFormat.of(format),
-      annotations: isolateHistory.of("full"),
-    });
+    applyConvert(e, file, patch);
   }, [convertRequest]);
 
   // Beautify / Minify the active JSON Tab.

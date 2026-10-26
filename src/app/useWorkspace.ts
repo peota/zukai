@@ -112,10 +112,13 @@ export function useWorkspace(): Workspace {
           shadowDelete,
           // A Tab whose shadow is unread is never written (see useFiles).
           isUnreadable: (tid) => keptShadows.has(tid),
+          // Never write text that isn't the Tab's: a defence for any path
+          // that schedules a write before the text loaded.
+          isLoaded: (tid) => contents.has(tid),
           onWritten: (tid, written) => onDisk.set(tid, written),
         })(id, text),
       ),
-    [commit, keptShadows, lock, onDisk],
+    [commit, contents, keptShadows, lock, onDisk],
   );
   // createSaver only stores writeDoc; refs are read when a write runs.
   // eslint-disable-next-line react-hooks/refs

@@ -231,10 +231,29 @@ export function useFiles(
     [contents, onDisk],
   );
 
-  /** Get the Tab's text into its shadow soon (it's held now). */
+  /** Loads a Tab's text; set below (loadContent is defined later). */
+  const loadRef = useRef<(id: string) => Promise<string>>(() =>
+    Promise.reject(new Error("not ready")),
+  );
+
+  /**
+   * Get the Tab's text written soon (to its shadow while held, otherwise to
+   * the File). Never before its text loaded: the write would carry "".
+   */
   const keepAside = useCallback(
-    (id: string) => saver.schedule(id, () => contents.get(id) ?? ""),
-    [contents, saver],
+    (id: string) => {
+      const schedule = () => {
+        if (
+          !contents.has(id) ||
+          !stateRef.current.tabs.some((t) => t.id === id)
+        )
+          return;
+        saver.schedule(id, () => contents.get(id) ?? "");
+      };
+      if (contents.has(id)) return schedule();
+      void loadRef.current(id).then(schedule, logError("load for write"));
+    },
+    [contents, saver, stateRef],
   );
 
   const hold = useCallback(
@@ -387,6 +406,10 @@ export function useFiles(
     },
     [contents, keepTitle, onDisk, readFileText, tabOf],
   );
+
+  useEffect(() => {
+    loadRef.current = loadContent;
+  }, [loadContent]);
 
   // --- Opening -------------------------------------------------------------
 
@@ -613,14 +636,18 @@ export function useFiles(
   );
 
   const loadDiskVersion = useCallback(
-    (id: string) =>
-      lock(id, () => {
+    async (id: string) => {
+      // Its text first: a Missing or failed read keeps (and writes) the
+      // Tab's text, which must be the real one, never "".
+      await loadContent(id);
+      await lock(id, () => {
         const path = tabOf(id)?.file?.path;
         return path
           ? reloadLocked(id, () => readDisk(path))
           : Promise.resolve();
-      }),
-    [lock, reloadLocked, tabOf],
+      });
+    },
+    [loadContent, lock, reloadLocked, tabOf],
   );
 
   const saveToOriginal = useCallback(
@@ -710,7 +737,7 @@ export function useFiles(
     [],
   );
 
-  const updateTab = useCallback(
+  const applyTabPatch = useCallback(
     (id: string, patch: Partial<TabState>) => {
       const cur = tabOf(id)?.file;
       if (!patch.file || !cur) {
@@ -737,6 +764,22 @@ export function useFiles(
       if (changed) keepAside(id);
     },
     [commit, keepAside, refuseUnreadable, stateRef, tabOf],
+  );
+
+  const updateTab = useCallback(
+    (id: string, patch: Partial<TabState>) => {
+      // A Convert needs the Tab's text (it is written right away), and a held
+      // Tab's text is its shadow, read only while it is still held: apply it
+      // once the text has loaded, never before.
+      if (patch.file && tabOf(id)?.file && !contents.has(id)) {
+        void loadContent(id).then(() => {
+          if (contents.has(id)) applyTabPatch(id, patch);
+        }, logError("load for convert"));
+        return;
+      }
+      applyTabPatch(id, patch);
+    },
+    [applyTabPatch, contents, loadContent, tabOf],
   );
 
   // --- Save, Save As, rename -----------------------------------------------
