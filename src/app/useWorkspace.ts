@@ -21,12 +21,7 @@ import {
   useFlushOnBlur,
   useWindowTitle,
 } from "./workspaceEffects";
-import type {
-  FileFormat,
-  FileInfo,
-  TabState,
-  WorkspaceState,
-} from "../model/types";
+import type { FileFormat, TabState, WorkspaceState } from "../model/types";
 import type { FindRequest } from "../find/findExtension";
 import * as ws from "../model/workspace";
 import { deriveTitle } from "../model/title";
@@ -99,7 +94,7 @@ export function useWorkspace(): Workspace {
     setState(next);
   }, []);
 
-  const [keptShadows] = useState(() => new Map<string, FileInfo["held"]>());
+  const [keptShadows] = useState(() => new Set<string>());
   /** Per-Tab lock shared by autosave writes and File actions. */
   const [lock] = useState(createKeyedLock);
   /** The Saver's write: scratchpad, File or shadow (the writer is stateless). */
@@ -189,18 +184,19 @@ export function useWorkspace(): Workspace {
   });
   const { internal, ...filesApi } = files;
   const { loadContent, updateTab, afterRestore, closeFile } = internal;
+  const { refuseEdit } = internal;
   const { renameFile, reopenEntry, pickAndOpen, save, saveAs } = files;
   const { requestFormat } = files;
 
   const setContent = useCallback(
     (id: string, text: string) => {
       // The editor reports a reload's own text back: nothing new to write.
-      if (contents.get(id) === text) return;
+      if (contents.get(id) === text || refuseEdit(id)) return;
       contents.set(id, text);
       saver.schedule(id, () => contents.get(id) ?? text);
       keepTitle(id, text);
     },
-    [contents, saver, keepTitle],
+    [contents, saver, keepTitle, refuseEdit],
   );
 
   const activate = useCallback(
