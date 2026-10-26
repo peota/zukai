@@ -2,7 +2,7 @@
 
 use super::FileError;
 use super::encoding::{Decoded, EncodeError, FileFormat, decode_as, detect_and_decode, encode};
-use super::fingerprint::{self, Fingerprint, mtime_ms};
+use super::fingerprint::{self, Fingerprint};
 use crate::storage::atomic::atomic_write_with_mode;
 use serde::Serialize;
 use std::ffi::OsString;
@@ -53,7 +53,7 @@ fn read_bytes(path: &Path) -> Result<(Vec<u8>, Fingerprint), FileError> {
 
 /// Reads the whole file, or returns `None` without reading if its metadata
 /// length `len` is past `MAX_OPEN_BYTES` (or it grows past it while reading).
-fn read_capped(f: &File, len: u64) -> io::Result<Option<Vec<u8>>> {
+pub(crate) fn read_capped(f: &File, len: u64) -> io::Result<Option<Vec<u8>>> {
     if len > MAX_OPEN_BYTES {
         return Ok(None);
     }
@@ -185,11 +185,7 @@ pub fn write_file(
         // conflict, whatever `expected` says (even a fingerprint from an
         // earlier over-cap Conflict). The empty hash marks "never read".
         return Ok(WriteOutcome::Conflict {
-            fingerprint: Fingerprint {
-                mtime_ms: mtime_ms(&meta),
-                size: meta.len(),
-                hash: String::new(),
-            },
+            fingerprint: fingerprint::unread(&meta),
         });
     };
     let disk = fingerprint::from_parts(&meta, &disk_bytes);

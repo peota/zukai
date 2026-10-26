@@ -1,6 +1,6 @@
 use crate::files::grants::{self, Grants};
 use crate::storage::{self, Result, StorageError, scratchpads, session, shadow};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
 async fn blocking<T, F>(app: AppHandle, f: F) -> Result<T>
@@ -61,21 +61,17 @@ pub async fn scratchpad_purge_closed(app: AppHandle, ids: Vec<String>) -> Result
     blocking(app, move |b| scratchpads::purge_closed(&b, &ids)).await
 }
 
-/// Grants every File path in the Session before the UI sees it: the Session
-/// on disk is one of the Rust-side sources of grants. A path that can't be
-/// granted (now a folder, say) is skipped; the UI finds out when it opens it.
+/// Grants every File path in the Session before the UI sees it (the Session
+/// on disk is one of the Rust-side sources of grants), rewriting each to its
+/// canonical spelling so `session_write` accepts it back. A path that can't
+/// be granted (now a folder, say) is left as is; the UI finds out when it
+/// opens it.
 #[tauri::command]
 pub async fn session_read(app: AppHandle) -> Result<Option<String>> {
     let handle = app.clone();
     blocking(app, move |b| {
         let json = session::read(&b)?;
-        if let Some(json) = &json {
-            let grants = handle.state::<Grants>();
-            for path in grants::extract_file_paths(json) {
-                let _ = grants.grant(Path::new(&path));
-            }
-        }
-        Ok(json)
+        Ok(json.map(|json| grants::grant_session(&handle.state::<Grants>(), json)))
     })
     .await
 }
