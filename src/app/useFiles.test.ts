@@ -824,6 +824,71 @@ describe("useFiles text not loaded yet (final fix I2)", () => {
   });
 });
 
+describe("useFiles shadows the Session doesn't know are held (final fix I3)", () => {
+  it("a shadow for a non-held Tab at restart holds the Tab with its text", async () => {
+    // A crash between the shadow write and the (debounced) Session save.
+    shadows.f = "unsaved";
+    s.readSession.mockResolvedValue(
+      sessionJson([fileTab("f", P), newTabState("a")]),
+    );
+    const { result } = await mount();
+    expect(fileTabOf(result)!.file!.held).toBe("conflict");
+    expect(await result.current.loadContent("f")).toBe("unsaved");
+    await settle();
+    expect(shadows.f).toBe("unsaved");
+    expect(f.shadowDelete).not.toHaveBeenCalledWith("f");
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(disk[P].text).toBe("{}");
+  });
+
+  it("holds it Missing when its File is gone", async () => {
+    shadows.f = "unsaved";
+    delete disk[P];
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), fileTab("f", P, { held: "readonly" })]),
+    );
+    const { result } = await mount();
+    expect(fileTabOf(result)!.file!.held).toBe("missing");
+    expect(await result.current.loadContent("f")).toBe("unsaved");
+    await settle();
+    expect(shadows.f).toBe("unsaved");
+  });
+
+  it("does the same for a Recently Closed entry", async () => {
+    shadows.f = "unsaved";
+    s.readSession.mockResolvedValue(
+      sessionJson(
+        [newTabState("a")],
+        [{ tab: fileTab("f", P), index: 1, closedAt: Date.now() }],
+      ),
+    );
+    const { result } = await mount();
+    expect(result.current.state.closed[0].tab.file!.held).toBe("conflict");
+    expect(shadows.f).toBe("unsaved");
+    await act(() => result.current.run({ type: "reopenTab" }));
+    expect(fileTabOf(result)!.file!.held).toBe("conflict");
+    expect(await result.current.loadContent("f")).toBe("unsaved");
+    expect(shadows.f).toBe("unsaved");
+  });
+
+  it("saves the Session at once when a Tab becomes held", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    s.writeSession.mockClear();
+    disk[P] = { text: "theirs", hash: "h2" };
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
+    // Well inside the 500 ms Session debounce.
+    await act(() => new Promise((res) => setTimeout(res, 50)));
+    expect(
+      s.writeSession.mock.calls.some(([json]) =>
+        json.includes('"held":"conflict"'),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("useFiles interleavings (fix round 1)", () => {
   it("typing during a reload's read becomes a conflict, keeping the text", async () => {
     const { result } = await mount();

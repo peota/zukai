@@ -40,6 +40,23 @@ import {
 } from "../storage/autosave";
 
 const EMPTY: WorkspaceState = { tabs: [], activeId: "", closed: [] };
+
+/** True if any Tab or Recently Closed entry changed whether it is held. */
+function heldChanged(a: WorkspaceState, b: WorkspaceState): boolean {
+  if (a.tabs === b.tabs && a.closed === b.closed) return false;
+  const held = (s: WorkspaceState) => {
+    const m = new Map<string, string | null>();
+    for (const t of s.tabs) if (t.file) m.set(t.id, t.file.held);
+    for (const e of s.closed) {
+      if (e.tab.file) m.set(`closed:${e.tab.id}`, e.tab.file.held);
+    }
+    return m;
+  };
+  const x = held(a);
+  const y = held(b);
+  for (const [k, v] of y) if (x.has(k) && x.get(k) !== v) return true;
+  return false;
+}
 const freshId = (): string => crypto.randomUUID();
 
 const platform = detectPlatform();
@@ -88,11 +105,32 @@ export function useWorkspace(): Workspace {
   /** Close/reopen operations in flight; exit waits for them. */
   const inFlight = useRef(new Set<Promise<void>>());
 
-  /** Every state change goes through here so async code sees it at once. */
-  const commit = useCallback((next: WorkspaceState) => {
-    stateRef.current = next;
-    setState(next);
+  const scheduleSession = useCallback(() => {
+    sessionSaver.schedule(SESSION_ID, () =>
+      JSON.stringify(toSessionFile(stateRef.current)),
+    );
   }, []);
+
+  /** Write session.json now, so it agrees with a file just moved on disk. */
+  const saveSessionNow = useCallback(async () => {
+    scheduleSession();
+    await sessionSaver.flush(SESSION_ID).catch(logError("save session"));
+  }, [scheduleSession]);
+
+  /**
+   * Every state change goes through here so async code sees it at once. A
+   * Tab becoming held or released saves the Session at once: its shadow and
+   * session.json must agree if Zukai stops right after.
+   */
+  const commit = useCallback(
+    (next: WorkspaceState) => {
+      const prev = stateRef.current;
+      stateRef.current = next;
+      setState(next);
+      if (readyRef.current && heldChanged(prev, next)) void saveSessionNow();
+    },
+    [saveSessionNow],
+  );
 
   const [keptShadows] = useState(() => new Set<string>());
   /** Per-Tab lock shared by autosave writes and File actions. */
@@ -140,18 +178,6 @@ export function useWorkspace(): Workspace {
   const saveStatus = useCombinedSaveStatus(savers);
   useExitHandshake(savers, settleInFlight);
   useFlushOnBlur(savers);
-
-  const scheduleSession = useCallback(() => {
-    sessionSaver.schedule(SESSION_ID, () =>
-      JSON.stringify(toSessionFile(stateRef.current)),
-    );
-  }, []);
-
-  /** Write session.json now, so it agrees with a file just moved on disk. */
-  const saveSessionNow = useCallback(async () => {
-    scheduleSession();
-    await sessionSaver.flush(SESSION_ID).catch(logError("save session"));
-  }, [scheduleSession]);
 
   const keepTitle = useCallback(
     (id: string, text: string) => {

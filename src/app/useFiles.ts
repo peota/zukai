@@ -1056,9 +1056,12 @@ export function useFiles(
   // --- Restore -------------------------------------------------------------
 
   /**
-   * A shadow file that no Tab or Recently Closed entry refers to (its entry
-   * was dropped) is recovered as a new Scratchpad, then deleted: unsaved text
-   * is never thrown away.
+   * Shadow files are unsaved text, never thrown away:
+   * - One whose File Tab (or Recently Closed entry) the Session doesn't say is
+   *   held (a crash before the Session was saved) holds that Tab: a Disk
+   *   conflict if the File exists, Missing if not, with the shadow as its text.
+   * - One that no Tab or entry refers to (its entry was dropped) is recovered
+   *   as a new Scratchpad, then deleted.
    */
   const afterRestore = useCallback(
     async (state: WorkspaceState): Promise<WorkspaceState> => {
@@ -1069,11 +1072,36 @@ export function useFiles(
         logError("list shadows")(err);
         return state;
       }
+      const shadowed = new Set(ids);
+      const holdIfShadowed = async (tab: TabState): Promise<TabState> => {
+        const file = tab.file;
+        if (!file || !shadowed.has(tab.id)) return tab;
+        if (file.held !== null && file.held !== "readonly") return tab;
+        let gone = false;
+        try {
+          gone = (await fileFingerprint(file.path)) === null;
+        } catch (err) {
+          logError("check file")(err);
+        }
+        return {
+          ...tab,
+          file: { ...file, held: gone ? "missing" : "conflict" },
+        };
+      };
+      let next: WorkspaceState = {
+        ...state,
+        tabs: await Promise.all(state.tabs.map(holdIfShadowed)),
+        closed: await Promise.all(
+          state.closed.map(async (e) => ({
+            ...e,
+            tab: await holdIfShadowed(e.tab),
+          })),
+        ),
+      };
       const known = new Set([
         ...state.tabs.map((t) => t.id),
         ...state.closed.map((e) => e.tab.id),
       ]);
-      let next = state;
       for (const orphan of ids.filter((id) => !known.has(id))) {
         try {
           const text = await shadowRead(orphan);
