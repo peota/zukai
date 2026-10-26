@@ -101,13 +101,13 @@ describe("restoreSession", () => {
     expect(m.backupSession).not.toHaveBeenCalled();
   });
 
-  it("purges closed files older than 30 days found only on disk", async () => {
+  it("keeps old closed files found only on disk instead of purging them", async () => {
     m.listClosedScratchpads.mockResolvedValue([
       { id: "old", modifiedMs: Date.now() - 31 * 24 * 60 * 60 * 1000 },
     ]);
     const state = await restoreSession(fresh);
-    expect(m.purgeClosed).toHaveBeenCalledWith(["old"]);
-    expect(state.closed).toEqual([]);
+    expect(m.purgeClosed).not.toHaveBeenCalled();
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["old"]);
   });
 
   it("keeps the Session's closed list when closed/ cannot be listed", async () => {

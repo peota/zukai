@@ -13,6 +13,10 @@ static FLUSHED: AtomicBool = AtomicBool::new(false);
 /// True while an exit watchdog thread is pending.
 static WATCHDOG_PENDING: AtomicBool = AtomicBool::new(false);
 
+/// Set when the frontend reports a failed first flush; the pending watchdog
+/// then skips its forced exit.
+static WATCHDOG_CANCELLED: AtomicBool = AtomicBool::new(false);
+
 /// If the frontend never answers `before-exit`, force the exit after this long.
 pub const EXIT_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -25,6 +29,18 @@ pub const BEFORE_EXIT_EVENT: &str = "zukai://before-exit";
 fn app_exit_after_flush(app: AppHandle) {
     FLUSHED.store(true, Ordering::SeqCst);
     app.exit(0);
+}
+
+/// The first flush failed and the app stays open: cancel the pending watchdog
+/// and re-arm so the next quit request starts a fresh one.
+#[tauri::command]
+fn exit_flush_failed() {
+    cancel_watchdog();
+}
+
+fn cancel_watchdog() {
+    WATCHDOG_CANCELLED.store(true, Ordering::SeqCst);
+    WATCHDOG_PENDING.store(false, Ordering::SeqCst);
 }
 
 /// Record a startup milestone reached in the frontend (restore, show).
@@ -44,9 +60,13 @@ fn log_startup(app: &AppHandle, message: &str) {
 fn request_exit(app: &AppHandle) {
     let _ = app.emit(BEFORE_EXIT_EVENT, ());
     if !WATCHDOG_PENDING.swap(true, Ordering::SeqCst) {
+        WATCHDOG_CANCELLED.store(false, Ordering::SeqCst);
         let app = app.clone();
         std::thread::spawn(move || {
             std::thread::sleep(EXIT_FLUSH_TIMEOUT);
+            if WATCHDOG_CANCELLED.swap(false, Ordering::SeqCst) {
+                return;
+            }
             FLUSHED.store(true, Ordering::SeqCst);
             app.exit(0);
         });
@@ -164,6 +184,7 @@ pub fn run() {
             commands::session_write,
             commands::session_backup,
             app_exit_after_flush,
+            exit_flush_failed,
             app_startup_mark,
         ])
         .build(tauri::generate_context!())
