@@ -9,6 +9,8 @@ export interface TabContextMenuProps {
   y: number;
   /** The right-clicked Tab, or null for the empty part of the tab bar. */
   tabId: string | null;
+  /** Open Tabs: "Close other tabs" needs another one. */
+  tabCount: number;
   /** Newest first. */
   closed: ClosedEntry[];
   /** Shown next to "Reopen closed tab", e.g. "Ctrl+Shift+T". */
@@ -25,6 +27,7 @@ export function TabContextMenu({
   x,
   y,
   tabId,
+  tabCount,
   closed,
   reopenHint,
   onClose,
@@ -46,7 +49,7 @@ export function TabContextMenu({
     },
     {
       label: "Close other tabs",
-      disabled: tabId === null,
+      disabled: tabId === null || tabCount < 2,
       onSelect: () => tabId !== null && onCloseOthers(tabId),
     },
     {

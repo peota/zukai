@@ -661,7 +661,14 @@ export function useFiles(
     (id: string, label: string) =>
       lock(id, () => {
         const path = tabOf(id)?.file?.path;
-        if (!path) return Promise.resolve();
+        if (!path || refuseUnreadable(id)) return Promise.resolve();
+        // Re-decoding replaces the text: never over edits not on disk.
+        if (hasPending(id)) {
+          showNotice(
+            `Can't reopen ${baseName(path)} with another encoding while it has unsaved edits`,
+          );
+          return Promise.resolve();
+        }
         return reloadLocked(id, async () => {
           try {
             return { kind: "ok", read: await fileRereadAs(path, label) };
@@ -674,7 +681,7 @@ export function useFiles(
           }
         });
       }),
-    [lock, reloadLocked, tabOf],
+    [hasPending, lock, refuseUnreadable, reloadLocked, showNotice, tabOf],
   );
 
   const convert = useCallback(

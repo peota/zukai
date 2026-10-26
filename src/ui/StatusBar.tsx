@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
 import type { FileFormat, LanguageId } from "../model/types";
 import type { SaveStatus } from "../storage/autosave";
@@ -25,6 +25,8 @@ export interface StatusBarProps {
   /** The `{ } Format` chip, for JSON. */
   showFormat: boolean;
   onFormat(kind: FormatKind): void;
+  /** The Format menu closed (picked or dismissed): refocus the editor. */
+  onFormatClose?(): void;
   /** A short message, e.g. "Open files, not folders". */
   notice?: string;
   /** Shown next to Beautify. */
@@ -62,10 +64,15 @@ export function StatusBar({
   openMenu = null,
   showFormat,
   onFormat,
+  onFormatClose,
   notice,
   beautifyHint,
 }: StatusBarProps) {
   const [formatAt, setFormatAt] = useState<DOMRect | null>(null);
+  const closeFormat = useCallback(() => {
+    setFormatAt(null);
+    onFormatClose?.();
+  }, [onFormatClose]);
   const scratchEnding = platformLineEnding === "crlf" ? "CRLF" : "LF";
 
   return (
@@ -86,7 +93,7 @@ export function StatusBar({
           <Chip
             anchor="format"
             expanded={formatAt !== null}
-            onClick={(r) => setFormatAt(formatAt ? null : r)}
+            onClick={(r) => (formatAt ? closeFormat() : setFormatAt(r))}
           >
             {"{ } Format"}
           </Chip>
@@ -132,7 +139,7 @@ export function StatusBar({
           side="above"
           align="end"
           ignoreSelector='[data-menu-anchor="format"]'
-          onDismiss={() => setFormatAt(null)}
+          onDismiss={closeFormat}
           items={[
             {
               label: "Beautify",

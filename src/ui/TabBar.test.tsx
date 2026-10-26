@@ -207,8 +207,8 @@ describe("TabBar", () => {
     layOut();
     const first = screen.getByText("First").closest("[role=tab]")!;
     fireEvent.pointerDown(first, { button: 0, pointerId: 1, clientX: 50 });
-    fireEvent.pointerMove(first, { pointerId: 1, clientX: 120 });
-    fireEvent.pointerMove(first, { pointerId: 1, clientX: 260 });
+    fireEvent.pointerMove(first, { pointerId: 1, buttons: 1, clientX: 120 });
+    fireEvent.pointerMove(first, { pointerId: 1, buttons: 1, clientX: 260 });
     fireEvent.pointerUp(first, { pointerId: 1, clientX: 260 });
     // Its centre (50 + 210) is past Third's (250): last place.
     expect(p.onMove).toHaveBeenCalledWith("a", 2);
@@ -221,7 +221,7 @@ describe("TabBar", () => {
     layOut();
     const second = screen.getByText("Second").closest("[role=tab]")!;
     fireEvent.pointerDown(second, { button: 0, pointerId: 1, clientX: 150 });
-    fireEvent.pointerMove(second, { pointerId: 1, clientX: 152 });
+    fireEvent.pointerMove(second, { pointerId: 1, buttons: 1, clientX: 152 });
     fireEvent.pointerUp(second, { pointerId: 1, clientX: 152 });
     fireEvent.click(second);
     expect(p.onMove).not.toHaveBeenCalled();
@@ -233,9 +233,53 @@ describe("TabBar", () => {
     layOut();
     const first = screen.getByText("First").closest("[role=tab]")!;
     fireEvent.pointerDown(first, { button: 0, pointerId: 1, clientX: 50 });
-    fireEvent.pointerMove(first, { pointerId: 1, clientX: 200 });
+    fireEvent.pointerMove(first, { pointerId: 1, buttons: 1, clientX: 200 });
     fireEvent.keyDown(window, { key: "Escape" });
     fireEvent.pointerUp(first, { pointerId: 1, clientX: 200 });
     expect(p.onMove).not.toHaveBeenCalled();
+    // The click that ends the cancelled drag doesn't activate the Tab.
+    fireEvent.click(first);
+    expect(p.onActivate).not.toHaveBeenCalled();
+  });
+
+  it("a press released outside the Tab never turns into a drag later", () => {
+    const p = setup();
+    layOut();
+    const first = screen.getByText("First").closest("[role=tab]")!;
+    fireEvent.pointerDown(first, { button: 0, pointerId: 1, clientX: 50 });
+    // Moved off vertically and released over the editor.
+    fireEvent.pointerUp(document.body, { pointerId: 1, clientX: 50 });
+    // A later hover (no button) and even a held move don't drag.
+    fireEvent.pointerMove(first, { pointerId: 1, buttons: 0, clientX: 200 });
+    fireEvent.pointerMove(first, { pointerId: 1, buttons: 1, clientX: 260 });
+    fireEvent.pointerUp(first, { pointerId: 1, clientX: 260 });
+    expect(p.onMove).not.toHaveBeenCalled();
+    expect(first).not.toHaveAttribute("style");
+  });
+
+  it("a hover with no button held drops a pending press", () => {
+    const p = setup();
+    layOut();
+    const first = screen.getByText("First").closest("[role=tab]")!;
+    fireEvent.pointerDown(first, { button: 0, pointerId: 1, clientX: 50 });
+    fireEvent.pointerMove(first, { pointerId: 1, buttons: 0, clientX: 200 });
+    expect(first).not.toHaveAttribute("style");
+    fireEvent.pointerUp(first, { pointerId: 1, clientX: 260 });
+    expect(p.onMove).not.toHaveBeenCalled();
+  });
+
+  it("shows the parent folder after a File's title when given", () => {
+    setup([
+      { id: "a", title: "First", active: true },
+      {
+        id: "f",
+        title: "config.json",
+        active: false,
+        folder: "api",
+        file: { missing: false, path: "C:/api/config.json" },
+      },
+    ]);
+    const tab = screen.getByText("config.json").closest("[role=tab]")!;
+    expect(tab).toHaveTextContent("config.json · api");
   });
 });

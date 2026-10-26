@@ -94,3 +94,19 @@ describe("EncodingPicker", () => {
     expect(onPick).toHaveBeenCalledWith("windows-1251");
   });
 });
+
+describe("EncodingPicker closing", () => {
+  it("closes when the window loses focus", () => {
+    const onClose = vi.fn();
+    render(
+      <EncodingPicker
+        title="Convert to"
+        current="utf-8"
+        onPick={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.blur(window);
+    expect(onClose).toHaveBeenCalled();
+  });
+});

@@ -33,11 +33,12 @@ function entry(n: number, path?: string): ClosedEntry {
   return { tab, index: 0, closedAt: 1000 - n };
 }
 
-function setup(tabId: string | null, closed: ClosedEntry[]) {
+function setup(tabId: string | null, closed: ClosedEntry[], tabCount = 2) {
   const props = {
     x: 10,
     y: 20,
     tabId,
+    tabCount,
     closed,
     onClose: vi.fn(),
     onCloseOthers: vi.fn(),
@@ -112,6 +113,14 @@ describe("TabContextMenu", () => {
     fireEvent.click(within(list).getByText("Closed 2"));
     expect(p.onReopenEntry).toHaveBeenCalledWith(2);
     expect(p.onDismiss).toHaveBeenCalled();
+  });
+
+  it("Close other tabs is disabled with only one Tab open", () => {
+    const p = setup("a", [], 1);
+    const others = screen.getByRole("menuitem", { name: "Close other tabs" });
+    expect(others).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(others);
+    expect(p.onCloseOthers).not.toHaveBeenCalled();
   });
 
   it("Esc dismisses the menu", () => {
