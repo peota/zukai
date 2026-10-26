@@ -3,10 +3,11 @@
 use super::FileError;
 use super::grants::{self, Grants};
 use notify::RecursiveMode;
-use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
+use notify_debouncer_mini::{DebounceEventResult, DebouncedEventKind, Debouncer, new_debouncer};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -34,19 +35,50 @@ type Active = Debouncer<notify::RecommendedWatcher>;
 
 /// Managed state: the current watcher, replaced wholesale by `file_watch`.
 #[derive(Default)]
-pub struct Watcher(Mutex<Option<Active>>);
+pub struct Watcher {
+    active: Mutex<Option<Active>>,
+    /// Held across build and swap, so callers never interleave; holds the
+    /// ticket of the set currently applied.
+    gate: Mutex<u64>,
+    issued: AtomicU64,
+}
 
 impl Watcher {
+    /// Numbers a request in arrival order; a later number always wins.
+    pub fn ticket(&self) -> u64 {
+        self.issued.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
     /// Watches exactly `files` (canonical paths), replacing the previous set.
-    /// Parent folders are watched non-recursively, because many editors save
-    /// by deleting and renaming, which loses a watch on the file itself.
+    #[cfg(test)]
     pub fn set(&self, files: Vec<PathBuf>, sink: Sink) -> Result<(), FileError> {
+        self.set_ordered(self.ticket(), files, sink)
+    }
+
+    /// Like `set`, but a request older than one already applied is discarded
+    /// (blocking threads can finish out of order). Parent folders are watched
+    /// non-recursively, because many editors save by deleting and renaming,
+    /// which loses a watch on the file itself.
+    pub fn set_ordered(
+        &self,
+        ticket: u64,
+        files: Vec<PathBuf>,
+        sink: Sink,
+    ) -> Result<(), FileError> {
+        let mut applied = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        if ticket < *applied {
+            return Ok(());
+        }
         let new = if files.is_empty() {
             None
         } else {
             Some(start(files, sink)?)
         };
-        let old = std::mem::replace(&mut *self.0.lock().unwrap_or_else(|e| e.into_inner()), new);
+        *applied = ticket;
+        let old = std::mem::replace(
+            &mut *self.active.lock().unwrap_or_else(|e| e.into_inner()),
+            new,
+        );
         drop(old);
         Ok(())
     }
@@ -63,16 +95,7 @@ fn start(files: Vec<PathBuf>, sink: Sink) -> Result<Active, FileError> {
     folders.dedup();
 
     let mut debouncer = new_debouncer(DEBOUNCE, move |res: DebounceEventResult| {
-        let Ok(events) = res else { return };
-        let mut seen = HashSet::new();
-        for event in events {
-            let key = grants::key(&event.path);
-            let Some(file) = by_key.get(&key) else {
-                continue;
-            };
-            if !seen.insert(key) {
-                continue;
-            }
+        let report = |file: &PathBuf| {
             // A rename-over (atomic save) reports a remove or rename too:
             // what the file is now decides.
             let kind = if file.exists() {
@@ -85,6 +108,27 @@ fn start(files: Vec<PathBuf>, sink: Sink) -> Result<Active, FileError> {
                     path: path.to_owned(),
                     kind,
                 });
+            }
+        };
+        let Ok(events) = res else {
+            // Events may have been lost (rescan, overflow): have the UI
+            // re-check every watched File.
+            by_key.values().for_each(report);
+            return;
+        };
+        let mut seen = HashSet::new();
+        for event in events {
+            // `AnyContinuous` repeats every window during a burst; wait for
+            // the settled `Any`, so half-written content isn't reloaded.
+            if event.kind != DebouncedEventKind::Any {
+                continue;
+            }
+            let key = grants::key(&event.path);
+            let Some(file) = by_key.get(&key) else {
+                continue;
+            };
+            if seen.insert(key) {
+                report(file);
             }
         }
     })
@@ -105,6 +149,7 @@ fn notify_error(e: notify::Error) -> FileError {
 /// Replaces the watched set. Paths that aren't granted are ignored.
 #[tauri::command]
 pub async fn file_watch(app: AppHandle, paths: Vec<String>) -> Result<(), FileError> {
+    let ticket = app.state::<Watcher>().ticket();
     tauri::async_runtime::spawn_blocking(move || {
         let grants: State<Grants> = app.state();
         let files: Vec<PathBuf> = paths.iter().filter_map(|p| grants.check(p).ok()).collect();
@@ -114,7 +159,7 @@ pub async fn file_watch(app: AppHandle, paths: Vec<String>) -> Result<(), FileEr
                 let _ = app.emit(FILE_CHANGED_EVENT, change);
             })
         };
-        app.state::<Watcher>().set(files, sink)
+        app.state::<Watcher>().set_ordered(ticket, files, sink)
     })
     .await
     .map_err(|e| FileError::Io(std::io::Error::other(e)))?
@@ -135,6 +180,11 @@ mod tests {
         (sink, rx)
     }
 
+    /// Drops events still in flight from creating the fixtures.
+    fn drain(rx: &Receiver<FileChange>) {
+        while rx.recv_timeout(Duration::from_millis(500)).is_ok() {}
+    }
+
     fn setup(name: &str) -> (tempfile::TempDir, PathBuf, Watcher, Receiver<FileChange>) {
         let dir = tempfile::tempdir().unwrap();
         let file = grants::canonical(dir.path()).unwrap().join(name);
@@ -142,8 +192,7 @@ mod tests {
         let watcher = Watcher::default();
         let (sink, rx) = sink_pair();
         watcher.set(vec![file.clone()], sink).unwrap();
-        // Let the OS watcher settle before the test touches the file.
-        std::thread::sleep(Duration::from_millis(100));
+        drain(&rx);
         (dir, file, watcher, rx)
     }
 
@@ -156,8 +205,10 @@ mod tests {
     #[test]
     fn debounced_events_coalesce_per_path() {
         let (_dir, file, _w, rx) = setup("a.txt");
+        // A burst longer than the debounce window: still one event.
         for i in 0..50 {
             std::fs::write(&file, format!("v{i}")).unwrap();
+            std::thread::sleep(Duration::from_millis(10));
         }
         let first = next(&rx);
         assert_eq!(first.kind, Kind::Changed);
@@ -208,6 +259,24 @@ mod tests {
         w.set(Vec::new(), sink).unwrap();
         std::fs::write(&file, "changed").unwrap();
         assert!(rx.recv_timeout(Duration::from_millis(600)).is_err());
-        assert!(rx2.try_recv().is_err());
+        assert!(rx2.recv_timeout(Duration::from_millis(600)).is_err());
+    }
+
+    #[test]
+    fn stale_ticket_is_discarded() {
+        let (_dir, file, w, rx) = setup("a.txt");
+        let (newer_sink, rx_new) = sink_pair();
+        let t_old = w.ticket();
+        let t_new = w.ticket();
+        w.set_ordered(t_new, vec![file.clone()], newer_sink)
+            .unwrap();
+        // The older request finishes last and must not replace the newer set.
+        let (older_sink, rx_old) = sink_pair();
+        w.set_ordered(t_old, Vec::new(), older_sink).unwrap();
+        drain(&rx_new);
+        std::fs::write(&file, "changed").unwrap();
+        assert_eq!(next(&rx_new).kind, Kind::Changed);
+        assert!(rx_old.try_recv().is_err());
+        assert!(rx.recv_timeout(Duration::from_millis(300)).is_err());
     }
 }

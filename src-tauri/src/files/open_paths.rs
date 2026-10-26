@@ -101,27 +101,61 @@ pub fn emit_dropped(app: &AppHandle, paths: Vec<PathBuf>) {
     emit_paths(app, paths);
 }
 
-/// This process's own argv, held until the UI has restored its Session.
+/// This process's own argv (and macOS `Opened` URLs that arrive early),
+/// held until the UI has restored its Session and takes them.
 #[derive(Default)]
-pub struct LaunchPaths(Mutex<Vec<PathBuf>>);
+pub struct LaunchPaths(Mutex<LaunchState>);
+
+#[derive(Default)]
+struct LaunchState {
+    paths: Vec<PathBuf>,
+    taken: bool,
+}
 
 impl LaunchPaths {
+    fn state(&self) -> std::sync::MutexGuard<'_, LaunchState> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     pub fn set(&self, paths: Vec<PathBuf>) {
-        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = paths;
+        self.state().paths = paths;
+    }
+
+    /// Queues `paths` for the UI if it hasn't taken the launch paths yet.
+    /// Returns them back when it has (the caller then emits instead).
+    pub fn add_or_return(&self, paths: Vec<PathBuf>) -> Option<Vec<PathBuf>> {
+        let mut st = self.state();
+        if st.taken {
+            Some(paths)
+        } else {
+            st.paths.extend(paths);
+            None
+        }
     }
 
     fn take(&self) -> Vec<PathBuf> {
-        std::mem::take(&mut *self.0.lock().unwrap_or_else(|e| e.into_inner()))
+        let mut st = self.state();
+        st.taken = true;
+        std::mem::take(&mut st.paths)
     }
 }
 
-/// The granted files from this process's argv, once; folders and missing
-/// paths are dropped (the UI had no chance to listen for them).
+/// Paths opened by the OS (macOS Finder, Open With): queued if the UI is
+/// still starting, otherwise sent like a second launch.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn opened(app: &AppHandle, paths: Vec<PathBuf>) {
+    if let Some(paths) = app.state::<LaunchPaths>().add_or_return(paths) {
+        emit_paths(app, paths);
+    }
+}
+
+/// The paths from this process's own argv, granted, once. Folders and missing
+/// paths are returned too, so the UI can tell the user about them.
 #[tauri::command]
-pub async fn take_launch_paths(app: AppHandle) -> Vec<String> {
+pub async fn take_launch_paths(app: AppHandle) -> OpenPaths {
     tauri::async_runtime::spawn_blocking(move || {
         let paths = app.state::<LaunchPaths>().take();
-        resolve(&app.state::<Grants>(), paths).paths
+        resolve(&app.state::<Grants>(), paths)
     })
     .await
     .unwrap_or_default()
@@ -179,7 +213,10 @@ mod tests {
     fn launch_paths_are_taken_once() {
         let l = LaunchPaths::default();
         l.set(vec![PathBuf::from("/x")]);
-        assert_eq!(l.take().len(), 1);
+        assert!(l.add_or_return(vec![PathBuf::from("/y")]).is_none());
+        assert_eq!(l.take().len(), 2);
         assert!(l.take().is_empty());
+        // Once taken, later paths are handed back for emitting.
+        assert!(l.add_or_return(vec![PathBuf::from("/z")]).is_some());
     }
 }

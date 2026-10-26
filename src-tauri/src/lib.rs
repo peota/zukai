@@ -229,6 +229,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Opened { urls } = &event {
+                let paths = urls
+                    .iter()
+                    .filter_map(|u| u.to_file_path().ok())
+                    .collect::<Vec<_>>();
+                files::open_paths::opened(app, paths);
+            }
             if let RunEvent::ExitRequested { api, code, .. } = event
                 && code.is_none()
                 && !FLUSHED.load(Ordering::SeqCst)
