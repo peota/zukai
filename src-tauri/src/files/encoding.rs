@@ -114,6 +114,7 @@ fn finish(body: &[u8], enc: &'static Encoding, bom: bool) -> Decoded {
 
     let crlf = raw.matches("\r\n").count();
     let lf = raw.matches('\n').count() - crlf;
+    let lone_cr = raw.matches('\r').count() - crlf;
     let text = raw.replace("\r\n", "\n").replace('\r', "\n");
 
     let line_ending = if crlf > lf {
@@ -124,15 +125,22 @@ fn finish(body: &[u8], enc: &'static Encoding, bom: bool) -> Decoded {
         platform_line_ending()
     };
 
+    // Legacy encodings may canonicalise some byte sequences; if saving would
+    // not reproduce the original bytes, the file must stay read-only.
+    let lossy = !had_errors
+        && enc != encoding_rs::UTF_8
+        && !is_utf16(enc)
+        && encode_body(raw, enc, false).ok().as_deref() != Some(body);
+
     Decoded {
         text,
         format: FileFormat {
             encoding: label_of(enc),
             bom,
             line_ending,
-            mixed: crlf > 0 && lf > 0,
+            mixed: (crlf > 0 && lf > 0) || lone_cr > 0,
         },
-        readable: !had_errors && !nul_unreadable,
+        readable: !had_errors && !nul_unreadable && !lossy,
     }
 }
 
@@ -163,25 +171,26 @@ fn position_at(text: &str, at: usize) -> (u32, u32) {
     (line, col)
 }
 
-pub fn encode(text: &str, format: &FileFormat) -> Result<Vec<u8>, Unencodable> {
-    let normalised = text.replace("\r\n", "\n").replace('\r', "\n");
-    let body = match format.line_ending {
-        LineEnding::Lf => normalised,
-        LineEnding::Crlf => normalised.replace('\n', "\r\n"),
-    };
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum EncodeError {
+    Unencodable(Unencodable),
+    UnknownEncoding(String),
+}
 
-    // An unknown label can't occur for formats we produced; treat it as UTF-8.
-    let enc = Encoding::for_label(format.encoding.as_bytes()).unwrap_or(encoding_rs::UTF_8);
+/// Encodes an already line-ending-expanded `body`. On failure returns the byte
+/// offset and character that could not be mapped.
+fn encode_body(body: &str, enc: &'static Encoding, bom: bool) -> Result<Vec<u8>, (usize, char)> {
     let mut out: Vec<u8> = Vec::with_capacity(body.len() + 3);
 
     if enc == encoding_rs::UTF_8 {
-        if format.bom {
+        if bom {
             out.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
         }
         out.extend_from_slice(body.as_bytes());
     } else if is_utf16(enc) {
         let le = enc == encoding_rs::UTF_16LE;
-        if format.bom {
+        if bom {
             out.extend_from_slice(if le { &[0xFF, 0xFE] } else { &[0xFE, 0xFF] });
         }
         for u in body.encode_utf16() {
@@ -199,18 +208,32 @@ pub fn encode(text: &str, format: &FileFormat) -> Result<Vec<u8>, Unencodable> {
                 encoding_rs::EncoderResult::InputEmpty => break,
                 encoding_rs::EncoderResult::OutputFull => consumed += read,
                 encoding_rs::EncoderResult::Unmappable(ch) => {
-                    let at = consumed + read - ch.len_utf8();
-                    let (line, col) = position_at(&body, at);
-                    return Err(Unencodable {
-                        ch: ch.to_string(),
-                        line,
-                        col,
-                    });
+                    return Err((consumed + read - ch.len_utf8(), ch));
                 }
             }
         }
     }
     Ok(out)
+}
+
+pub fn encode(text: &str, format: &FileFormat) -> Result<Vec<u8>, EncodeError> {
+    let enc = Encoding::for_label(format.encoding.as_bytes())
+        .ok_or_else(|| EncodeError::UnknownEncoding(format.encoding.clone()))?;
+
+    let normalised = text.replace("\r\n", "\n").replace('\r', "\n");
+    let body = match format.line_ending {
+        LineEnding::Lf => normalised,
+        LineEnding::Crlf => normalised.replace('\n', "\r\n"),
+    };
+
+    encode_body(&body, enc, format.bom).map_err(|(at, ch)| {
+        let (line, col) = position_at(&body, at);
+        EncodeError::Unencodable(Unencodable {
+            ch: ch.to_string(),
+            line,
+            col,
+        })
+    })
 }
 
 #[cfg(test)]
@@ -371,18 +394,20 @@ mod tests {
         let f = fmt("windows-1252", false, LineEnding::Lf);
         assert_eq!(
             encode("ok\n\u{1F600}", &f),
-            Err(Unencodable {
+            Err(EncodeError::Unencodable(Unencodable {
                 ch: "\u{1F600}".into(),
                 line: 2,
                 col: 1
-            })
+            }))
         );
     }
 
     #[test]
     fn encode_unmappable_position_on_crlf_file() {
         let f = fmt("windows-1252", false, LineEnding::Crlf);
-        let e = encode("a\n\u{e9}b\u{1F600}", &f).unwrap_err();
+        let Err(EncodeError::Unencodable(e)) = encode("a\n\u{e9}b\u{1F600}", &f) else {
+            panic!("expected Unencodable");
+        };
         assert_eq!((e.line, e.col), (2, 3));
     }
 
@@ -402,5 +427,79 @@ mod tests {
         assert_eq!(encoding_for_codepage(874), encoding_rs::WINDOWS_874);
         assert_eq!(encoding_for_codepage(65001), encoding_rs::WINDOWS_1252);
         assert_eq!(encoding_for_codepage(1), encoding_rs::WINDOWS_1252);
+    }
+
+    #[test]
+    fn lone_cr_sets_mixed() {
+        let d = detect_and_decode(b"a\rb");
+        assert!(d.format.mixed);
+        assert_eq!(d.text, "a\nb");
+        assert_eq!(d.format.line_ending, platform_line_ending());
+        let d = detect_and_decode(b"a\nb\nc\rd");
+        assert!(d.format.mixed);
+        assert_eq!(d.format.line_ending, LineEnding::Lf);
+    }
+
+    #[test]
+    fn cr_cr_lf_sets_mixed() {
+        let d = detect_and_decode(b"x\r\r\ny");
+        assert!(d.format.mixed);
+        assert_eq!(d.text, "x\n\ny");
+    }
+
+    #[test]
+    fn encode_unknown_label_errors() {
+        let f = fmt("no-such-encoding", false, LineEnding::Lf);
+        assert_eq!(
+            encode("abc", &f),
+            Err(EncodeError::UnknownEncoding("no-such-encoding".into()))
+        );
+    }
+
+    #[test]
+    fn windows1252_file_round_trips_and_is_readable() {
+        let bytes = b"M\xfcller\r\n\x80 \x93hi\x94\r\n";
+        let d = decode_as(bytes, "windows-1252").unwrap();
+        assert!(d.readable);
+        assert_eq!(encode(&d.text, &d.format).unwrap(), bytes);
+    }
+
+    #[test]
+    fn lossy_shift_jis_is_unreadable() {
+        // NEC-selected IBM extension; encoding_rs decodes it but saves it
+        // back as a different byte sequence.
+        let d = decode_as(b"a\xed\x40b", "shift_jis").unwrap();
+        assert!(!d.readable);
+        // Plain Shift_JIS round-trips.
+        let d = decode_as(b"\x82\xa0\x82\xa2", "shift_jis").unwrap();
+        assert!(d.readable);
+        assert_eq!(encode(&d.text, &d.format).unwrap(), b"\x82\xa0\x82\xa2");
+    }
+
+    #[test]
+    fn empty_file_round_trips() {
+        let d = detect_and_decode(b"");
+        assert!(d.readable);
+        assert_eq!(d.text, "");
+        assert_eq!(encode(&d.text, &d.format).unwrap(), b"");
+    }
+
+    #[test]
+    fn bom_only_round_trips() {
+        for b in [
+            &[0xEF, 0xBB, 0xBF][..],
+            &[0xFF, 0xFE][..],
+            &[0xFE, 0xFF][..],
+        ] {
+            let d = detect_and_decode(b);
+            assert!(d.readable && d.format.bom);
+            assert_eq!(d.text, "");
+            assert_eq!(encode(&d.text, &d.format).unwrap(), b);
+        }
+    }
+
+    #[test]
+    fn odd_length_utf16_unreadable() {
+        assert!(!detect_and_decode(&[0xFF, 0xFE, b'a', 0x00, b'b']).readable);
     }
 }
