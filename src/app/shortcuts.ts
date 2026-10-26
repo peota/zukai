@@ -1,4 +1,4 @@
-export type Platform = "mac" | "other";
+export type Platform = "mac" | "windows" | "other";
 
 export type Command =
   | { type: "newTab" }
@@ -84,5 +84,6 @@ export function detectPlatform(): Platform {
     userAgentData?: { platform?: string };
   };
   const s = nav.userAgentData?.platform ?? nav.userAgent ?? "";
-  return /mac/i.test(s) ? "mac" : "other";
+  if (/mac/i.test(s)) return "mac";
+  return /win/i.test(s) ? "windows" : "other";
 }

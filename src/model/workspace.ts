@@ -20,11 +20,27 @@ export function newTab(s: WorkspaceState, id: string): WorkspaceState {
   return { ...s, tabs, activeId: id };
 }
 
+export function findByPath(
+  s: WorkspaceState,
+  key: string,
+  keyOf: (path: string) => string = (p) => p,
+): TabState | undefined {
+  return s.tabs.find((t) => t.file !== undefined && keyOf(t.file.path) === key);
+}
+
+/** Insert after the active Tab and activate it. */
+export function openFileTab(s: WorkspaceState, tab: TabState): WorkspaceState {
+  const at = s.tabs.findIndex((t) => t.id === s.activeId) + 1;
+  const tabs = [...s.tabs.slice(0, at), tab, ...s.tabs.slice(at)];
+  return { ...s, tabs, activeId: tab.id };
+}
+
 export function closeTab(
   s: WorkspaceState,
   id: string,
   isEmpty: boolean,
   now: number,
+  keyOf: (path: string) => string = (p) => p,
 ): { state: WorkspaceState; effect: "deleted" | "closed" } {
   const index = s.tabs.findIndex((t) => t.id === id);
   if (index === -1) return { state: s, effect: "deleted" };
@@ -34,9 +50,13 @@ export function closeTab(
   if (s.activeId === id) {
     activeId = (tabs[index] ?? tabs[index - 1])?.id ?? "";
   }
-  const closed = isEmpty
-    ? s.closed
-    : [{ tab, index, closedAt: now }, ...s.closed];
+  // Closing a path again replaces its older Recently Closed entry.
+  const key = tab.file ? keyOf(tab.file.path) : null;
+  const older =
+    key === null
+      ? s.closed
+      : s.closed.filter((e) => !e.tab.file || keyOf(e.tab.file.path) !== key);
+  const closed = isEmpty ? s.closed : [{ tab, index, closedAt: now }, ...older];
   return {
     state: { tabs, activeId, closed },
     effect: isEmpty ? "deleted" : "closed",
@@ -51,12 +71,17 @@ export function ensureOneTab(
   return { ...s, tabs: [newTabState(freshId)], activeId: freshId };
 }
 
-export function reopenClosed(s: WorkspaceState): {
+/** `index` is into `closed`, newest first. */
+export function reopenClosed(
+  s: WorkspaceState,
+  index = 0,
+): {
   state: WorkspaceState;
   reopened: TabState | null;
 } {
-  if (s.closed.length === 0) return { state: s, reopened: null };
-  const [entry, ...closed] = s.closed;
+  const entry = s.closed[index];
+  if (!entry) return { state: s, reopened: null };
+  const closed = s.closed.filter((_, i) => i !== index);
   const at = Math.min(entry.index, s.tabs.length);
   const tabs = [...s.tabs.slice(0, at), entry.tab, ...s.tabs.slice(at)];
   return {
