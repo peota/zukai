@@ -676,9 +676,11 @@ export function useFiles(
   );
 
   const convert = useCallback(
-    (id: string, patch: Partial<FileFormat>) =>
-      setConvert((r) => ({ seq: (r?.seq ?? 0) + 1, id, patch })),
-    [],
+    (id: string, patch: Partial<FileFormat>) => {
+      if (refuseUnreadable(id)) return;
+      setConvert((r) => ({ seq: (r?.seq ?? 0) + 1, id, patch }));
+    },
+    [refuseUnreadable],
   );
 
   const requestFormat = useCallback(
@@ -693,6 +695,13 @@ export function useFiles(
       if (!patch.file || !cur) {
         return commit(ws.updateTab(stateRef.current, id, patch));
       }
+      // Its unread shadow is the only copy of its text: no Convert, which
+      // would clear `held` and write the (empty) loaded text.
+      if (refuseUnreadable(id)) {
+        const { file: _ignored, ...rest } = patch;
+        void _ignored;
+        return commit(ws.updateTab(stateRef.current, id, rest));
+      }
       const format = patch.file.format;
       const changed = !sameFormat(format, cur.format);
       // A Convert to a wider encoding may make held text writable again.
@@ -706,7 +715,7 @@ export function useFiles(
       // A Convert is a Pending edit: write the File in its new form.
       if (changed) keepAside(id);
     },
-    [commit, keepAside, stateRef, tabOf],
+    [commit, keepAside, refuseUnreadable, stateRef, tabOf],
   );
 
   // --- Save, Save As, rename -----------------------------------------------

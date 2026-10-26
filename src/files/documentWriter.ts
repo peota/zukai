@@ -18,6 +18,11 @@ export interface DocumentWriterDeps {
   shadowDelete(id: string): Promise<void>;
   /** The text reached the Document's own storage (scratchpad or File). */
   onWritten?(id: string, text: string): void;
+  /**
+   * True for a held Tab whose shadow couldn't be read: its loaded text isn't
+   * its real text, so nothing is written for it at all.
+   */
+  isUnreadable?(id: string): boolean;
 }
 
 /**
@@ -48,6 +53,13 @@ export function createDocumentWriter(
     if (!tab) {
       // Closed Tabs are finalised by the close itself; nothing to write.
       console.error("write for an unknown tab", id);
+      return;
+    }
+    // Resolves rather than rejects: edits to it are refused, so there is
+    // nothing unsaved (its text is in the untouched shadow), and a rejection
+    // would block closing the Tab and quitting.
+    if (deps.isUnreadable?.(id)) {
+      console.error("write refused: unreadable shadow", id);
       return;
     }
     const file = tab.file;

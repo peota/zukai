@@ -940,6 +940,41 @@ describe("useFiles interleavings (fix round 1)", () => {
     expect(shadows.f).toBe("unsaved");
   });
 
+  it("a Convert never clears or writes a Tab whose shadow can't be read", async () => {
+    shadows.f = "unsaved";
+    f.shadowRead.mockRejectedValue({ kind: "io", message: "denied" });
+    s.readSession.mockResolvedValue(
+      sessionJson([fileTab("f", P, { held: "unencodable" }), newTabState("a")]),
+    );
+    const { result } = await mount();
+    await result.current.loadContent("f");
+    const file = fileTabOf(result)!.file!;
+    act(() => result.current.convert("f", { encoding: "utf-8", bom: true }));
+    expect(result.current.convertRequest).toBeNull();
+    // The editor's patch (what Task 10 sends) is refused; other fields apply.
+    act(() =>
+      result.current.updateTab("f", {
+        wrap: true,
+        file: { ...file, format: { ...FMT, bom: true } },
+      }),
+    );
+    expect(result.current.notice).toBe(
+      "A.json has unsaved text that can't be read yet",
+    );
+    await settle();
+    const tab = fileTabOf(result)!;
+    expect(tab.wrap).toBe(true);
+    expect(tab.file!.held).toBe("unencodable");
+    expect(tab.file!.format).toEqual(FMT);
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(f.fileFingerprint).not.toHaveBeenCalledWith(P);
+    expect(f.shadowWrite).not.toHaveBeenCalled();
+    expect(shadows.f).toBe("unsaved");
+    // Ctrl+S on it writes nothing either.
+    await act(() => result.current.run({ type: "save" }));
+    expect(f.fileWrite).not.toHaveBeenCalled();
+  });
+
   it("a restored Missing File that already came back is re-checked", async () => {
     shadows.f = "mine";
     s.readSession.mockResolvedValue(

@@ -36,6 +36,7 @@ beforeEach(() => {
     shadowWrite: vi.fn().mockResolvedValue(undefined),
     shadowDelete: vi.fn().mockResolvedValue(undefined),
     onWritten: vi.fn(),
+    isUnreadable: vi.fn(() => false),
   } as unknown as typeof deps;
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -138,6 +139,24 @@ describe("documentWriter", () => {
     });
     await createDocumentWriter(deps)("f", "x");
     expect(tabs.get("f")!.file!.fingerprint).toEqual(fp("b"));
+    expect(deps.onWritten).not.toHaveBeenCalled();
+  });
+
+  it("never writes a Tab whose shadow can't be read", async () => {
+    withFile("f", fileInfo({ held: null }));
+    tabs.set("s", newTabState("s"));
+    deps.isUnreadable.mockReturnValue(true);
+    const write = createDocumentWriter(deps);
+    await expect(write("f", "")).resolves.toBeUndefined();
+    await expect(write("s", "")).resolves.toBeUndefined();
+    withFile("h", fileInfo({ held: "unencodable" }));
+    await expect(write("h", "")).resolves.toBeUndefined();
+    expect(deps.fileWrite).not.toHaveBeenCalled();
+    expect(deps.writeScratchpad).not.toHaveBeenCalled();
+    expect(deps.shadowWrite).not.toHaveBeenCalled();
+    expect(deps.shadowDelete).not.toHaveBeenCalled();
+    expect(deps.fileFingerprint).not.toHaveBeenCalled();
+    expect(deps.patchFile).not.toHaveBeenCalled();
     expect(deps.onWritten).not.toHaveBeenCalled();
   });
 
