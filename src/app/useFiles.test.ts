@@ -616,7 +616,7 @@ describe("useFiles close, reopen and restore", () => {
     expect(s.deleteScratchpad).not.toHaveBeenCalled();
     // Reopening re-reads it from disk.
     disk[P] = { text: "later", hash: "h5" };
-    await act(() => result.current.reopenEntry(0));
+    await act(() => result.current.reopenEntry(id));
     expect(await result.current.loadContent(id)).toBe("later");
     expect(fileTabOf(result)!.file!.fingerprint).toEqual(fp("h5"));
   });
@@ -985,6 +985,57 @@ describe("useFiles when Rust can't check the Session's Files (final fix M3)", ()
   });
 });
 
+describe("useFiles small fixes (final wave)", () => {
+  it("reopens a Recently Closed entry by its id, whatever its position", async () => {
+    disk[Q] = { text: "q", hash: "hq" };
+    const { result } = await mount();
+    const p = await openP(result);
+    const q = await openP(result, Q);
+    await act(() => result.current.closeTab(p));
+    await act(() => result.current.closeTab(q));
+    // Newest first: q, then p. A stale index 0 would have opened q.
+    expect(result.current.state.closed.map((e) => e.tab.id)).toEqual([q, p]);
+    await act(() => result.current.reopenEntry(p));
+    expect(fileTabOf(result)?.id).toBe(p);
+    expect(fileTabOf(result, Q)).toBeUndefined();
+    await act(() => result.current.reopenEntry("no such entry"));
+    expect(result.current.state.closed.map((e) => e.tab.id)).toEqual([q]);
+    // Mod+Shift+T still reopens the newest.
+    await act(() => result.current.run({ type: "reopenTab" }));
+    expect(fileTabOf(result, Q)?.id).toBe(q);
+  });
+
+  it("reordering Tabs doesn't rebuild the watcher", async () => {
+    disk[Q] = { text: "q", hash: "hq" };
+    const { result } = await mount();
+    const p = await openP(result);
+    await openP(result, Q);
+    await waitFor(() => expect(f.fileWatch).toHaveBeenLastCalledWith([P, Q]));
+    f.fileWatch.mockClear();
+    act(() => result.current.moveTab(p, result.current.state.tabs.length - 1));
+    await act(() => new Promise((res) => setTimeout(res, 20)));
+    expect(f.fileWatch).not.toHaveBeenCalled();
+  });
+
+  it("a replace's echo from the editor schedules no write and isn't pending", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    disk[P] = { text: "reloaded", hash: "h2" };
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    await waitFor(() =>
+      expect(result.current.replaceRequests).toContainEqual(
+        expect.objectContaining({ id, text: "reloaded" }),
+      ),
+    );
+    // The editor applies the replace and reports the text back.
+    act(() => result.current.setContent(id, "reloaded"));
+    expect(result.current.hasPending(id)).toBe(false);
+    await settle();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(fileTabOf(result)!.file!.held).toBeNull();
+  });
+});
+
 describe("useFiles interleavings (fix round 1)", () => {
   it("typing during a reload's read becomes a conflict, keeping the text", async () => {
     const { result } = await mount();
@@ -1138,10 +1189,10 @@ describe("useFiles interleavings (fix round 1)", () => {
     expect(f.fileWrite).not.toHaveBeenCalled();
 
     // A failed reopen leaves the entry; once the shadow reads, it comes back.
-    await act(() => result.current.reopenEntry(0));
+    await act(() => result.current.reopenEntry("f"));
     expect(result.current.state.closed).toHaveLength(1);
     f.shadowRead.mockImplementation(async (id) => shadows[id] ?? null);
-    await act(() => result.current.reopenEntry(0));
+    await act(() => result.current.reopenEntry("f"));
     expect(await result.current.loadContent("f")).toBe("unsaved");
     expect(fileTabOf(result)!.file!.held).toBe("conflict");
   });

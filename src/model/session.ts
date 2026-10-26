@@ -182,8 +182,16 @@ export function restoreWorkspace(
     closed: raw.closed.filter((e) => granted(e.tab)),
   };
   const known = new Set<string>();
+  const openPaths = new Set<string>();
   const uniqueTabs = base.tabs.filter((t) => {
     if (known.has(t.id)) return false;
+    // One Tab per File: the first wins (a dropped one's shadow, if any, is
+    // recovered as an orphan).
+    if (t.file) {
+      const k = keyOf(t.file.path);
+      if (openPaths.has(k)) return false;
+      openPaths.add(k);
+    }
     known.add(t.id);
     return true;
   });

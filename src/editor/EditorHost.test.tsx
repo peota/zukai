@@ -340,6 +340,20 @@ describe("EditorHost replace requests", () => {
     expect(v.state.doc.toString()).toBe("text of a");
   });
 
+  it("a replace keeps the scroll offset and its echo is the new text", async () => {
+    const { container, rerender, props } = setup();
+    const v = await activeView(container, "text of a");
+    v.scrollDOM.scrollTop = 120;
+    vi.mocked(props.onChange).mockClear();
+    rerender({ replaceRequests: [{ seq: 1, id: "a", text: "text of A" }] });
+    expect(v.scrollDOM.scrollTop).toBe(120);
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+    expect(v.scrollDOM.scrollTop).toBe(120);
+    // One echo, of exactly the replaced text (useWorkspace ignores it).
+    expect(props.onChange).toHaveBeenCalledTimes(1);
+    expect(props.onChange).toHaveBeenCalledWith("a", "text of A");
+  });
+
   it("applies a replace to a hidden view", async () => {
     const { container, rerender } = setup();
     const a = await activeView(container, "text of a");

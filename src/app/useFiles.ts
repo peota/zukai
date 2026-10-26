@@ -108,8 +108,11 @@ export interface FilesApi {
   convert(id: string, patch: Partial<FileFormat>): void;
   /** Resolves to an error message to show inline, or null on success. */
   renameFile(id: string, stem: string): Promise<string | null>;
-  /** `index` into Recently Closed, newest first. */
-  reopenEntry(index: number): Promise<void>;
+  /**
+   * Reopens the Recently Closed entry of Tab `id` (by id, not position: the
+   * list may change between showing it and the click). Unknown ids do nothing.
+   */
+  reopenEntry(id: string): Promise<void>;
   requestFormat(kind?: FormatRequest["kind"]): void;
   /** Show a short status-bar notice (e.g. a Beautify that failed). */
   showNotice(text: string): void;
@@ -1042,10 +1045,9 @@ export function useFiles(
   );
 
   const reopenEntry = useCallback(
-    (index: number): Promise<void> => {
-      const entry = stateRef.current.closed[index];
+    (id: string): Promise<void> => {
+      const entry = stateRef.current.closed.find((e) => e.tab.id === id);
       if (!entry) return Promise.resolve();
-      const id = entry.tab.id;
       const work = async () => {
         if (entry.tab.file) {
           if (!(await reopenFile(id, entry.tab.file))) return;
@@ -1202,7 +1204,8 @@ export function useFiles(
   const tabs = x.state.tabs;
   useEffect(() => {
     if (!x.ready) return;
-    const paths = tabs.flatMap((t) => (t.file ? [t.file.path] : []));
+    // Sorted: reordering Tabs doesn't rebuild the watcher.
+    const paths = tabs.flatMap((t) => (t.file ? [t.file.path] : [])).sort();
     const key = JSON.stringify(paths);
     if (key === watched.current) return;
     watched.current = key;

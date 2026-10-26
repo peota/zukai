@@ -33,7 +33,13 @@ export function onWriteOutcome(
 ): FileInfo {
   switch (outcome.kind) {
     case "written":
-      return { ...file, fingerprint: outcome.fingerprint, held: null };
+      // The whole File now has one Line ending: "Mixed" is over.
+      return {
+        ...file,
+        format: { ...file.format, mixed: false },
+        fingerprint: outcome.fingerprint,
+        held: null,
+      };
     case "conflict":
       return { ...file, held: "conflict" };
     case "missing":

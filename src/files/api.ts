@@ -27,11 +27,6 @@ export interface FileError {
   message: string;
 }
 
-export interface ShadowError {
-  kind: "invalid_id" | "io";
-  message: string;
-}
-
 export interface OpenPaths {
   paths: string[];
   folders: string[];
