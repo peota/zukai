@@ -7,7 +7,7 @@ import {
   toSessionFile,
 } from "./session";
 import { newTabState } from "./workspace";
-import type { ClosedEntry, TabState, WorkspaceState } from "./types";
+import type { ClosedEntry, FileInfo, TabState, WorkspaceState } from "./types";
 
 const ws: WorkspaceState = {
   tabs: [
@@ -23,7 +23,7 @@ const fresh = () => "fresh";
 describe("session file", () => {
   it("round trips", () => {
     expect(parseSessionFile(JSON.stringify(toSessionFile(ws)))).toEqual({
-      version: 1,
+      version: 2,
       ...ws,
     });
   });
@@ -36,7 +36,7 @@ describe("session file", () => {
     delete noId.id;
     expect(
       parseSessionFile(
-        JSON.stringify({ version: 1, tabs: [noId], activeId: "x", closed: [] }),
+        JSON.stringify({ version: 2, tabs: [noId], activeId: "x", closed: [] }),
       ),
     ).toBeNull();
   });
@@ -129,7 +129,7 @@ describe("restoreWorkspace", () => {
   });
 
   it("handles a session file with no tabs", () => {
-    const file = { version: 1 as const, tabs: [], activeId: "", closed: [] };
+    const file = { version: 2 as const, tabs: [], activeId: "", closed: [] };
     const withOrphans = restoreWorkspace(file, ["q"], fresh, 0).state;
     expect(withOrphans.tabs.map((t) => t.id)).toEqual(["q"]);
     expect(withOrphans.activeId).toBe("q");
@@ -216,5 +216,111 @@ describe("restoreWorkspace with the closed/ folder", () => {
       ],
     );
     expect(state.closed.map((e) => e.tab.id)).toEqual(["c"]);
+  });
+});
+
+const fileInfo = (path: string, held: FileInfo["held"] = null): FileInfo => ({
+  path,
+  format: { encoding: "utf-8", bom: false, lineEnding: "lf", mixed: false },
+  fingerprint: { mtimeMs: 1, size: 2, hash: "h" },
+  held,
+});
+const fileTab = (id: string, path: string, held: FileInfo["held"] = null) => ({
+  ...newTabState(id),
+  file: fileInfo(path, held),
+});
+
+describe("session v2", () => {
+  it("v1SessionMigratesToV2AllScratchpads", () => {
+    const v1 = JSON.stringify({ ...toSessionFile(ws), version: 1 });
+    const parsed = parseSessionFile(v1);
+    expect(parsed).toEqual({ version: 2, ...ws });
+    expect(parsed?.tabs.every((t) => t.file === undefined)).toBe(true);
+  });
+
+  it("v2RoundTripWithFile", () => {
+    const w: WorkspaceState = {
+      tabs: [fileTab("f", "/a.txt"), newTabState("a")],
+      activeId: "f",
+      closed: [
+        { tab: fileTab("g", "/b.txt", "missing"), index: 0, closedAt: 5 },
+      ],
+    };
+    expect(parseSessionFile(JSON.stringify(toSessionFile(w)))).toEqual({
+      version: 2,
+      ...w,
+    });
+  });
+
+  it("badFileFieldRejected", () => {
+    const bad = (file: unknown) =>
+      parseSessionFile(
+        JSON.stringify({
+          version: 2,
+          tabs: [{ ...newTabState("f"), file }],
+          activeId: "f",
+          closed: [],
+        }),
+      );
+    expect(bad(fileInfo("p"))).not.toBeNull();
+    expect(bad(null)).toBeNull();
+    expect(bad("p")).toBeNull();
+    expect(bad({ ...fileInfo("p"), path: 3 })).toBeNull();
+    expect(bad({ ...fileInfo("p"), held: "nope" })).toBeNull();
+    expect(bad({ ...fileInfo("p"), fingerprint: { size: 1 } })).toBeNull();
+    expect(bad({ ...fileInfo("p"), format: { encoding: "utf-8" } })).toBeNull();
+    expect(
+      bad({
+        ...fileInfo("p"),
+        format: { ...fileInfo("p").format, lineEnding: "cr" },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("purgeExpired with Files", () => {
+  const old = 10 * CLOSED_TTL_MS;
+  const entry = (tab: TabState): ClosedEntry => ({
+    tab,
+    index: 0,
+    closedAt: 0,
+  });
+
+  it("closedFileNeverExpires", () => {
+    const e = entry(fileTab("f", "p"));
+    expect(purgeExpired([e], old)).toEqual({ kept: [e], expired: [] });
+  });
+
+  it("closedHeldFileExpiresAfter30Days", () => {
+    const e = entry(fileTab("f", "p", "conflict"));
+    expect(purgeExpired([e], old)).toEqual({ kept: [], expired: [e] });
+    expect(purgeExpired([e], CLOSED_TTL_MS).kept).toEqual([e]);
+  });
+});
+
+describe("restoreWorkspace with grantedPaths", () => {
+  it("drops File Tabs and closed Files whose path is not granted", () => {
+    const file = {
+      version: 2 as const,
+      tabs: [fileTab("f1", "ok"), fileTab("f2", "bad"), newTabState("a")],
+      activeId: "f2",
+      closed: [
+        { tab: fileTab("f3", "bad"), index: 0, closedAt: 2 },
+        { tab: fileTab("f4", "ok2"), index: 0, closedAt: 1 },
+      ],
+    };
+    const { state } = restoreWorkspace(
+      file,
+      [],
+      fresh,
+      10,
+      null,
+      new Set(["ok", "ok2"]),
+    );
+    expect(state.tabs.map((t) => t.id)).toEqual(["f1", "a"]);
+    expect(state.activeId).toBe("f1");
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["f4"]);
+    // null means do not filter.
+    expect(restoreWorkspace(file, [], fresh, 10).state.tabs).toHaveLength(3);
   });
 });

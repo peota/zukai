@@ -6,6 +6,8 @@ import {
   closeTab,
   cycle,
   ensureOneTab,
+  findByPath,
+  openFileTab,
   moveTab,
   newTab,
   newTabState,
@@ -165,5 +167,67 @@ describe("updateTab", () => {
     const s = updateTab(ws(["a", "b"]), "b", { wrap: true, scrollTop: 5 });
     expect(s.tabs[1]).toMatchObject({ wrap: true, scrollTop: 5 });
     expect(s.tabs[0].wrap).toBe(false);
+  });
+});
+
+const withFile = (id: string, path: string) => ({
+  ...newTabState(id),
+  file: {
+    path,
+    format: {
+      encoding: "utf-8",
+      bom: false,
+      lineEnding: "lf" as const,
+      mixed: false,
+    },
+    fingerprint: null,
+    held: null,
+  },
+});
+
+describe("file tabs", () => {
+  it("openFileTabInsertsAfterActive", () => {
+    const s = openFileTab(ws(["a", "b", "c"], "a"), withFile("f", "p"));
+    expect(ids(s)).toEqual(["a", "f", "b", "c"]);
+    expect(s.activeId).toBe("f");
+  });
+
+  it("findByPathUsesKey", () => {
+    const s = {
+      ...ws(["a"]),
+      tabs: [newTabState("a"), withFile("f", "/X.txt")],
+    };
+    expect(findByPath(s, "/X.txt")?.id).toBe("f");
+    expect(findByPath(s, "/x.txt")).toBeUndefined();
+    expect(findByPath(s, "/x.txt", (p) => p.toLowerCase())?.id).toBe("f");
+  });
+
+  it("reclosingSamePathReplacesEntry", () => {
+    const s: WorkspaceState = {
+      tabs: [withFile("f2", "p")],
+      activeId: "f2",
+      closed: [
+        { tab: withFile("f1", "p"), index: 0, closedAt: 1 },
+        { tab: withFile("g", "q"), index: 0, closedAt: 2 },
+      ],
+    };
+    const { state } = closeTab(s, "f2", false, 9);
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["f2", "g"]);
+  });
+
+  it("reopenClosed takes an index into closed", () => {
+    const s: WorkspaceState = {
+      tabs: [newTabState("a")],
+      activeId: "a",
+      closed: [
+        { tab: newTabState("x"), index: 0, closedAt: 2 },
+        { tab: newTabState("y"), index: 5, closedAt: 1 },
+      ],
+    };
+    const r = reopenClosed(s, 1);
+    expect(r.reopened?.id).toBe("y");
+    expect(ids(r.state)).toEqual(["a", "y"]);
+    expect(r.state.closed.map((e) => e.tab.id)).toEqual(["x"]);
+    expect(reopenClosed(s, 7).reopened).toBeNull();
   });
 });

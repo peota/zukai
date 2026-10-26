@@ -1,16 +1,18 @@
 import type {
   ClosedEntry,
+  FileInfo,
+  Fingerprint,
   LanguageId,
   TabState,
   WorkspaceState,
 } from "./types";
 import { ensureOneTab, newTabState } from "./workspace";
 
-export const SESSION_VERSION = 1;
+export const SESSION_VERSION = 2;
 export const CLOSED_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface SessionFile {
-  version: 1;
+  version: 2;
   tabs: TabState[];
   activeId: string;
   closed: ClosedEntry[];
@@ -39,10 +41,43 @@ function isNum(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
 
+const HELD: readonly string[] = [
+  "conflict",
+  "missing",
+  "unencodable",
+  "readonly",
+];
+
+function isFingerprint(v: unknown): v is Fingerprint {
+  return (
+    isObject(v) &&
+    isNum(v.mtimeMs) &&
+    isNum(v.size) &&
+    typeof v.hash === "string"
+  );
+}
+
+function isFileInfo(v: unknown): v is FileInfo {
+  if (!isObject(v)) return false;
+  const f = v.format;
+  return (
+    typeof v.path === "string" &&
+    v.path !== "" &&
+    isObject(f) &&
+    typeof f.encoding === "string" &&
+    typeof f.bom === "boolean" &&
+    (f.lineEnding === "lf" || f.lineEnding === "crlf") &&
+    typeof f.mixed === "boolean" &&
+    (v.fingerprint === null || isFingerprint(v.fingerprint)) &&
+    (v.held === null || (typeof v.held === "string" && HELD.includes(v.held)))
+  );
+}
+
 function isTabState(v: unknown): v is TabState {
   if (!isObject(v)) return false;
   const sel = v.selection;
   return (
+    (v.file === undefined || isFileInfo(v.file)) &&
     typeof v.id === "string" &&
     typeof v.title === "string" &&
     typeof v.renamed === "boolean" &&
@@ -81,7 +116,10 @@ export function parseSessionFile(json: string | null): SessionFile | null {
   } catch {
     return null;
   }
-  if (!isObject(data) || data.version !== SESSION_VERSION) return null;
+  // v1 had no File Tabs; its shape is a subset of v2, so it migrates as is.
+  if (!isObject(data) || (data.version !== 1 && data.version !== 2)) {
+    return null;
+  }
   if (
     !Array.isArray(data.tabs) ||
     !data.tabs.every(isTabState) ||
@@ -106,7 +144,9 @@ export function purgeExpired(
   const kept: ClosedEntry[] = [];
   const expired: ClosedEntry[] = [];
   for (const e of closed) {
-    (now - e.closedAt > CLOSED_TTL_MS ? expired : kept).push(e);
+    // A closed File has no shadow text unless held, so it never expires.
+    const forever = e.tab.file !== undefined && e.tab.file.held === null;
+    (!forever && now - e.closedAt > CLOSED_TTL_MS ? expired : kept).push(e);
   }
   return { kept, expired };
 }
@@ -130,8 +170,17 @@ export function restoreWorkspace(
   freshId: () => string,
   now: number,
   closedFiles: ClosedFile[] | null = null,
+  grantedPaths: ReadonlySet<string> | null = null,
 ): { state: WorkspaceState; expired: ClosedEntry[] } {
-  const base = file ?? { tabs: [], activeId: "", closed: [] };
+  const raw = file ?? { tabs: [], activeId: "", closed: [] };
+  // Rust refuses to save a Session naming a File it hasn't granted.
+  const granted = (t: TabState) =>
+    !t.file || grantedPaths === null || grantedPaths.has(t.file.path);
+  const base = {
+    ...raw,
+    tabs: raw.tabs.filter(granted),
+    closed: raw.closed.filter((e) => granted(e.tab)),
+  };
   const known = new Set<string>();
   const uniqueTabs = base.tabs.filter((t) => {
     if (known.has(t.id)) return false;
