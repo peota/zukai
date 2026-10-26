@@ -1,7 +1,7 @@
 pub mod commands;
 pub mod storage;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
@@ -13,9 +13,15 @@ static FLUSHED: AtomicBool = AtomicBool::new(false);
 /// True while an exit watchdog thread is pending.
 static WATCHDOG_PENDING: AtomicBool = AtomicBool::new(false);
 
-/// Set when the frontend reports a failed first flush; the pending watchdog
-/// then skips its forced exit.
-static WATCHDOG_CANCELLED: AtomicBool = AtomicBool::new(false);
+/// Watchdog generation. Each watchdog fires only if the generation is still
+/// the one it captured at spawn; cancelling bumps it, invalidating sleepers.
+static WATCHDOG_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// A watchdog captured at `captured` may force the exit only if no cancel
+/// happened since.
+fn should_fire(captured: u64, current: u64) -> bool {
+    captured == current
+}
 
 /// If the frontend never answers `before-exit`, force the exit after this long.
 pub const EXIT_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -39,7 +45,7 @@ fn exit_flush_failed() {
 }
 
 fn cancel_watchdog() {
-    WATCHDOG_CANCELLED.store(true, Ordering::SeqCst);
+    WATCHDOG_GENERATION.fetch_add(1, Ordering::SeqCst);
     WATCHDOG_PENDING.store(false, Ordering::SeqCst);
 }
 
@@ -60,11 +66,11 @@ fn log_startup(app: &AppHandle, message: &str) {
 fn request_exit(app: &AppHandle) {
     let _ = app.emit(BEFORE_EXIT_EVENT, ());
     if !WATCHDOG_PENDING.swap(true, Ordering::SeqCst) {
-        WATCHDOG_CANCELLED.store(false, Ordering::SeqCst);
+        let generation = WATCHDOG_GENERATION.load(Ordering::SeqCst);
         let app = app.clone();
         std::thread::spawn(move || {
             std::thread::sleep(EXIT_FLUSH_TIMEOUT);
-            if WATCHDOG_CANCELLED.swap(false, Ordering::SeqCst) {
+            if !should_fire(generation, WATCHDOG_GENERATION.load(Ordering::SeqCst)) {
                 return;
             }
             FLUSHED.store(true, Ordering::SeqCst);
@@ -198,4 +204,19 @@ pub fn run() {
                 request_exit(app);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_watchdog_is_stale_and_rearmed_one_is_current() {
+        let first = WATCHDOG_GENERATION.load(Ordering::SeqCst);
+        WATCHDOG_GENERATION.fetch_add(1, Ordering::SeqCst); // cancel
+        let second = WATCHDOG_GENERATION.load(Ordering::SeqCst); // re-arm
+        let now = WATCHDOG_GENERATION.load(Ordering::SeqCst);
+        assert!(!should_fire(first, now));
+        assert!(should_fire(second, now));
+    }
 }

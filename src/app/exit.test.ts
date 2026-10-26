@@ -105,6 +105,21 @@ describe("installExitHandshake", () => {
     err.mockRestore();
   });
 
+  it("exitFlushFailedIpcErrorIsSwallowed", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("ipc"));
+    const flushAll = vi.fn(async () => {
+      throw new Error("disk full");
+    });
+    await installExitHandshake(flushAll);
+    await expect(
+      closeHandler!({ preventDefault: vi.fn() }),
+    ).resolves.toBeUndefined();
+    expect(err).toHaveBeenCalledTimes(2);
+    err.mockRestore();
+  });
+
   it("concurrentTriggersFlushOnce", async () => {
     let release!: () => void;
     const flushAll = vi.fn(() => new Promise<void>((r) => (release = r)));
