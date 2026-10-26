@@ -109,6 +109,8 @@ export interface FilesApi {
   /** `index` into Recently Closed, newest first. */
   reopenEntry(index: number): Promise<void>;
   requestFormat(kind?: FormatRequest["kind"]): void;
+  /** Show a short status-bar notice (e.g. a Beautify that failed). */
+  showNotice(text: string): void;
   notice: string | null;
   convertRequest: ConvertRequest | null;
   /** At most one per Tab; apply each seq once. */
@@ -1123,6 +1125,7 @@ export function useFiles(
     renameFile,
     reopenEntry,
     requestFormat,
+    showNotice,
     notice,
     convertRequest,
     replaceRequests,

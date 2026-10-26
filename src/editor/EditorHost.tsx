@@ -1,5 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import {
+  Compartment,
+  EditorSelection,
+  EditorState,
+  Transaction,
+  type Extension,
+} from "@codemirror/state";
 import {
   EditorView,
   drawSelection,
@@ -14,17 +20,32 @@ import {
   history,
   historyKeymap,
   indentWithTab,
+  isolateHistory,
 } from "@codemirror/commands";
-import { bracketMatching, indentOnInput } from "@codemirror/language";
+import {
+  bracketMatching,
+  codeFolding,
+  foldCode,
+  foldGutter,
+  indentOnInput,
+  unfoldCode,
+} from "@codemirror/language";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import {
   highlightSelectionMatches,
   selectNextOccurrence,
 } from "@codemirror/search";
-import type { LanguageId, TabState } from "../model/types";
+import type { FileFormat, LanguageId, TabState } from "../model/types";
 import { zukaiTheme } from "./theme";
 import { loadLanguage } from "./languages";
 import { GUESS_PREFIX, guessLanguage } from "./guess";
+import { beautify, minify, type FormatResult } from "./jsonFormat";
+import {
+  formatExtension,
+  formatField,
+  setFormat,
+  syncFormat,
+} from "./fileFormat";
 import {
   findExtension,
   type FindMode,
@@ -50,6 +71,23 @@ export interface EditorHostProps {
   focusSignal?: number;
   /** Mod+F / Mod+H: open the find bar on the active Tab when `seq` changes. */
   findRequest?: FindRequest | null;
+  /** Beautify/Minify the active JSON Tab when `seq` changes. */
+  formatRequest?: { seq: number; kind: "beautify" | "minify" } | null;
+  /** Convert a File's format as an undoable step when `seq` changes. */
+  convertRequest?: {
+    seq: number;
+    id: string;
+    patch: Partial<FileFormat>;
+  } | null;
+  /**
+   * Replace a Tab's text (reload, Load disk version) as one undoable step.
+   * At most one per Tab; each `seq` is applied once, hidden views included.
+   */
+  replaceRequests?: readonly { seq: number; id: string; text: string }[];
+  /** Tabs whose unsaved text can't be read: read-only until it can. */
+  shadowUnreadable?: ReadonlySet<string>;
+  /** The outcome of a format request (the app shows a failure). */
+  onFormatResult?(r: FormatResult): void;
 }
 
 interface OpenBar {
@@ -82,8 +120,19 @@ interface Entry {
 const wrapExt = (on: boolean): Extension => (on ? EditorView.lineWrapping : []);
 const readOnlyExt = (on: boolean): Extension => [EditorState.readOnly.of(on)];
 
+/** A quiet fold marker: open ones show only while the gutter is hovered. */
+function foldMarker(open: boolean): HTMLElement {
+  const el = document.createElement("span");
+  el.className = open ? "z-fold z-fold-open" : "z-fold z-fold-closed";
+  el.textContent = open ? "⌄" : "›";
+  el.title = open ? "Fold" : "Unfold";
+  return el;
+}
+
 const baseSetup: Extension = [
   lineNumbers(),
+  foldGutter({ markerDOM: foldMarker }),
+  codeFolding(),
   highlightActiveLine(),
   highlightActiveLineGutter(),
   history(),
@@ -95,6 +144,8 @@ const baseSetup: Extension = [
   highlightSelectionMatches(),
   keymap.of([
     { key: "Mod-d", run: selectNextOccurrence, preventDefault: true },
+    { key: "Mod-Shift-[", run: foldCode },
+    { key: "Mod-Shift-]", run: unfoldCode },
     ...closeBracketsKeymap,
     ...defaultKeymap,
     ...historyKeymap,
@@ -102,6 +153,70 @@ const baseSetup: Extension = [
   ]),
   zukaiTheme,
 ];
+
+const sameFormat = (a: FileFormat | null, b: FileFormat | null) =>
+  a === b ||
+  (!!a &&
+    !!b &&
+    a.encoding === b.encoding &&
+    a.bom === b.bom &&
+    a.lineEnding === b.lineEnding &&
+    a.mixed === b.mixed);
+
+const isHighSurrogate = (c: number) => c >= 0xd800 && c <= 0xdbff;
+const isLowSurrogate = (c: number) => c >= 0xdc00 && c <= 0xdfff;
+
+/** UTF-16 offset in `s` of a 1-based line and column. */
+function offsetOf(s: string, line: number, col: number): number {
+  let at = 0;
+  for (let l = 1; l < line; l++) {
+    const nl = s.indexOf("\n", at);
+    if (nl === -1) break;
+    at = nl + 1;
+  }
+  return Math.min(s.length, at + col - 1);
+}
+
+/**
+ * Beautify or minify the main selection, or the whole document when it is
+ * empty, as one edit. Invalid JSON changes nothing and moves the cursor to
+ * the error; the result reports document lines and columns.
+ */
+function formatJson(
+  view: EditorView,
+  kind: "beautify" | "minify",
+): FormatResult {
+  const { state } = view;
+  const sel = state.selection.main;
+  const whole = sel.empty;
+  const from = whole ? 0 : sel.from;
+  const to = whole ? state.doc.length : sel.to;
+  const src = state.sliceDoc(from, to);
+  const r = kind === "beautify" ? beautify(src) : minify(src);
+  if (!r.ok) {
+    const pos = from + offsetOf(src, r.line, r.col);
+    const line = state.doc.lineAt(pos);
+    view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
+    return { ...r, line: line.number, col: pos - line.from + 1 };
+  }
+  let text = r.text;
+  if (!whole && kind === "beautify") {
+    // A selection keeps the indentation of the line it starts on.
+    const indent = /^[ \t]*/.exec(state.doc.lineAt(from).text)![0];
+    if (indent) text = text.replace(/\n/g, `\n${indent}`);
+  }
+  if (text !== src) {
+    view.dispatch({
+      changes: { from, to, insert: text },
+      selection: whole
+        ? { anchor: Math.min(sel.head, text.length) }
+        : { anchor: from, head: from + text.length },
+      userEvent: "input.format",
+      scrollIntoView: true,
+    });
+  }
+  return { ok: true, text };
+}
 
 function clampSelection(state: TabState, length: number) {
   const clamp = (n: number) => Math.max(0, Math.min(length, n | 0));
@@ -113,6 +228,8 @@ function clampSelection(state: TabState, length: number) {
 
 export function EditorHost(props: EditorHostProps) {
   const { tabs, activeId, isClosing, focusSignal, findRequest } = props;
+  const { formatRequest, convertRequest, replaceRequests } = props;
+  const { shadowUnreadable } = props;
   const container = useRef<HTMLDivElement>(null);
   const barBox = useRef<HTMLDivElement>(null);
   /** Each Tab's last search term and toggles, for this run of the app. */
@@ -121,6 +238,8 @@ export function EditorHost(props: EditorHostProps) {
   const [bar, setBar] = useState<OpenBar | null>(null);
   const views = useRef(new Map<string, Entry>());
   const creating = useRef(new Set<string>());
+  /** Per Tab, the newest replace `seq` applied (or known to be stale). */
+  const replaced = useRef(new Map<string, number>());
   /** Latest props, for listeners and async callbacks. */
   const latest = useRef(props);
   useLayoutEffect(() => {
@@ -128,6 +247,88 @@ export function EditorHost(props: EditorHostProps) {
   });
 
   const tabOf = (id: string) => latest.current.tabs.find((t) => t.id === id);
+
+  /** Closing Tabs, read-only Files and unreadable shadows take no input. */
+  const isReadOnly = (tab: TabState) =>
+    (latest.current.isClosing?.(tab.id) ?? false) ||
+    tab.file?.held === "readonly" ||
+    (latest.current.shadowUnreadable?.has(tab.id) ?? false);
+
+  const newestReplace = (id: string) =>
+    (latest.current.replaceRequests ?? []).reduce(
+      (n, r) => (r.id === id && r.seq > n ? r.seq : n),
+      0,
+    );
+
+  /**
+   * Make `text` the view's text as one undoable step, keeping the cursor
+   * and scroll offset (clamped to the new length).
+   */
+  const replaceDoc = (e: Entry, text: string) => {
+    const v = e.view;
+    const old = v.state.doc.toString();
+    if (old === text) return;
+    // Change only what differs, so folds and heights elsewhere stay put.
+    const max = Math.min(old.length, text.length);
+    let a = 0;
+    while (a < max && old.charCodeAt(a) === text.charCodeAt(a)) a++;
+    if (a > 0 && isHighSurrogate(old.charCodeAt(a - 1))) a--;
+    let b = 0;
+    while (
+      b < max - a &&
+      old.charCodeAt(old.length - 1 - b) ===
+        text.charCodeAt(text.length - 1 - b)
+    ) {
+      b++;
+    }
+    if (b > 0 && isLowSurrogate(old.charCodeAt(old.length - b))) b--;
+    const clamp = (n: number) => Math.min(n, text.length);
+    const sel = v.state.selection;
+    const selection = EditorSelection.create(
+      sel.ranges.map((r) =>
+        EditorSelection.range(clamp(r.anchor), clamp(r.head)),
+      ),
+      sel.mainIndex,
+    );
+    const visible = e.wrapper.style.display !== "none";
+    const top = v.scrollDOM.scrollTop;
+    v.dispatch({
+      changes: {
+        from: a,
+        to: old.length - b,
+        insert: text.slice(a, text.length - b),
+      },
+      selection,
+      annotations: [
+        isolateHistory.of("full"),
+        Transaction.userEvent.of("reload"),
+      ],
+    });
+    if (visible) {
+      v.scrollDOM.scrollTop = top;
+      requestAnimationFrame(() => {
+        if (v.dom.isConnected) v.scrollDOM.scrollTop = top;
+      });
+    }
+  };
+
+  /**
+   * Apply each replace request not applied yet. One for a Tab with no view
+   * waits for the view; one for a closed Tab is dropped.
+   */
+  const applyReplaces = () => {
+    const { replaceRequests: list = [], tabs: all } = latest.current;
+    for (const r of list) {
+      if (r.seq <= (replaced.current.get(r.id) ?? 0)) continue;
+      const e = views.current.get(r.id);
+      if (!all.some((t) => t.id === r.id)) {
+        replaced.current.set(r.id, r.seq);
+      } else if (e) {
+        replaced.current.set(r.id, r.seq);
+        replaceDoc(e, r.text);
+      }
+    }
+  };
 
   const flushPatch = (id: string, e: Entry) => {
     clearTimeout(e.timer);
@@ -179,6 +380,20 @@ export function EditorHost(props: EditorHostProps) {
     );
   };
 
+  /** A Convert, or its undo/redo: the File is then written in that format. */
+  const reportFormat = (id: string, u: ViewUpdate) => {
+    for (const tr of u.transactions) {
+      for (const fx of tr.effects) {
+        const file = tabOf(id)?.file;
+        if (fx.is(setFormat) && file) {
+          latest.current.onTabPatch(id, {
+            file: { ...file, format: fx.value },
+          });
+        }
+      }
+    }
+  };
+
   /** Open (or refocus) the find bar on a Tab's view. */
   const openBar = (id: string, mode: FindMode) => {
     const e = views.current.get(id);
@@ -197,7 +412,7 @@ export function EditorHost(props: EditorHostProps) {
 
   const createView = (tab: TabState, text: string): Entry => {
     const id = tab.id;
-    const readOnly = latest.current.isClosing?.(id) ?? false;
+    const readOnly = isReadOnly(tab);
     const wrapper = document.createElement("div");
     wrapper.className = "z-editor-view";
     wrapper.style.height = "100%";
@@ -215,6 +430,7 @@ export function EditorHost(props: EditorHostProps) {
     const e = entry as Entry; // the listener only runs once view is set
     const listener = EditorView.updateListener.of((u) => {
       if (u.docChanged) latest.current.onChange(id, u.state.doc.toString());
+      reportFormat(id, u);
       maybeGuess(id, e, u);
       if (u.selectionSet || u.docChanged) {
         const { anchor, head } = u.state.selection.main;
@@ -231,6 +447,7 @@ export function EditorHost(props: EditorHostProps) {
           entry.language.of([]),
           entry.wrap.of(wrapExt(tab.wrap)),
           entry.readOnly.of(readOnlyExt(readOnly)),
+          formatExtension(tab.file?.format ?? null),
           findExtension((mode) => openBar(id, mode)),
           listener,
         ],
@@ -290,6 +507,9 @@ export function EditorHost(props: EditorHostProps) {
     if (creating.current.has(activeId)) return;
     const id = activeId;
     creating.current.add(id);
+    // The loaded text already has every replace issued before this point;
+    // only newer ones are applied on top of it.
+    const known = newestReplace(id);
     latest.current
       .loadContent(id)
       .then((text) => {
@@ -300,6 +520,9 @@ export function EditorHost(props: EditorHostProps) {
         e.wrapper.style.display = "none";
         host.appendChild(e.wrapper);
         views.current.set(id, e);
+        const done = replaced.current.get(id) ?? 0;
+        replaced.current.set(id, Math.max(done, known));
+        applyReplaces();
         showActive();
       })
       .catch((err: unknown) => console.error("load scratchpad failed", err))
@@ -308,7 +531,7 @@ export function EditorHost(props: EditorHostProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabs, activeId]);
 
-  // Keep each view's Language, wrapping and read-only state in step.
+  // Keep each view's Language, wrapping, read-only state and format in step.
   useEffect(() => {
     for (const tab of tabs) {
       const e = views.current.get(tab.id);
@@ -320,14 +543,62 @@ export function EditorHost(props: EditorHostProps) {
         e.current.wrap = tab.wrap;
         effects.push(e.wrap.reconfigure(wrapExt(tab.wrap)));
       }
-      const ro = isClosing?.(tab.id) ?? false;
+      const ro = isReadOnly(tab);
       if (ro !== e.current.readOnly) {
         e.current.readOnly = ro;
         effects.push(e.readOnly.reconfigure(readOnlyExt(ro)));
       }
-      if (effects.length > 0) e.view.dispatch({ effects });
+      // A format set elsewhere (a reload, a refused Convert): follow it,
+      // outside the history.
+      const format = tab.file?.format ?? null;
+      if (!sameFormat(format, e.view.state.field(formatField))) {
+        effects.push(syncFormat.of(format));
+      }
+      if (effects.length > 0) {
+        e.view.dispatch({
+          effects,
+          annotations: Transaction.addToHistory.of(false),
+        });
+      }
     }
-  }, [tabs, isClosing]);
+    // Helpers read the latest props through a ref.
+  }, [tabs, isClosing, shadowUnreadable]);
+
+  // Reload / Load disk version, for every Tab, hidden views included.
+  useEffect(() => {
+    applyReplaces();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replaceRequests, tabs]);
+
+  // Convert: an undoable effect, reported by the listener.
+  useEffect(() => {
+    if (!convertRequest) return;
+    const { id, patch } = convertRequest;
+    const file = tabOf(id)?.file;
+    if (!file) return;
+    const format = { ...file.format, ...patch };
+    const e = views.current.get(id);
+    if (!e) {
+      latest.current.onTabPatch(id, { file: { ...file, format } });
+      return;
+    }
+    e.view.dispatch({
+      effects: setFormat.of(format),
+      annotations: isolateHistory.of("full"),
+    });
+  }, [convertRequest]);
+
+  // Beautify / Minify the active JSON Tab.
+  useEffect(() => {
+    if (!formatRequest) return;
+    const id = latest.current.activeId;
+    const tab = tabOf(id);
+    const e = views.current.get(id);
+    if (!tab || !e || tab.language !== "json" || e.view.state.readOnly) return;
+    // Not inline in `?.()`: that would skip formatting with no listener.
+    const result = formatJson(e.view, formatRequest.kind);
+    latest.current.onFormatResult?.(result);
+  }, [formatRequest]);
 
   useEffect(() => {
     if (focusSignal === undefined) return;
