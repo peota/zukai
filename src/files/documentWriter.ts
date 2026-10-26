@@ -23,6 +23,12 @@ export interface DocumentWriterDeps {
    * its real text, so nothing is written for it at all.
    */
   isUnreadable?(id: string): boolean;
+  /**
+   * False when the Tab's text was never loaded: the text handed in can't be
+   * its real text, so the write is refused (rejects, so nothing claims it
+   * was saved).
+   */
+  isLoaded?(id: string): boolean;
 }
 
 /**
@@ -61,6 +67,9 @@ export function createDocumentWriter(
     if (deps.isUnreadable?.(id)) {
       console.error("write refused: unreadable shadow", id);
       return;
+    }
+    if (deps.isLoaded?.(id) === false) {
+      throw new Error(`write refused: the text of ${id} never loaded`);
     }
     const file = tab.file;
     if (!file) {

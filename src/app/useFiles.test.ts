@@ -732,6 +732,98 @@ function gate() {
   return { promise, open };
 }
 
+describe("useFiles text not loaded yet (final fix I2)", () => {
+  const heldSession = (held: FileInfo["held"]) =>
+    sessionJson([newTabState("a"), fileTab("f", P, { held })]);
+
+  /** Holds the next shadow read until `open()`. */
+  function gateShadowRead() {
+    const g = gate();
+    const read = f.shadowRead.getMockImplementation()!;
+    f.shadowRead.mockImplementationOnce(async (id) => {
+      await g.promise;
+      return read(id);
+    });
+    return g;
+  }
+
+  it("a Convert before the Tab's text was ever loaded writes its real text", async () => {
+    shadows.f = "unsaved";
+    s.readSession.mockResolvedValue(heldSession("unencodable"));
+    const { result } = await mount();
+    const g = gateShadowRead();
+    const file = fileTabOf(result)!.file!;
+    const bom = { ...FMT, bom: true };
+    act(() =>
+      result.current.updateTab("f", { file: { ...file, format: bom } }),
+    );
+    await settle();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(disk[P].text).toBe("{}");
+    expect(shadows.f).toBe("unsaved");
+    g.open();
+    await waitFor(() => expect(disk[P].text).toBe("unsaved"));
+    expect(f.fileWrite).not.toHaveBeenCalledWith(P, "", bom, fp("h1"));
+    expect(fileTabOf(result)!.file!.format).toEqual(bom);
+    expect(fileTabOf(result)!.file!.held).toBeNull();
+    expect(await result.current.loadContent("f")).toBe("unsaved");
+  });
+
+  it("a Convert while the Tab's text is loading waits for it", async () => {
+    shadows.f = "unsaved";
+    s.readSession.mockResolvedValue(heldSession("unencodable"));
+    const { result } = await mount();
+    const g = gateShadowRead();
+    let loading!: Promise<string>;
+    act(() => {
+      loading = result.current.loadContent("f");
+    });
+    const file = fileTabOf(result)!.file!;
+    const bom = { ...FMT, bom: true };
+    act(() =>
+      result.current.updateTab("f", { file: { ...file, format: bom } }),
+    );
+    await settle();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(f.shadowWrite).not.toHaveBeenCalled();
+    expect(shadows.f).toBe("unsaved");
+    g.open();
+    await act(async () => void (await loading));
+    await waitFor(() => expect(disk[P].text).toBe("unsaved"));
+    expect(f.fileWrite).not.toHaveBeenCalledWith(P, "", bom, fp("h1"));
+  });
+
+  it("Load disk version while the Tab's text is loading never writes empty text", async () => {
+    shadows.f = "unsaved";
+    s.readSession.mockResolvedValue(heldSession("conflict"));
+    const { result } = await mount();
+    const g = gateShadowRead();
+    let loading!: Promise<string>;
+    act(() => {
+      loading = result.current.loadContent("f");
+    });
+    // The File went away: Load disk version finds it Missing.
+    delete disk[P];
+    let loadDisk!: Promise<void>;
+    act(() => {
+      loadDisk = result.current.loadDiskVersion("f");
+    });
+    await settle();
+    expect(f.shadowWrite).not.toHaveBeenCalledWith("f", "");
+    expect(shadows.f).toBe("unsaved");
+    g.open();
+    await act(async () => {
+      await loading;
+      await loadDisk;
+    });
+    await settle();
+    expect(f.shadowWrite).not.toHaveBeenCalledWith("f", "");
+    expect(shadows.f).toBe("unsaved");
+    expect(fileTabOf(result)!.file!.held).toBe("missing");
+    expect(await result.current.loadContent("f")).toBe("unsaved");
+  });
+});
+
 describe("useFiles interleavings (fix round 1)", () => {
   it("typing during a reload's read becomes a conflict, keeping the text", async () => {
     const { result } = await mount();

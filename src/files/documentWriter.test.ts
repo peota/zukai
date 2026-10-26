@@ -37,6 +37,7 @@ beforeEach(() => {
     shadowDelete: vi.fn().mockResolvedValue(undefined),
     onWritten: vi.fn(),
     isUnreadable: vi.fn(() => false),
+    isLoaded: vi.fn(() => true),
   } as unknown as typeof deps;
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -45,6 +46,21 @@ const withFile = (id: string, f: FileInfo) =>
   tabs.set(id, { ...newTabState(id), file: f });
 
 describe("documentWriter", () => {
+  it("refuses (rejects) a write for a Tab whose text never loaded", async () => {
+    withFile("f", fileInfo());
+    tabs.set("s", newTabState("s"));
+    deps.isLoaded.mockReturnValue(false);
+    const write = createDocumentWriter(deps);
+    await expect(write("f", "")).rejects.toThrow(/never loaded/);
+    await expect(write("s", "")).rejects.toThrow(/never loaded/);
+    expect(deps.fileWrite).not.toHaveBeenCalled();
+    expect(deps.fileFingerprint).not.toHaveBeenCalled();
+    expect(deps.writeScratchpad).not.toHaveBeenCalled();
+    expect(deps.shadowWrite).not.toHaveBeenCalled();
+    expect(deps.shadowDelete).not.toHaveBeenCalled();
+    expect(deps.onWritten).not.toHaveBeenCalled();
+  });
+
   it("scratchpadWritesScratchpad", async () => {
     tabs.set("s", newTabState("s"));
     await createDocumentWriter(deps)("s", "hello");

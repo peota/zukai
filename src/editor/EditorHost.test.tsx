@@ -425,6 +425,55 @@ describe("EditorHost read-only and Convert", () => {
   });
 });
 
+describe("EditorHost Convert before the view exists (final fix I2)", () => {
+  it("holds a Convert until the view exists, then applies it undoably", async () => {
+    let resolve!: (s: string) => void;
+    const { container, rerender, props } = setup({
+      tabs: [tab("a", { file: FILE })],
+      loadContent: () => new Promise<string>((r) => (resolve = r)),
+    });
+    rerender({
+      convertRequest: { seq: 1, id: "a", patch: { lineEnding: "lf" } },
+    });
+    // No view yet: nothing is patched (a patch now couldn't be undone, and
+    // the Tab's text isn't known).
+    expect(props.onTabPatch).not.toHaveBeenCalled();
+    await act(async () => resolve("loaded"));
+    const v = await activeView(container, "loaded");
+    const lf = { ...FILE.format, lineEnding: "lf" as const };
+    await waitFor(() =>
+      expect(props.onTabPatch).toHaveBeenLastCalledWith("a", {
+        file: { ...FILE, format: lf },
+      }),
+    );
+    rerender({ tabs: [tab("a", { file: { ...FILE, format: lf } })] });
+    act(() => void undo(v));
+    expect(props.onTabPatch).toHaveBeenLastCalledWith("a", {
+      file: { ...FILE, format: FILE.format },
+    });
+  });
+
+  it("drops a held Convert for a Tab that closed", async () => {
+    let resolve!: (s: string) => void;
+    const { rerender, props } = setup({
+      tabs: [tab("a", { file: FILE }), tab("b")],
+      loadContent: (id) =>
+        id === "a"
+          ? new Promise<string>((r) => (resolve = r))
+          : Promise.resolve("b text"),
+    });
+    rerender({
+      convertRequest: { seq: 1, id: "a", patch: { lineEnding: "lf" } },
+    });
+    rerender({ tabs: [tab("b")], activeId: "b" });
+    await act(async () => resolve("loaded"));
+    expect(props.onTabPatch).not.toHaveBeenCalledWith(
+      "a",
+      expect.objectContaining({ file: expect.anything() }),
+    );
+  });
+});
+
 describe("EditorHost folding", () => {
   it("foldKeysFoldJsonObject", async () => {
     const src = '{\n  "a": {\n    "b": 1\n  }\n}';
