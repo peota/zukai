@@ -192,19 +192,23 @@ function formatJson(
   const from = whole ? 0 : sel.from;
   const to = whole ? state.doc.length : sel.to;
   const src = state.sliceDoc(from, to);
-  const r = kind === "beautify" ? beautify(src) : minify(src);
+  // Only the JSON itself is formatted: whitespace around it (a final
+  // newline, a line-wise selection's indent and line break) stays as is.
+  const lead = /^[ \t\r\n]*/.exec(src)![0];
+  const trail = /[ \t\r\n]*$/.exec(src.slice(lead.length))![0];
+  const core = src.slice(lead.length, src.length - trail.length);
+  const r = kind === "beautify" ? beautify(core) : minify(core);
   if (!r.ok) {
-    const pos = from + offsetOf(src, r.line, r.col);
+    const pos = from + lead.length + offsetOf(core, r.line, r.col);
     const line = state.doc.lineAt(pos);
     view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
     return { ...r, line: line.number, col: pos - line.from + 1 };
   }
-  let text = r.text;
-  if (!whole && kind === "beautify") {
-    // A selection keeps the indentation of the line it starts on.
-    const indent = /^[ \t]*/.exec(state.doc.lineAt(from).text)![0];
-    if (indent) text = text.replace(/\n/g, `\n${indent}`);
-  }
+  // Continuation lines take the indentation of the line the JSON starts on.
+  const coreLine = state.doc.lineAt(from + lead.length).text;
+  const indent = /^[ \t]*/.exec(coreLine)![0];
+  const body = indent ? r.text.replace(/\n/g, `\n${indent}`) : r.text;
+  const text = lead + body + trail;
   if (text !== src) {
     view.dispatch({
       changes: { from, to, insert: text },
@@ -564,8 +568,9 @@ export function EditorHost(props: EditorHostProps) {
     // Helpers read the latest props through a ref.
   }, [tabs, isClosing, shadowUnreadable]);
 
-  // Reload / Load disk version, for every Tab, hidden views included.
-  useEffect(() => {
+  // Reload / Load disk version, for every Tab, hidden views included. A
+  // layout effect, so a keystroke can't land in a view about to be replaced.
+  useLayoutEffect(() => {
     applyReplaces();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replaceRequests, tabs]);

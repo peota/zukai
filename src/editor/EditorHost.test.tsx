@@ -278,6 +278,48 @@ describe("EditorHost format requests", () => {
     );
     expect(v.state.selection.main.head).toBe(9);
   });
+
+  it("keeps a whole document's trailing newline", async () => {
+    const { container, rerender } = setup({
+      tabs: [json("a")],
+      loadContent: () => Promise.resolve('{"a":1}\n'),
+    });
+    const v = await activeView(container, '{"a":1}\n');
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe('{\n  "a": 1\n}\n');
+    rerender({ formatRequest: { seq: 2, kind: "minify" } });
+    expect(v.state.doc.toString()).toBe('{"a":1}\n');
+  });
+
+  it("beautifies a line-wise selection inside an array in place", async () => {
+    const src = '[\n  2,\n  {"a":1}\n]';
+    const from = src.indexOf("  {");
+    const to = src.indexOf("]");
+    const { container, rerender } = setup({
+      tabs: [json("a", { selection: { anchor: from, head: to } })],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe('[\n  2,\n  {\n    "a": 1\n  }\n]');
+  });
+
+  it("reports an error after a selection's leading whitespace correctly", async () => {
+    const src = "ab\n  [1 2]";
+    const onFormatResult = vi.fn();
+    const { container, rerender } = setup({
+      tabs: [json("a", { selection: { anchor: 3, head: src.length } })],
+      loadContent: () => Promise.resolve(src),
+      onFormatResult,
+    });
+    const v = await activeView(container, src);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe(src);
+    expect(onFormatResult).toHaveBeenCalledWith(
+      expect.objectContaining({ ok: false, line: 2, col: 6 }),
+    );
+    expect(v.state.selection.main.head).toBe(8);
+  });
 });
 
 describe("EditorHost replace requests", () => {
