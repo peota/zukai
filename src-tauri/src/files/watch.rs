@@ -205,16 +205,45 @@ mod tests {
     #[test]
     fn debounced_events_coalesce_per_path() {
         let (_dir, file, _w, rx) = setup("a.txt");
-        // A burst longer than the debounce window: still one event.
+        // A burst longer than the debounce window. The debouncer emits `Any`
+        // only once a path has been quiet for the whole window, so a burst
+        // with no long pause yields one event. A scheduler stall on a slow
+        // runner can still open a real quiet period, so record the gaps.
+        let mut last = Instant::now();
+        let mut max_gap = Duration::ZERO;
+        let mut quiet_periods = 1;
         for i in 0..50 {
             std::fs::write(&file, format!("v{i}")).unwrap();
+            let now = Instant::now();
+            if i > 0 {
+                max_gap = max_gap.max(now - last);
+                // Close to the window: the debouncer may legitimately split.
+                if now - last >= Duration::from_millis(150) {
+                    quiet_periods += 1;
+                }
+            }
+            last = now;
             std::thread::sleep(Duration::from_millis(10));
         }
         let first = next(&rx);
         assert_eq!(first.kind, Kind::Changed);
         assert_eq!(first.path, file.to_str().unwrap());
-        // Nothing more for the same burst, well past the debounce window.
-        assert!(rx.recv_timeout(Duration::from_millis(600)).is_err());
+        // Collect anything else, waiting longer than the debounce window.
+        let mut events = 1;
+        while rx.recv_timeout(Duration::from_millis(600)).is_ok() {
+            events += 1;
+        }
+        if quiet_periods == 1 {
+            assert_eq!(events, 1, "continuous burst (max gap {max_gap:?}) split");
+        } else {
+            eprintln!(
+                "note: writes paused up to {max_gap:?}; burst split into {quiet_periods}                  quiet periods, got {events} events"
+            );
+            assert!(
+                events <= quiet_periods,
+                "{events} events for {quiet_periods} quiet periods"
+            );
+        }
     }
 
     #[test]
