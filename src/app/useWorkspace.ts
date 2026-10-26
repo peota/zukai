@@ -5,6 +5,7 @@ import { detectPlatform, type Command } from "./shortcuts";
 import {
   fileFingerprint,
   fileWrite,
+  grantsFilter,
   pathKey,
   shadowDelete,
   shadowWrite,
@@ -14,6 +15,7 @@ import { BEFORE_EXIT_EVENT } from "./exit";
 import { createKeyedLock } from "./keyedLock";
 import { useFiles, type FilesApi } from "./useFiles";
 import {
+  filePathsOf,
   logError,
   restoreSession,
   useCombinedSaveStatus,
@@ -40,6 +42,10 @@ import {
 } from "../storage/autosave";
 
 const EMPTY: WorkspaceState = { tabs: [], activeId: "", closed: [] };
+/** How often a failed check of the Session's Files is tried again. */
+export const GRANTS_RETRY_MS = 5000;
+export const SESSION_SUSPENDED_NOTICE =
+  "Can't check the open files: tabs aren't remembered until it can";
 
 /** True if any Tab or Recently Closed entry changed whether it is held. */
 function heldChanged(a: WorkspaceState, b: WorkspaceState): boolean {
@@ -93,6 +99,7 @@ export function useWorkspace(): Workspace {
   const [state, setState] = useState<WorkspaceState>(EMPTY);
   const [ready, setReady] = useState(false);
   const [findRequest, setFindRequest] = useState<FindRequest | null>(null);
+  const [grantsUnchecked, setGrantsUnchecked] = useState(false);
   // Contents live in a map: async commands need the latest, and typing must
   // not re-render the App.
   const stateRef = useRef(state);
@@ -105,7 +112,15 @@ export function useWorkspace(): Workspace {
   /** Close/reopen operations in flight; exit waits for them. */
   const inFlight = useRef(new Set<Promise<void>>());
 
+  /**
+   * True while Rust couldn't say which Session Files are granted: the Tabs
+   * are kept, but no Session is written (session_write could refuse it, and
+   * then nothing could quit) until a later check succeeds.
+   */
+  const sessionSuspended = useRef(false);
+
   const scheduleSession = useCallback(() => {
+    if (sessionSuspended.current) return;
     sessionSaver.schedule(SESSION_ID, () =>
       JSON.stringify(toSessionFile(stateRef.current)),
     );
@@ -214,7 +229,7 @@ export function useWorkspace(): Workspace {
   const { loadContent, updateTab, afterRestore, closeFile } = internal;
   const { refuseEdit } = internal;
   const { renameFile, reopenEntry, pickAndOpen, save, saveAs } = files;
-  const { requestFormat } = files;
+  const { requestFormat, showNotice } = files;
 
   const setContent = useCallback(
     (id: string, text: string) => {
@@ -396,7 +411,14 @@ export function useWorkspace(): Workspace {
     void (async () => {
       let next: WorkspaceState;
       try {
-        next = await afterRestore(await restoreSession(freshId));
+        next = await afterRestore(
+          await restoreSession(freshId, {
+            onGrantsUnchecked: () => {
+              sessionSuspended.current = true;
+              setGrantsUnchecked(true);
+            },
+          }),
+        );
       } catch (err) {
         console.error("restore failed", err);
         next = ws.ensureOneTab(EMPTY, freshId());
@@ -420,6 +442,55 @@ export function useWorkspace(): Workspace {
       cancelled = true;
     };
   }, [afterRestore, commit]);
+
+  // Session Files Rust couldn't check at restore: ask again on focus and
+  // every few seconds; once it answers, drop what isn't granted and resume
+  // saving the Session.
+  useEffect(() => {
+    if (!ready || !grantsUnchecked) return;
+    showNotice(SESSION_SUSPENDED_NOTICE);
+    let busy = false;
+    let done = false;
+    const check = async () => {
+      if (busy || done) return;
+      busy = true;
+      const paths = filePathsOf(stateRef.current);
+      try {
+        const granted = new Set(await grantsFilter(paths));
+        if (done) return;
+        done = true;
+        const ok = (t: TabState) => !t.file || granted.has(t.file.path);
+        const cur = stateRef.current;
+        if (!cur.tabs.every(ok) || !cur.closed.every((e) => ok(e.tab))) {
+          const tabs = cur.tabs.filter(ok);
+          const activeId = tabs.some((t) => t.id === cur.activeId)
+            ? cur.activeId
+            : (tabs[0]?.id ?? "");
+          commit(
+            ws.ensureOneTab(
+              { tabs, activeId, closed: cur.closed.filter((e) => ok(e.tab)) },
+              freshId(),
+            ),
+          );
+        }
+        sessionSuspended.current = false;
+        setGrantsUnchecked(false);
+        scheduleSession();
+      } catch (err) {
+        logError("check granted paths")(err);
+      } finally {
+        busy = false;
+      }
+    };
+    const timer = setInterval(() => void check(), GRANTS_RETRY_MS);
+    const onFocus = () => void check();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      done = true;
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [ready, grantsUnchecked, commit, scheduleSession, showNotice]);
 
   // Persist the Session on every state change (debounced by the saver).
   useEffect(() => {

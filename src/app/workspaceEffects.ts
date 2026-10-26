@@ -40,8 +40,17 @@ export function flushAll(savers: Saver[]): Promise<void> {
  * - A session.json that exists but can't be read or parsed is copied to
  *   session.json.bak before the rebuilt Session overwrites it.
  */
+export interface RestoreOptions {
+  /**
+   * Rust couldn't say which Session Files are granted (twice): every File Tab
+   * was kept, and Session writes must wait until a later check succeeds.
+   */
+  onGrantsUnchecked?(): void;
+}
+
 export async function restoreSession(
   freshId: () => string,
+  opts: RestoreOptions = {},
 ): Promise<WorkspaceState> {
   const [ids, json, closedList] = await Promise.allSettled([
     listScratchpads(),
@@ -83,7 +92,7 @@ export async function restoreSession(
     freshId,
     Date.now(),
     closedFiles,
-    file ? await grantedPaths(file) : null,
+    file ? await grantedPaths(file, opts) : null,
     (p) => pathKey(p, platform),
   );
   // An expired Scratchpad lives in closed/; an expired File only in its shadow.
@@ -98,22 +107,37 @@ export async function restoreSession(
   return state;
 }
 
+/** The File paths of a workspace's open Tabs and Recently Closed entries. */
+export function filePathsOf(s: {
+  tabs: WorkspaceState["tabs"];
+  closed: WorkspaceState["closed"];
+}): string[] {
+  return [...s.tabs, ...s.closed.map((e) => e.tab)].flatMap((t) =>
+    t.file ? [t.file.path] : [],
+  );
+}
+
 /**
  * The Session's File paths that Rust granted under exactly that spelling.
  * The rest are dropped, or session_write would refuse every later Session;
- * a held one's text comes back as an orphan shadow. If Rust can't say, none.
+ * a held one's text comes back as an orphan shadow. If Rust can't say (it
+ * is asked twice), null: every File is kept and the caller is told.
  */
-async function grantedPaths(file: SessionFile): Promise<Set<string>> {
-  const paths = [...file.tabs, ...file.closed.map((e) => e.tab)].flatMap((t) =>
-    t.file ? [t.file.path] : [],
-  );
+async function grantedPaths(
+  file: SessionFile,
+  opts: RestoreOptions,
+): Promise<Set<string> | null> {
+  const paths = filePathsOf(file);
   if (paths.length === 0) return new Set();
-  try {
-    return new Set(await grantsFilter(paths));
-  } catch (err) {
-    logError("check granted paths")(err);
-    return new Set();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return new Set(await grantsFilter(paths));
+    } catch (err) {
+      logError("check granted paths")(err);
+    }
   }
+  opts.onGrantsUnchecked?.();
+  return null;
 }
 
 /**

@@ -940,6 +940,51 @@ describe("useFiles cheap focus re-checks (final fix M6)", () => {
   });
 });
 
+describe("useFiles when Rust can't check the Session's Files (final fix M3)", () => {
+  const SUSPENDED =
+    "Can't check the open files: tabs aren't remembered until it can";
+
+  it("asks again once, and keeps the Tabs when that works", async () => {
+    f.grantsFilter.mockRejectedValueOnce(new Error("ipc"));
+    s.readSession.mockResolvedValue(
+      sessionJson([fileTab("f", P), newTabState("a")]),
+    );
+    const { result } = await mount();
+    expect(f.grantsFilter).toHaveBeenCalledTimes(2);
+    expect(fileTabOf(result)).toBeDefined();
+    await waitFor(() => expect(s.writeSession).toHaveBeenCalled());
+  });
+
+  it("keeps the Tabs and saves no Session until a later check works", async () => {
+    f.grantsFilter.mockRejectedValue(new Error("ipc"));
+    s.readSession.mockResolvedValue(
+      sessionJson([fileTab("f", P), fileTab("g", Q), newTabState("a")]),
+    );
+    const { result } = await mount();
+    expect(f.grantsFilter).toHaveBeenCalledTimes(2);
+    expect(fileTabOf(result)).toBeDefined();
+    expect(fileTabOf(result, Q)).toBeDefined();
+    await waitFor(() => expect(result.current.notice).toBe(SUSPENDED));
+    await act(() => result.current.run({ type: "newTab" }));
+    await act(() => new Promise((res) => setTimeout(res, 600)));
+    expect(s.writeSession).not.toHaveBeenCalled();
+    // A later check works: what isn't granted goes, and saving resumes.
+    f.grantsFilter.mockReset();
+    f.grantsFilter.mockResolvedValue([P]);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(s.writeSession).toHaveBeenCalled());
+    expect(f.grantsFilter).toHaveBeenCalledWith([P, Q]);
+    expect(fileTabOf(result)).toBeDefined();
+    expect(fileTabOf(result, Q)).toBeUndefined();
+    const calls = s.writeSession.mock.calls;
+    const saved = calls[calls.length - 1][0];
+    expect(saved).toContain("A.json");
+    expect(saved).not.toContain("notes.txt");
+  });
+});
+
 describe("useFiles interleavings (fix round 1)", () => {
   it("typing during a reload's read becomes a conflict, keeping the text", async () => {
     const { result } = await mount();
