@@ -487,8 +487,8 @@ export function useFiles(
       contents,
       dropShadow,
       hold,
-      keptShadows,
       patchFile,
+      refuseUnreadable,
       replaceText,
       showNotice,
       tabOf,
@@ -600,7 +600,16 @@ export function useFiles(
         }
       });
     },
-    [contents, hold, loadContent, lock, showNotice, tabOf, wrote],
+    [
+      refuseUnreadable,
+      contents,
+      hold,
+      loadContent,
+      lock,
+      showNotice,
+      tabOf,
+      wrote,
+    ],
   );
 
   const loadDiskVersion = useCallback(
@@ -647,6 +656,7 @@ export function useFiles(
       });
     },
     [
+      refuseUnreadable,
       contents,
       hasPending,
       hold,
@@ -800,6 +810,7 @@ export function useFiles(
       });
     },
     [
+      refuseUnreadable,
       commit,
       contents,
       dropShadow,
@@ -864,7 +875,15 @@ export function useFiles(
         await saveSessionNow();
         return null;
       }),
-    [commit, lock, saveSessionNow, showNotice, stateRef, tabOf],
+    [
+      refuseUnreadable,
+      commit,
+      lock,
+      saveSessionNow,
+      showNotice,
+      stateRef,
+      tabOf,
+    ],
   );
 
   // --- Close and reopen ----------------------------------------------------
@@ -954,8 +973,8 @@ export function useFiles(
     [
       commit,
       contents,
-      keptShadows,
       keyOf,
+      markUnreadable,
       onDisk,
       readShadow,
       saver,

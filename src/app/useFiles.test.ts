@@ -1001,6 +1001,78 @@ describe("useFiles interleavings (fix round 1)", () => {
     expect(f.fileWrite).not.toHaveBeenCalled();
   });
 
+  it("handles captured before a shadow became unreadable still refuse", async () => {
+    shadows.f = "unsaved";
+    f.shadowRead.mockRejectedValue({ kind: "io", message: "denied" });
+    f.filePickSave.mockResolvedValue("C:\\d\\elsewhere.json");
+    f.fileRename.mockResolvedValue("C:\\d\\B.json");
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), fileTab("f", P, { held: "conflict" })]),
+    );
+    const { result } = await mount();
+    // What the UI captured on an earlier render, before "f" was loaded.
+    const early = result.current;
+    expect(early.shadowUnreadable.size).toBe(0);
+    await result.current.loadContent("f");
+    await waitFor(() =>
+      expect(result.current.shadowUnreadable.has("f")).toBe(true),
+    );
+    const refused = "A.json has unsaved text that can't be read yet";
+
+    await act(() => early.saveAs("f"));
+    expect(f.filePickSave).not.toHaveBeenCalled();
+    let err: string | null = null;
+    await act(async () => {
+      err = await early.renameFile("f", "B");
+    });
+    expect(err).toBe(refused);
+    await act(() => early.keepMine("f"));
+    await act(() => early.saveToOriginal("f"));
+    await act(() => early.loadDiskVersion("f"));
+    await act(() => early.reopenWithEncoding("f", "windows-1252"));
+    act(() => early.convert("f", { bom: true }));
+    act(() =>
+      early.updateTab("f", {
+        file: { ...fileTabOf(result)!.file!, format: { ...FMT, bom: true } },
+      }),
+    );
+    act(() => early.setContent("f", "typed"));
+    await settle();
+    act(() => early.activate("f"));
+    await act(() => early.run({ type: "save" }));
+    await act(() => early.run({ type: "saveAs" }));
+
+    expect(result.current.notice).toBe(refused);
+    expect(result.current.convertRequest).toBeNull();
+    expect(f.fileRename).not.toHaveBeenCalled();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(f.fileSaveAs).not.toHaveBeenCalled();
+    expect(f.fileRereadAs).not.toHaveBeenCalled();
+    expect(f.shadowWrite).not.toHaveBeenCalled();
+    expect(f.shadowDelete).not.toHaveBeenCalled();
+    const tab = fileTabOf(result)!;
+    expect(tab.file!.held).toBe("conflict");
+    expect(tab.file!.format).toEqual(FMT);
+    expect(await result.current.loadContent("f")).toBe("");
+    expect(shadows.f).toBe("unsaved");
+    // The handles are the same functions on every render: none goes stale.
+    for (const k of [
+      "saveAs",
+      "renameFile",
+      "keepMine",
+      "saveToOriginal",
+      "loadDiskVersion",
+      "reopenWithEncoding",
+      "convert",
+      "updateTab",
+      "setContent",
+      "activate",
+      "run",
+    ] as const) {
+      expect(result.current[k]).toBe(early[k]);
+    }
+  });
+
   it("a restored Missing File that already came back is re-checked", async () => {
     shadows.f = "mine";
     s.readSession.mockResolvedValue(
