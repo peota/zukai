@@ -56,7 +56,7 @@ export const fileWrite = (
   path: string,
   text: string,
   format: FileFormat,
-  expected: Fingerprint | null,
+  expected: Fingerprint,
 ): Promise<WriteOutcome> =>
   invoke<WriteOutcome>("file_write", { path, text, format, expected });
 

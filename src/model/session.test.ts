@@ -34,11 +34,12 @@ describe("session file", () => {
     expect(parseSessionFile('{"version":2}')).toBeNull();
     const noId: Partial<TabState> = newTabState("x");
     delete noId.id;
+    // A malformed tab is dropped alone.
     expect(
       parseSessionFile(
         JSON.stringify({ version: 2, tabs: [noId], activeId: "x", closed: [] }),
-      ),
-    ).toBeNull();
+      )?.tabs,
+    ).toEqual([]);
   });
 });
 
@@ -252,28 +253,66 @@ describe("session v2", () => {
     });
   });
 
-  it("badFileFieldRejected", () => {
-    const bad = (file: unknown) =>
+  it("badFileFieldDropsOnlyThatEntry", () => {
+    const parse = (file: unknown) =>
       parseSessionFile(
         JSON.stringify({
           version: 2,
-          tabs: [{ ...newTabState("f"), file }],
-          activeId: "f",
+          tabs: [
+            { ...newTabState("f"), file },
+            { ...newTabState("a"), title: "Keep", renamed: true },
+          ],
+          activeId: "a",
           closed: [],
         }),
       );
-    expect(bad(fileInfo("p"))).not.toBeNull();
-    expect(bad(null)).toBeNull();
-    expect(bad("p")).toBeNull();
-    expect(bad({ ...fileInfo("p"), path: 3 })).toBeNull();
-    expect(bad({ ...fileInfo("p"), held: "nope" })).toBeNull();
-    expect(bad({ ...fileInfo("p"), fingerprint: { size: 1 } })).toBeNull();
-    expect(bad({ ...fileInfo("p"), format: { encoding: "utf-8" } })).toBeNull();
-    expect(
-      bad({
+    expect(parse(fileInfo("p"))?.tabs).toHaveLength(2);
+    const bads: unknown[] = [
+      null,
+      "p",
+      { ...fileInfo("p"), path: 3 },
+      { ...fileInfo("p"), held: "nope" },
+      { ...fileInfo("p"), fingerprint: { size: 1 } },
+      { ...fileInfo("p"), format: { encoding: "utf-8" } },
+      {
         ...fileInfo("p"),
         format: { ...fileInfo("p").format, lineEnding: "cr" },
+      },
+    ];
+    for (const bad of bads) {
+      const r = parse(bad);
+      expect(r?.tabs.map((t) => t.id)).toEqual(["a"]);
+      expect(r?.tabs[0].title).toBe("Keep");
+      expect(r?.activeId).toBe("a");
+    }
+  });
+
+  it("badClosedEntryDropsOnlyThatEntry", () => {
+    const good = { tab: newTabState("c"), index: 0, closedAt: 1 };
+    const r = parseSessionFile(
+      JSON.stringify({
+        version: 2,
+        tabs: [newTabState("a")],
+        activeId: "a",
+        closed: [
+          { tab: { ...newTabState("x"), file: 5 }, index: 0, closedAt: 2 },
+          good,
+        ],
       }),
+    );
+    expect(r?.tabs).toHaveLength(1);
+    expect(r?.closed).toEqual([good]);
+  });
+
+  it("top-level shape errors still return null", () => {
+    const base = { version: 2, tabs: [], activeId: "", closed: [] };
+    expect(parseSessionFile(JSON.stringify([]))).toBeNull();
+    expect(parseSessionFile(JSON.stringify({ ...base, tabs: {} }))).toBeNull();
+    expect(
+      parseSessionFile(JSON.stringify({ ...base, closed: "x" })),
+    ).toBeNull();
+    expect(
+      parseSessionFile(JSON.stringify({ ...base, version: 3 })),
     ).toBeNull();
   });
 });
@@ -322,5 +361,25 @@ describe("restoreWorkspace with grantedPaths", () => {
     expect(state.closed.map((e) => e.tab.id)).toEqual(["f4"]);
     // null means do not filter.
     expect(restoreWorkspace(file, [], fresh, 10).state.tabs).toHaveLength(3);
+  });
+});
+
+describe("restoreWorkspace closed File dedupe", () => {
+  it("keeps the newest closed entry per path key", () => {
+    const file = {
+      version: 2 as const,
+      tabs: [newTabState("a")],
+      activeId: "a",
+      closed: [
+        { tab: fileTab("old", "/P.txt"), index: 0, closedAt: 1 },
+        { tab: fileTab("new", "/p.txt"), index: 0, closedAt: 5 },
+        { tab: fileTab("other", "/q.txt"), index: 0, closedAt: 3 },
+      ],
+    };
+    const lower = (p: string) => p.toLowerCase();
+    const r = restoreWorkspace(file, [], fresh, 10, null, null, lower);
+    expect(r.state.closed.map((e) => e.tab.id)).toEqual(["new", "other"]);
+    const exact = restoreWorkspace(file, [], fresh, 10);
+    expect(exact.state.closed).toHaveLength(3);
   });
 });
