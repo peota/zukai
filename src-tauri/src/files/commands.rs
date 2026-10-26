@@ -110,6 +110,20 @@ pub async fn file_fingerprint(
     .await
 }
 
+/// Like `file_fingerprint`, for re-checks: `expected` unchanged (no hash)
+/// when the file's mtime and size still match it. Writes never use this.
+#[tauri::command]
+pub async fn file_fingerprint_quick(
+    app: AppHandle,
+    path: String,
+    expected: Fingerprint,
+) -> Result<Option<Fingerprint>, FileError> {
+    blocking(app, move |g| {
+        Ok(fingerprint::fingerprint_quick(&g.check(&path)?, &expected)?)
+    })
+    .await
+}
+
 /// The OS open dialog (multi-select). Grants and returns the chosen Files'
 /// canonical paths; cancelling returns none. A pick that can't be granted
 /// (a folder, a non-UTF-8 path) is skipped rather than failing the rest.

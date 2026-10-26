@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fileFingerprint,
+  fileFingerprintQuick,
   filePickOpen,
   filePickSave,
   fileRead,
@@ -26,6 +27,7 @@ import { baseName, languageOf, stemOf, suggestedName } from "../files/paths";
 import type {
   FileFormat,
   FileInfo,
+  Fingerprint,
   TabState,
   WorkspaceState,
 } from "../model/types";
@@ -175,6 +177,12 @@ const fileInfoOf = (path: string, r: FileRead): FileInfo => ({
   fingerprint: r.fingerprint,
   held: r.readable ? null : "readonly",
 });
+
+const sameFingerprint = (f: FileInfo, d: Fingerprint) =>
+  f.fingerprint !== null &&
+  f.fingerprint.mtimeMs === d.mtimeMs &&
+  f.fingerprint.size === d.size &&
+  f.fingerprint.hash === d.hash;
 
 const sameFormat = (a: FileFormat, b: FileFormat) =>
   a.encoding === b.encoding &&
@@ -523,7 +531,7 @@ export function useFiles(
    * event only says "look"; the decision uses the disk as it is now.
    */
   const recheck = useCallback(
-    async (id: string, path?: string) => {
+    async (id: string, path?: string, quick = false) => {
       const file = tabOf(id)?.file;
       if (!file || (path !== undefined && file.path !== path)) return;
       // A Tab not loaded yet reads the disk when it is.
@@ -531,7 +539,12 @@ export function useFiles(
       if (keptShadows.has(id) || closing.current.has(id)) return;
       let disk;
       try {
-        disk = await fileFingerprint(file.path);
+        // A focus re-check skips the hash when time and size still match;
+        // watcher events and writes always compare the content.
+        disk =
+          quick && file.fingerprint
+            ? await fileFingerprintQuick(file.path, file.fingerprint)
+            : await fileFingerprint(file.path);
       } catch (err) {
         return logError("check file")(err);
       }
@@ -546,7 +559,7 @@ export function useFiles(
       switch (decide(cur, ev, hasPending(id))) {
         case "ignore":
           // Same content; remember the new time so the next check is cheap.
-          if (disk && cur.held === null)
+          if (disk && cur.held === null && !sameFingerprint(cur, disk))
             patchFile(id, { ...cur, fingerprint: disk });
           return;
         case "reload":
@@ -581,7 +594,9 @@ export function useFiles(
   const recheckAll = useCallback(() => {
     for (const t of stateRef.current.tabs) {
       if (t.file) {
-        void lock(t.id, () => recheck(t.id)).catch(logError("check file"));
+        void lock(t.id, () => recheck(t.id, undefined, true)).catch(
+          logError("check file"),
+        );
       }
     }
   }, [lock, recheck, stateRef]);

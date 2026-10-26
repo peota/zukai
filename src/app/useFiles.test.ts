@@ -49,6 +49,7 @@ vi.mock("../files/api", async (orig) => ({
   fileSaveAs: vi.fn(),
   fileRename: vi.fn(),
   fileFingerprint: vi.fn(),
+  fileFingerprintQuick: vi.fn(),
   filePickOpen: vi.fn(),
   filePickSave: vi.fn(),
   shadowWrite: vi.fn(),
@@ -152,6 +153,15 @@ beforeEach(() => {
   f.fileFingerprint.mockImplementation(async (path) =>
     disk[path] ? fp(disk[path].hash) : null,
   );
+  // Rust's quick check: same time and size means the expected one back.
+  f.fileFingerprintQuick.mockImplementation(async (path, expected) => {
+    const d = disk[path];
+    if (!d) return null;
+    const now = fp(d.hash);
+    return now.mtimeMs === expected.mtimeMs && now.size === expected.size
+      ? expected
+      : now;
+  });
   f.fileWrite.mockImplementation(async (path, text, _fmt, expected) => {
     const d = disk[path];
     if (!d) return { kind: "missing" };
@@ -451,6 +461,8 @@ describe("useFiles disk changes", () => {
     const { result } = await mount();
     const id = await openP(result);
     disk[P] = { text: "missed", hash: "h9" };
+    // A missed write also changed the file's time (the focus check is quick).
+    f.fileFingerprintQuick.mockResolvedValueOnce({ ...fp("h9"), mtimeMs: 2 });
     act(() => {
       window.dispatchEvent(new Event("focus"));
     });
@@ -889,6 +901,45 @@ describe("useFiles shadows the Session doesn't know are held (final fix I3)", ()
   });
 });
 
+describe("useFiles cheap focus re-checks (final fix M6)", () => {
+  it("a focus re-check asks for the quick fingerprint; watcher events hash", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    f.fileFingerprint.mockClear();
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() =>
+      expect(f.fileFingerprintQuick).toHaveBeenCalledWith(P, fp("h1")),
+    );
+    expect(f.fileFingerprint).not.toHaveBeenCalled();
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    await waitFor(() => expect(f.fileFingerprint).toHaveBeenCalledWith(P));
+    // Writes still always check the full hash in Rust (file_write).
+    act(() => result.current.setContent(id, "typed"));
+    await settle();
+    expect(f.fileWrite).toHaveBeenLastCalledWith(P, "typed", FMT, fp("h1"));
+  });
+
+  it("a focus re-check still sees a change with a new time or size", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    disk[P] = { text: "changed", hash: "h2" };
+    // The test fingerprints share one time and size: make this one differ.
+    f.fileFingerprintQuick.mockResolvedValueOnce({
+      mtimeMs: 2,
+      size: 7,
+      hash: "h2",
+    });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(async () =>
+      expect(await result.current.loadContent(id)).toBe("changed"),
+    );
+  });
+});
+
 describe("useFiles interleavings (fix round 1)", () => {
   it("typing during a reload's read becomes a conflict, keeping the text", async () => {
     const { result } = await mount();
@@ -1250,15 +1301,15 @@ describe("useFiles interleavings (fix round 1)", () => {
     expect(disk[P].text).toBe("mine");
     // A focus re-check is waiting on the disk when the Tab closes...
     const g = gate();
-    const fingerprint = f.fileFingerprint.getMockImplementation()!;
-    f.fileFingerprint.mockImplementationOnce(async (path) => {
+    const quick = f.fileFingerprintQuick.getMockImplementation()!;
+    f.fileFingerprintQuick.mockImplementationOnce(async (path, expected) => {
       await g.promise;
-      return fingerprint(path);
+      return quick(path, expected);
     });
     act(() => {
       window.dispatchEvent(new Event("focus"));
     });
-    await waitFor(() => expect(f.fileFingerprint).toHaveBeenCalled());
+    await waitFor(() => expect(f.fileFingerprintQuick).toHaveBeenCalled());
     let closed!: Promise<void>;
     act(() => {
       closed = result.current.closeTab(id);
