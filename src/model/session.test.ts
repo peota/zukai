@@ -154,22 +154,22 @@ describe("restoreWorkspace with the closed/ folder", () => {
         { id: "lost", modifiedMs: now - day },
       ],
     );
-    // Newest first; recovered entries reopen at the end of the tab bar.
+    // Recovered entries are stamped `now` and reopen at the end of the tab bar.
     expect(state.closed.map((e) => e.tab.id)).toEqual(["lost", "c"]);
     expect(state.closed[0]).toEqual({
       tab: newTabState("lost"),
       index: 2,
-      closedAt: now - day,
+      closedAt: now,
     });
   });
 
-  it("applies the 30-day purge to recovered entries by file time", () => {
+  it("recoveredClosedFilesAreNotPurgedOnRecovery", () => {
     const { state, expired } = restoreWorkspace(null, ["a"], fresh, now, [
-      { id: "old", modifiedMs: now - CLOSED_TTL_MS - 1 },
-      { id: "new", modifiedMs: now - 1 },
+      { id: "old", modifiedMs: now - 40 * day },
     ]);
-    expect(state.closed.map((e) => e.tab.id)).toEqual(["new"]);
-    expect(expired.map((e) => e.tab.id)).toEqual(["old"]);
+    expect(state.closed).toHaveLength(1);
+    expect(state.closed[0].closedAt).toBe(now);
+    expect(expired).toEqual([]);
   });
 
   it("recovers every closed file when session.json is unreadable", () => {
@@ -184,7 +184,7 @@ describe("restoreWorkspace with the closed/ folder", () => {
       ],
     );
     expect(state.tabs.map((t) => t.id)).toEqual(["a"]);
-    expect(state.closed.map((e) => e.tab.id)).toEqual(["y", "x"]);
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["x", "y"]);
   });
 
   it("drops closed entries whose file is gone, so Reopen is never stuck", () => {

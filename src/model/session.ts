@@ -121,8 +121,8 @@ export interface ClosedFile {
  * Rebuild the workspace from session.json and the files on disk.
  * `closedFiles` (when known) is the content of `closed/`: entries whose file
  * is gone are dropped, and files the Session doesn't mention become Recently
- * Closed entries (closedAt = file time, reopened at the end), so no closed
- * text is ever stranded and the 30-day purge reaches it.
+ * Closed entries (closedAt = now, reopened at the end), so no closed text is
+ * ever stranded and a stale file is not purged in the launch that recovers it.
  */
 export function restoreWorkspace(
   file: SessionFile | null,
@@ -159,7 +159,7 @@ export function restoreWorkspace(
     .map((f) => ({
       tab: newTabState(f.id),
       index: tabs.length,
-      closedAt: f.modifiedMs,
+      closedAt: now,
     }));
   const all = [...listed, ...recovered].sort((x, y) => y.closedAt - x.closedAt);
   const { kept, expired } = purgeExpired(all, now);

@@ -26,6 +26,8 @@ export async function installExitHandshake(
         console.error("flush before exit failed", err);
         if (!failedOnce) {
           failedOnce = true;
+          // Cancel Rust's force-exit watchdog; the app stays open.
+          await invoke("exit_flush_failed");
           return;
         }
       }
