@@ -2,8 +2,8 @@
 
 use super::FileError;
 use super::encoding::{Decoded, EncodeError, FileFormat, decode_as, detect_and_decode, encode};
-use super::fingerprint::{self, Fingerprint, fingerprint_of, mtime_ms};
-use crate::storage::atomic::atomic_write_with_permissions;
+use super::fingerprint::{self, Fingerprint, mtime_ms};
+use crate::storage::atomic::atomic_write_with_mode;
 use serde::Serialize;
 use std::ffi::OsString;
 use std::fs::{self, File, Metadata};
@@ -46,14 +46,20 @@ fn read_bytes(path: &Path) -> Result<(Vec<u8>, Fingerprint), FileError> {
     if !meta.is_file() {
         return Err(FileError::NotAFile);
     }
-    let mut bytes = Vec::with_capacity(meta.len().min(MAX_OPEN_BYTES) as usize);
-    // The file may grow between the size check and the read.
-    f.take(MAX_OPEN_BYTES + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_OPEN_BYTES {
-        return Err(FileError::TooLarge);
-    }
+    let bytes = read_capped(f, meta.len())?.ok_or(FileError::TooLarge)?;
     let fp = fingerprint::from_parts(&meta, &bytes);
     Ok((bytes, fp))
+}
+
+/// Reads the whole file, or returns `None` without reading if it is (or grows)
+/// past `MAX_OPEN_BYTES`.
+fn read_capped(f: File, len: u64) -> io::Result<Option<Vec<u8>>> {
+    if len > MAX_OPEN_BYTES {
+        return Ok(None);
+    }
+    let mut bytes = Vec::with_capacity(len as usize);
+    f.take(MAX_OPEN_BYTES + 1).read_to_end(&mut bytes)?;
+    Ok((bytes.len() as u64 <= MAX_OPEN_BYTES).then_some(bytes))
 }
 
 fn file_read(decoded: Decoded, fingerprint: Fingerprint) -> FileRead {
@@ -93,11 +99,36 @@ fn encode_for_write(
     }
 }
 
+/// Follows symlinks at `path` to the file that should actually be replaced, so
+/// a temp-file-and-rename save updates the link's target instead of replacing
+/// the link. A dangling link resolves to its (not yet existing) target.
+fn resolve_write_target(path: &Path) -> Result<PathBuf, FileError> {
+    let mut current = path.to_path_buf();
+    for _ in 0..40 {
+        match fs::symlink_metadata(&current) {
+            Ok(m) if m.file_type().is_symlink() => {
+                let link = fs::read_link(&current)?;
+                current = if link.is_absolute() {
+                    link
+                } else {
+                    // Joined, not normalised: the OS resolves `..` physically.
+                    current.parent().unwrap_or(Path::new("")).join(link)
+                };
+            }
+            Ok(_) => return Ok(current),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(current),
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(io::Error::other("too many levels of symbolic links").into())
+}
+
 /// Unix mode bits of the file being replaced; nothing to carry over elsewhere.
-fn permissions_to_keep(existing: Option<&Metadata>) -> Option<fs::Permissions> {
+fn mode_to_keep(existing: Option<&Metadata>) -> Option<u32> {
     #[cfg(unix)]
     {
-        existing.map(Metadata::permissions)
+        use std::os::unix::fs::PermissionsExt;
+        existing.map(|m| m.permissions().mode())
     }
     #[cfg(not(unix))]
     {
@@ -106,20 +137,22 @@ fn permissions_to_keep(existing: Option<&Metadata>) -> Option<fs::Permissions> {
     }
 }
 
+/// Writes atomically and fingerprints what was written: our hash and size,
+/// with the mtime of the temp file before its rename (which keeps it), so a
+/// write by another program right after the rename can't be recorded as ours.
 fn write_and_fingerprint(
-    path: &Path,
+    target: &Path,
     bytes: &[u8],
     existing: Option<&Metadata>,
 ) -> Result<WriteOutcome, FileError> {
-    atomic_write_with_permissions(path, bytes, permissions_to_keep(existing))?;
-    let meta = fs::metadata(path)?;
+    let meta = atomic_write_with_mode(target, bytes, mode_to_keep(existing))?;
     Ok(WriteOutcome::Written {
         fingerprint: fingerprint::from_parts(&meta, bytes),
     })
 }
 
-/// Writes `text` over the file only if the disk content is still what `expected`
-/// describes. The check runs immediately before the atomic write.
+/// Writes `text` over the file only if the disk content still hashes to
+/// `expected.hash`. The check runs immediately before the atomic write.
 pub fn write_file(
     path: &Path,
     text: &str,
@@ -128,41 +161,54 @@ pub fn write_file(
 ) -> Result<WriteOutcome, FileError> {
     // Encode first (pure, possibly slow) so the disk check sits right before the write.
     let encoded = encode_for_write(text, format)?;
+    let target = resolve_write_target(path)?;
 
-    let meta = match fs::metadata(path) {
-        Ok(m) => m,
+    let f = match File::open(&target) {
+        Ok(f) => f,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(WriteOutcome::Missing),
-        Err(e) => return Err(e.into()),
+        Err(e) => {
+            // Windows can't open a directory as a File; report it as such.
+            return Err(match fs::metadata(&target) {
+                Ok(m) if !m.is_file() => FileError::NotAFile,
+                _ => e.into(),
+            });
+        }
     };
+    let meta = f.metadata()?;
     if !meta.is_file() {
         return Err(FileError::NotAFile);
     }
-    if meta.len() != expected.size || mtime_ms(&meta) != expected.mtime_ms {
-        // Something touched the file: only a real content change is a conflict.
-        match fingerprint_of(path)? {
-            None => return Ok(WriteOutcome::Missing),
-            Some(disk) if disk.hash != expected.hash => {
-                return Ok(WriteOutcome::Conflict { fingerprint: disk });
-            }
-            Some(_) => {}
-        }
+    // Always compare content: mtime and size can't be trusted (FAT's 2 s
+    // granularity, SMB caching, tools that restore mtime).
+    let disk = match read_capped(f, meta.len())? {
+        // Larger than anything Zukai could have written for this Tab.
+        None => Fingerprint {
+            mtime_ms: mtime_ms(&meta),
+            size: meta.len(),
+            hash: String::new(),
+        },
+        Some(bytes) => fingerprint::from_parts(&meta, &bytes),
+    };
+    if disk.hash != expected.hash {
+        return Ok(WriteOutcome::Conflict { fingerprint: disk });
     }
 
     match encoded {
         Err(unencodable) => Ok(unencodable),
-        Ok(bytes) => write_and_fingerprint(path, &bytes, Some(&meta)),
+        Ok(bytes) => write_and_fingerprint(&target, &bytes, Some(&meta)),
     }
 }
 
 /// Writes `text` to `path` with no fingerprint check (the OS dialog already
-/// confirmed any overwrite).
+/// confirmed any overwrite). A symlink at `path` keeps pointing at its target.
 pub fn save_as(path: &Path, text: &str, format: &FileFormat) -> Result<WriteOutcome, FileError> {
     let bytes = match encode_for_write(text, format)? {
         Ok(bytes) => bytes,
         Err(unencodable) => return Ok(unencodable),
     };
-    let existing = fs::metadata(path).ok().filter(Metadata::is_file);
-    write_and_fingerprint(path, &bytes, existing.as_ref())
+    let target = resolve_write_target(path)?;
+    let existing = fs::metadata(&target).ok().filter(Metadata::is_file);
+    write_and_fingerprint(&target, &bytes, existing.as_ref())
 }
 
 const RESERVED_NAMES: [&str; 22] = [
@@ -413,6 +459,102 @@ mod tests {
         let disk = fingerprint_of(&p).unwrap().unwrap();
         assert_eq!(out, WriteOutcome::Conflict { fingerprint: disk });
         assert_eq!(fs::read(&p).unwrap(), b"changed elsewhere");
+    }
+
+    #[test]
+    fn same_size_external_change_is_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.txt");
+        fs::write(&p, b"aaaa").unwrap();
+        let r = read_file(&p).unwrap();
+        let original_mtime = fs::metadata(&p).unwrap().modified().unwrap();
+
+        // Same size, and the mtime put back: only the content differs.
+        {
+            use std::io::Write;
+            let mut other = fs::OpenOptions::new().write(true).open(&p).unwrap();
+            other.write_all(b"bbbb").unwrap();
+            other.set_modified(original_mtime).unwrap();
+        }
+        let disk = fingerprint_of(&p).unwrap().unwrap();
+        assert_eq!(disk.size, r.fingerprint.size);
+        assert_eq!(disk.mtime_ms, r.fingerprint.mtime_ms);
+
+        let out = write_file(&p, "mine", &r.format, &r.fingerprint).unwrap();
+        assert_eq!(out, WriteOutcome::Conflict { fingerprint: disk });
+        assert_eq!(fs::read(&p).unwrap(), b"bbbb");
+    }
+
+    #[test]
+    fn disk_file_grown_past_cap_is_conflict_without_reading() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.txt");
+        fs::write(&p, b"small").unwrap();
+        let r = read_file(&p).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&p)
+            .unwrap()
+            .set_len(MAX_OPEN_BYTES + 1)
+            .unwrap();
+        let out = write_file(&p, "mine", &r.format, &r.fingerprint).unwrap();
+        match out {
+            WriteOutcome::Conflict { fingerprint } => {
+                assert_eq!(fingerprint.size, MAX_OPEN_BYTES + 1);
+                assert_ne!(fingerprint.hash, r.fingerprint.hash);
+            }
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+        assert_eq!(fs::metadata(&p).unwrap().len(), MAX_OPEN_BYTES + 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_through_symlink_updates_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_dir = dir.path().join("dotfiles");
+        fs::create_dir(&real_dir).unwrap();
+        let target = real_dir.join("bashrc");
+        fs::write(&target, b"old\n").unwrap();
+        let link = dir.path().join(".bashrc");
+        // Relative link target, resolved against the link's folder.
+        std::os::unix::fs::symlink("dotfiles/bashrc", &link).unwrap();
+
+        let r = read_file(&link).unwrap();
+        let out = write_file(&link, "new\n", &r.format, &r.fingerprint).unwrap();
+        assert!(matches!(out, WriteOutcome::Written { .. }));
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"new\n");
+
+        let out = save_as(&link, "saved\n", &r.format).unwrap();
+        assert!(matches!(out, WriteOutcome::Written { .. }));
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"saved\n");
+        assert_eq!(fs::read_dir(&real_dir).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_keeps_private_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("secret.txt");
+        fs::write(&p, b"s\n").unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();
+        let r = read_file(&p).unwrap();
+        write_file(&p, "t\n", &r.format, &r.fingerprint).unwrap();
+        let mode = fs::metadata(&p).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(mode, 0o600);
     }
 
     #[test]
