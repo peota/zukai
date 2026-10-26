@@ -364,7 +364,10 @@ mod tests {
         let g = Grants::default();
         let a = abs(dir.path(), "a.txt");
         let b = abs(dir.path(), "b.txt");
-        g.grant(&a).unwrap();
+        // The UI only ever stores the canonical strings Rust returns; the raw
+        // temp path may not be one (8.3 names on Windows, /var -> /private/var
+        // on macOS).
+        let a = g.grant(&a).unwrap();
 
         let session = |open: &Path, closed: &Path| {
             serde_json::json!({
@@ -383,5 +386,19 @@ mod tests {
             Err(FileError::NotGranted)
         ));
         assert!(check_session(&g, r#"{"tabs":[{"id":"s"}],"closed":[]}"#).is_ok());
+
+        // Another spelling of the granted file passes `check` but not the
+        // Session check: only the exact canonical string may be persisted.
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        let alias = canonical(dir.path())
+            .unwrap()
+            .join("sub")
+            .join("..")
+            .join("a.txt");
+        assert_eq!(g.check(alias.to_str().unwrap()).unwrap(), a);
+        assert!(matches!(
+            check_session(&g, &session(&alias, &a)),
+            Err(FileError::NotGranted)
+        ));
     }
 }
