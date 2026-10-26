@@ -91,9 +91,17 @@ fn emit_paths(app: &AppHandle, paths: Vec<PathBuf>) {
     });
 }
 
-/// A second launch (single-instance): grants and tells the UI.
+/// A second launch (single-instance): queued if the UI hasn't taken the
+/// launch paths yet (several "Open with" processes can start at once, before
+/// the first instance's UI listens), otherwise granted and sent to the UI.
 pub fn emit(app: &AppHandle, argv: &[String], cwd: &Path) {
-    emit_paths(app, argv_paths(argv, cwd));
+    queue_or_emit(app, argv_paths(argv, cwd));
+}
+
+fn queue_or_emit(app: &AppHandle, paths: Vec<PathBuf>) {
+    if let Some(paths) = app.state::<LaunchPaths>().add_or_return(paths) {
+        emit_paths(app, paths);
+    }
 }
 
 /// Files dropped on the window.
@@ -117,8 +125,12 @@ impl LaunchPaths {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Adds this process's own argv. Extends, so paths a second launch
+    /// queued first are kept; this process's own come first.
     pub fn set(&self, paths: Vec<PathBuf>) {
-        self.state().paths = paths;
+        let mut st = self.state();
+        let queued = std::mem::replace(&mut st.paths, paths);
+        st.paths.extend(queued);
     }
 
     /// Queues `paths` for the UI if it hasn't taken the launch paths yet.
@@ -140,11 +152,22 @@ impl LaunchPaths {
     }
 }
 
+/// Brings the main window to the front (unminimised, shown, focused).
+pub fn focus_main(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 /// Paths opened by the OS (macOS Finder, Open With): queued if the UI is
-/// still starting, otherwise sent like a second launch.
+/// still starting (it shows the window itself once restored), otherwise the
+/// window comes to the front and they're sent like a second launch.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn opened(app: &AppHandle, paths: Vec<PathBuf>) {
     if let Some(paths) = app.state::<LaunchPaths>().add_or_return(paths) {
+        focus_main(app);
         emit_paths(app, paths);
     }
 }
@@ -218,5 +241,28 @@ mod tests {
         assert!(l.take().is_empty());
         // Once taken, later paths are handed back for emitting.
         assert!(l.add_or_return(vec![PathBuf::from("/z")]).is_some());
+    }
+
+    #[test]
+    fn second_launch_paths_queued_before_set_survive_set() {
+        // Several "Open with" processes start at once: a second launch can
+        // reach the first instance before its setup records its own argv.
+        let l = LaunchPaths::default();
+        assert!(l.add_or_return(vec![PathBuf::from("/b")]).is_none());
+        l.set(vec![PathBuf::from("/a")]);
+        assert!(l.add_or_return(vec![PathBuf::from("/c")]).is_none());
+        assert_eq!(
+            l.take(),
+            [
+                PathBuf::from("/a"),
+                PathBuf::from("/b"),
+                PathBuf::from("/c")
+            ]
+        );
+        // After take, a later launch is handed back to be emitted.
+        assert_eq!(
+            l.add_or_return(vec![PathBuf::from("/d")]),
+            Some(vec![PathBuf::from("/d")])
+        );
     }
 }
