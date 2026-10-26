@@ -8,7 +8,7 @@
 use super::FileError;
 use super::encoding::FileFormat;
 use super::fingerprint::{self, Fingerprint};
-use super::grants::Grants;
+use super::grants::{self, Grants};
 use super::io::{self, FileRead, WriteOutcome};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -149,4 +149,12 @@ pub async fn file_pick_save(
             .transpose()
     })
     .await
+}
+
+/// The Session File paths that are granted under exactly that spelling.
+/// `session_read` keeps paths it couldn't grant; the UI drops those so that
+/// `session_write` accepts the Session it saves back.
+#[tauri::command]
+pub async fn grants_filter(app: AppHandle, paths: Vec<String>) -> Result<Vec<String>, FileError> {
+    blocking(app, move |g| Ok(grants::filter_exact(g, paths))).await
 }
