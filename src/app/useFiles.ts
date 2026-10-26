@@ -62,10 +62,11 @@ export interface FilesInternals {
   keyOf(path: string): string;
   newFileFormat: FileFormat;
   /**
-   * Tabs whose shadow couldn't be read: shown read-only, and their shadow is
-   * never deleted or overwritten until it reads again.
+   * Held Tabs whose shadow couldn't be read (this run only, never saved):
+   * their shadow is never deleted or overwritten, nothing can be typed into
+   * them, and they can't be moved, until the shadow reads again.
    */
-  keptShadows: Map<string, FileInfo["held"]>;
+  keptShadows: Set<string>;
   /** Tabs being closed: disk checks leave them to the close. */
   closing: { current: ReadonlySet<string> };
 }
@@ -111,6 +112,12 @@ export interface FilesApi {
   /** At most one per Tab; apply each seq once. */
   replaceRequests: ReplaceRequest[];
   formatRequest: FormatRequest | null;
+  /**
+   * Held Tabs whose unsaved text (shadow) can't be read right now. Not
+   * saved in the Session: a restart reads the shadow again. The editor
+   * should be read-only for them.
+   */
+  shadowUnreadable: ReadonlySet<string>;
 }
 
 /** Used by useWorkspace only. */
@@ -122,6 +129,8 @@ export interface FilesInternalApi {
   afterRestore(state: WorkspaceState): Promise<WorkspaceState>;
   /** Called when a File Tab's close has written its text. */
   closeFile(id: string): Promise<void>;
+  /** True (with a notice) if the Tab's text can't be changed now. */
+  refuseEdit(id: string): boolean;
 }
 
 type DiskRead =
@@ -179,6 +188,9 @@ export function useFiles(
   const [convertRequest, setConvert] = useState<ConvertRequest | null>(null);
   const [formatRequest, setFormat] = useState<FormatRequest | null>(null);
   const [replaceRequests, setReplace] = useState<ReplaceRequest[]>([]);
+  const [shadowUnreadable, setUnreadable] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const seq = useRef(0);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loads = useRef(new Map<string, Promise<string>>());
@@ -247,6 +259,16 @@ export function useFiles(
     [contents, onDisk, stateRef],
   );
 
+  const markUnreadable = useCallback(
+    (id: string, on: boolean) => {
+      if (keptShadows.has(id) === on) return;
+      if (on) keptShadows.add(id);
+      else keptShadows.delete(id);
+      setUnreadable(new Set(keptShadows));
+    },
+    [keptShadows],
+  );
+
   const dropShadow = useCallback(
     async (id: string) => {
       if (keptShadows.has(id)) return;
@@ -263,11 +285,11 @@ export function useFiles(
     async (id: string, file: FileInfo): Promise<string | null | undefined> => {
       try {
         const text = await shadowRead(id);
-        keptShadows.delete(id);
+        markUnreadable(id, false);
         return text;
       } catch (err) {
         logError("read shadow")(err);
-        keptShadows.set(id, file.held);
+        markUnreadable(id, true);
         const msg = asFileError(err).message;
         showNotice(
           `Can't read the unsaved text of ${baseName(file.path)}: ${msg}`,
@@ -275,7 +297,20 @@ export function useFiles(
         return undefined;
       }
     },
-    [keptShadows, showNotice],
+    [markUnreadable, showNotice],
+  );
+
+  /** Refuses an action that would move or overwrite an unread shadow. */
+  const refuseUnreadable = useCallback(
+    (id: string): boolean => {
+      if (!keptShadows.has(id)) return false;
+      const path = tabOf(id)?.file?.path;
+      showNotice(
+        `${path ? baseName(path) : "This tab"} has unsaved text that can't be read yet`,
+      );
+      return true;
+    },
+    [keptShadows, showNotice, tabOf],
   );
 
   // --- Loading -------------------------------------------------------------
@@ -285,9 +320,9 @@ export function useFiles(
       if (file.held !== null && file.held !== "readonly") {
         const kept = await readShadow(id, file);
         if (kept === undefined) {
-          // Nothing is written for it until its shadow reads again.
+          // It stays held as it was (that is what the Session keeps), and
+          // nothing is written for it until its shadow reads again.
           onDisk.set(id, "");
-          patchFile(id, { ...(tabOf(id)?.file ?? file), held: "readonly" });
           return "";
         }
         // The disk doesn't have this text: it stays pending.
@@ -429,11 +464,7 @@ export function useFiles(
     async (id: string, read: () => Promise<DiskRead>, typed?: string) => {
       const file = tabOf(id)?.file;
       if (!file) return;
-      if (keptShadows.has(id)) {
-        return showNotice(
-          `${baseName(file.path)} has unsaved text that can't be read yet`,
-        );
-      }
+      if (refuseUnreadable(id)) return;
       const r = await read();
       const cur = tabOf(id)?.file;
       if (!cur || cur.path !== file.path) return;
@@ -547,6 +578,7 @@ export function useFiles(
 
   const keepMine = useCallback(
     async (id: string) => {
+      if (refuseUnreadable(id)) return;
       const text = await loadContent(id);
       await lock(id, async () => {
         const file = tabOf(id)?.file;
@@ -580,6 +612,7 @@ export function useFiles(
 
   const saveToOriginal = useCallback(
     async (id: string) => {
+      if (refuseUnreadable(id)) return;
       const text = await loadContent(id);
       await lock(id, async () => {
         const file = tabOf(id)?.file;
@@ -681,7 +714,7 @@ export function useFiles(
   const saveAs = useCallback(
     async (id: string) => {
       const tab = tabOf(id);
-      if (!tab) return;
+      if (!tab || refuseUnreadable(id)) return;
       const text = await loadContent(id);
       const suggested = tab.file
         ? baseName(tab.file.path)
@@ -779,6 +812,9 @@ export function useFiles(
       lock(id, async () => {
         const file = tabOf(id)?.file;
         if (!file) return null;
+        if (refuseUnreadable(id)) {
+          return `${baseName(file.path)} has unsaved text that can't be read yet`;
+        }
         const old = baseName(file.path);
         const stem = stemOf(name, file.path);
         const ext = old.slice(stemOf(old, file.path).length);
@@ -826,9 +862,8 @@ export function useFiles(
         if (!file) return;
         loads.current.delete(id);
         if (keptShadows.has(id)) {
-          // Close in its real state, so a reopen tries the shadow again.
-          patchFile(id, { ...file, held: keptShadows.get(id) ?? file.held });
-          keptShadows.delete(id);
+          // Its entry keeps its real held state: a reopen reads it again.
+          markUnreadable(id, false);
           return;
         }
         if (file.held === null || file.held === "readonly") {
@@ -840,7 +875,7 @@ export function useFiles(
         // the entry must still carry the text.
         await shadowWrite(id, contents.get(id) ?? "");
       }),
-    [contents, dropShadow, keptShadows, lock, patchFile, tabOf],
+    [contents, dropShadow, keptShadows, lock, markUnreadable, patchFile, tabOf],
   );
 
   const reopenFile = useCallback(
@@ -864,7 +899,7 @@ export function useFiles(
         const kept = await readShadow(id, file);
         // Unreadable: the entry stays, with its shadow, for a later try.
         if (kept === undefined) {
-          keptShadows.delete(id);
+          markUnreadable(id, false);
           return false;
         }
         text = kept;
@@ -1073,6 +1108,13 @@ export function useFiles(
     convertRequest,
     replaceRequests,
     formatRequest,
-    internal: { loadContent, updateTab, afterRestore, closeFile },
+    shadowUnreadable,
+    internal: {
+      loadContent,
+      updateTab,
+      afterRestore,
+      closeFile,
+      refuseEdit: refuseUnreadable,
+    },
   };
 }

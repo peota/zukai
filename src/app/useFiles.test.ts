@@ -842,14 +842,21 @@ describe("useFiles interleavings (fix round 1)", () => {
     );
     const { result } = await mount();
     expect(await result.current.loadContent("f")).toBe("");
-    expect(fileTabOf(result)!.file!.held).toBe("readonly");
+    // The real held state stays; the condition is a separate, unsaved flag.
+    expect(fileTabOf(result)!.file!.held).toBe("conflict");
+    await waitFor(() =>
+      expect(result.current.shadowUnreadable.has("f")).toBe(true),
+    );
     expect(result.current.notice).toBe(
       "Can't read the unsaved text of A.json: denied",
     );
+    // Nothing can be typed into it from the hook side.
     act(() => result.current.setContent("f", "x"));
+    expect(await result.current.loadContent("f")).toBe("");
     await settle();
     await act(() => result.current.closeTab("f"));
     expect(result.current.state.closed[0].tab.file?.held).toBe("conflict");
+    expect(result.current.shadowUnreadable.has("f")).toBe(false);
     expect(shadows.f).toBe("unsaved");
     expect(f.shadowWrite).not.toHaveBeenCalled();
     expect(f.shadowDelete).not.toHaveBeenCalled();
@@ -862,6 +869,75 @@ describe("useFiles interleavings (fix round 1)", () => {
     await act(() => result.current.reopenEntry(0));
     expect(await result.current.loadContent("f")).toBe("unsaved");
     expect(fileTabOf(result)!.file!.held).toBe("conflict");
+  });
+
+  it("an unreadable shadow survives a restart, and is read again then", async () => {
+    shadows.f = "unsaved";
+    f.shadowRead.mockRejectedValue({ kind: "io", message: "denied" });
+    s.readSession.mockResolvedValue(
+      sessionJson([fileTab("f", P, { held: "conflict" }), newTabState("a")]),
+    );
+    const first = await mount();
+    await first.result.current.loadContent("f");
+    await act(() => h.flushAll!());
+    const saved = s.writeSession.mock.lastCall![0];
+    expect(JSON.parse(saved).tabs[0].file.held).toBe("conflict");
+    first.unmount();
+
+    // Still unreadable after the restart: still held, shadow still there.
+    s.readSession.mockResolvedValue(saved);
+    const second = await mount();
+    expect(await second.result.current.loadContent("f")).toBe("");
+    expect(fileTabOf(second.result)!.file!.held).toBe("conflict");
+    await act(() => h.flushAll!());
+    const again = s.writeSession.mock.lastCall![0];
+    expect(JSON.parse(again).tabs[0].file.held).toBe("conflict");
+    second.unmount();
+    expect(shadows.f).toBe("unsaved");
+
+    // Readable on the next restart: the text comes back.
+    f.shadowRead.mockImplementation(async (id) => shadows[id] ?? null);
+    s.readSession.mockResolvedValue(again);
+    const third = await mount();
+    expect(await third.result.current.loadContent("f")).toBe("unsaved");
+    expect(fileTabOf(third.result)!.file!.held).toBe("conflict");
+    expect(third.result.current.shadowUnreadable.size).toBe(0);
+    expect(f.shadowDelete).not.toHaveBeenCalled();
+    expect(shadows.f).toBe("unsaved");
+  });
+
+  it("a Tab with an unreadable shadow can't be moved or overwritten", async () => {
+    shadows.f = "unsaved";
+    f.shadowRead.mockRejectedValue({ kind: "io", message: "denied" });
+    f.filePickSave.mockResolvedValue("C:\\d\\elsewhere.json");
+    f.fileRename.mockResolvedValue("C:\\d\\B.json");
+    s.readSession.mockResolvedValue(
+      sessionJson([fileTab("f", P, { held: "missing" }), newTabState("a")]),
+    );
+    delete disk[P];
+    const { result } = await mount();
+    await result.current.loadContent("f");
+    const refused = "A.json has unsaved text that can't be read yet";
+
+    await act(() => result.current.saveAs("f"));
+    expect(f.filePickSave).not.toHaveBeenCalled();
+    expect(result.current.notice).toBe(refused);
+
+    let err: string | null = null;
+    await act(async () => {
+      err = await result.current.renameFile("f", "B");
+    });
+    expect(err).toBe(refused);
+    expect(f.fileRename).not.toHaveBeenCalled();
+
+    await act(() => result.current.saveToOriginal("f"));
+    await act(() => result.current.keepMine("f"));
+    await act(() => result.current.loadDiskVersion("f"));
+    expect(f.fileSaveAs).not.toHaveBeenCalled();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(fileTabOf(result)!.file!.path).toBe(P);
+    expect(fileTabOf(result)!.file!.held).toBe("missing");
+    expect(shadows.f).toBe("unsaved");
   });
 
   it("a restored Missing File that already came back is re-checked", async () => {
