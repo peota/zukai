@@ -157,12 +157,13 @@ fn install_mac_menu(app: &tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
             }
+            files::open_paths::emit(app, &args, std::path::Path::new(&cwd));
         }))
         // The frontend shows the window once restored; the plugin must not
         // show it early (that would flash a blank frame).
@@ -173,7 +174,22 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .manage(files::grants::Grants::default())
+        .manage(files::watch::Watcher::default())
+        .manage(files::open_paths::LaunchPaths::default())
+        .on_window_event(|window, event| {
+            // Rust needs the drop (it grants the paths), so the webview's own
+            // drag and drop stays disabled by Tauri while this is enabled.
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                files::open_paths::emit_dropped(window.app_handle(), paths.clone());
+            }
+        })
         .setup(|app| {
+            // This process's own argv waits for the UI (`take_launch_paths`).
+            let argv: Vec<String> = std::env::args().collect();
+            if let Ok(cwd) = std::env::current_dir() {
+                app.state::<files::open_paths::LaunchPaths>()
+                    .set(files::open_paths::argv_paths(&argv, &cwd));
+            }
             log_startup(app.handle(), "launch");
             #[cfg(target_os = "macos")]
             install_mac_menu(app)?;
@@ -204,6 +220,8 @@ pub fn run() {
             files::commands::file_fingerprint,
             files::commands::file_pick_open,
             files::commands::file_pick_save,
+            files::watch::file_watch,
+            files::open_paths::take_launch_paths,
             app_exit_after_flush,
             exit_flush_failed,
             app_startup_mark,

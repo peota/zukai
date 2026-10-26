@@ -15,7 +15,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 /// Runs blocking file work, with the allowlist, off the async runtime.
-async fn blocking<T, F>(app: AppHandle, f: F) -> Result<T, FileError>
+pub(super) async fn blocking<T, F>(app: AppHandle, f: F) -> Result<T, FileError>
 where
     T: Send + 'static,
     F: FnOnce(&Grants) -> Result<T, FileError> + Send + 'static,
