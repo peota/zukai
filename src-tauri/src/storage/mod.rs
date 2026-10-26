@@ -12,6 +12,8 @@ use tauri::{AppHandle, Manager};
 pub enum StorageError {
     #[error("invalid scratchpad id")]
     InvalidId,
+    #[error("this path was not opened by the user")]
+    NotGranted,
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
@@ -22,6 +24,7 @@ impl Serialize for StorageError {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         let kind = match self {
             StorageError::InvalidId => "invalid_id",
+            StorageError::NotGranted => "not_granted",
             _ => "io",
         };
         let mut st = s.serialize_struct("StorageError", 2)?;

@@ -171,6 +171,8 @@ pub fn run() {
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
                 .build(),
         )
+        .plugin(tauri_plugin_dialog::init())
+        .manage(files::grants::Grants::default())
         .setup(|app| {
             log_startup(app.handle(), "launch");
             #[cfg(target_os = "macos")]
@@ -190,6 +192,18 @@ pub fn run() {
             commands::session_read,
             commands::session_write,
             commands::session_backup,
+            commands::shadow_write,
+            commands::shadow_read,
+            commands::shadow_delete,
+            commands::shadow_list,
+            files::commands::file_read,
+            files::commands::file_reread_as,
+            files::commands::file_write,
+            files::commands::file_save_as,
+            files::commands::file_rename,
+            files::commands::file_fingerprint,
+            files::commands::file_pick_open,
+            files::commands::file_pick_save,
             app_exit_after_flush,
             exit_flush_failed,
             app_startup_mark,
