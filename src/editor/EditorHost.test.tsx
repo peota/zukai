@@ -8,7 +8,10 @@ import {
 } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
 import { EditorHost, type EditorHostProps } from "./EditorHost";
-import type { TabState } from "../model/types";
+import { undo } from "@codemirror/commands";
+import { foldedRanges, syntaxTree } from "@codemirror/language";
+import type { FileInfo, TabState } from "../model/types";
+import { beautify } from "./jsonFormat";
 
 function tab(id: string, over: Partial<TabState> = {}): TabState {
   return {
@@ -194,5 +197,214 @@ describe("EditorHost find bar", () => {
       fireEvent.keyDown(v.contentDOM, { key: "F3", code: "F3" });
     });
     expect(screen.getByRole("textbox", { name: "Find" })).toHaveValue("");
+  });
+});
+
+const FILE: FileInfo = {
+  path: "C:/x/a.json",
+  format: { encoding: "utf-8", bom: false, lineEnding: "crlf", mixed: false },
+  fingerprint: null,
+  held: null,
+};
+
+const json = (id: string, over: Partial<TabState> = {}) =>
+  tab(id, { language: "json", languagePicked: true, ...over });
+
+describe("EditorHost format requests", () => {
+  it("beautifyReplacesSelectionOnly", async () => {
+    const { container, rerender } = setup({
+      tabs: [json("a", { selection: { anchor: 2, head: 9 } })],
+      loadContent: () => Promise.resolve('x {"a":1} y'),
+    });
+    const v = await activeView(container, 'x {"a":1} y');
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe('x {\n  "a": 1\n} y');
+  });
+
+  it("beautifyWholeDocWhenNoSelection", async () => {
+    const src = '{"a":[1,2],"b":{}}';
+    const { container, rerender } = setup({
+      tabs: [json("a")],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    const want = beautify(src);
+    expect(want.ok && v.state.doc.toString()).toBe(want.ok && want.text);
+    // One undoable edit.
+    act(() => void undo(v));
+    expect(v.state.doc.toString()).toBe(src);
+  });
+
+  it("minifies the whole doc", async () => {
+    const { container, rerender } = setup({
+      tabs: [json("a")],
+      loadContent: () => Promise.resolve('{\n  "a": 1\n}'),
+    });
+    const v = await activeView(container, '{\n  "a": 1\n}');
+    rerender({ formatRequest: { seq: 1, kind: "minify" } });
+    expect(v.state.doc.toString()).toBe('{"a":1}');
+  });
+
+  it("invalidJsonDoesNotChangeDoc", async () => {
+    const src = '\n{"a" 1}';
+    const onFormatResult = vi.fn();
+    const { container, rerender } = setup({
+      tabs: [json("a")],
+      loadContent: () => Promise.resolve(src),
+      onFormatResult,
+    });
+    const v = await activeView(container, src);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe(src);
+    expect(onFormatResult).toHaveBeenCalledWith(
+      expect.objectContaining({ ok: false, line: 2, col: 6 }),
+    );
+    expect(v.state.selection.main.head).toBe(v.state.doc.line(2).from + 5);
+  });
+
+  it("reports an error inside a selection at its document position", async () => {
+    const src = "ab\ncd [1 2]";
+    const onFormatResult = vi.fn();
+    const { container, rerender } = setup({
+      tabs: [json("a", { selection: { anchor: 6, head: 11 } })],
+      loadContent: () => Promise.resolve(src),
+      onFormatResult,
+    });
+    const v = await activeView(container, src);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(onFormatResult).toHaveBeenCalledWith(
+      expect.objectContaining({ ok: false, line: 2, col: 7 }),
+    );
+    expect(v.state.selection.main.head).toBe(9);
+  });
+});
+
+describe("EditorHost replace requests", () => {
+  it("replaceRequestIsOneUndoStep", async () => {
+    const { container, rerender, props } = setup({
+      tabs: [tab("a", { selection: { anchor: 4, head: 8 } }), tab("b")],
+    });
+    const v = await activeView(container, "text of a");
+    rerender({ replaceRequests: [{ seq: 1, id: "a", text: "the new" }] });
+    expect(v.state.doc.toString()).toBe("the new");
+    // Cursor kept, clamped to the new length.
+    expect(v.state.selection.main).toMatchObject({ anchor: 4, head: 7 });
+    expect(props.onChange).toHaveBeenLastCalledWith("a", "the new");
+    act(() => void undo(v));
+    expect(v.state.doc.toString()).toBe("text of a");
+    // Re-rendering the same request applies nothing again.
+    rerender({ tabs: [...props.tabs] });
+    expect(v.state.doc.toString()).toBe("text of a");
+  });
+
+  it("applies a replace to a hidden view", async () => {
+    const { container, rerender } = setup();
+    const a = await activeView(container, "text of a");
+    rerender({ activeId: "b" });
+    await activeView(container, "text of b");
+    expect(a.dom.parentElement!.style.display).toBe("none");
+    rerender({ replaceRequests: [{ seq: 1, id: "a", text: "reloaded a" }] });
+    expect(a.state.doc.toString()).toBe("reloaded a");
+  });
+
+  it("ignores a stale replace (older seq, or one the loaded text has)", async () => {
+    const { container, rerender } = setup({
+      // b's loaded text is newer than the request issued before it loaded.
+      loadContent: (id) =>
+        Promise.resolve(id === "b" ? "newer b" : `text of ${id}`),
+      replaceRequests: [{ seq: 1, id: "b", text: "disk b" }],
+    });
+    const a = await activeView(container, "text of a");
+    rerender({ activeId: "b" });
+    const b = await activeView(container, "newer b");
+    rerender({ tabs: [tab("a"), tab("b")] });
+    expect(b.state.doc.toString()).toBe("newer b");
+
+    rerender({ replaceRequests: [{ seq: 3, id: "a", text: "three" }] });
+    expect(a.state.doc.toString()).toBe("three");
+    rerender({ replaceRequests: [{ seq: 2, id: "a", text: "two" }] });
+    expect(a.state.doc.toString()).toBe("three");
+  });
+
+  it("applies a replace that arrives while the view is loading", async () => {
+    let resolve!: (s: string) => void;
+    const { container, rerender } = setup({
+      loadContent: () => new Promise<string>((r) => (resolve = r)),
+    });
+    rerender({ replaceRequests: [{ seq: 1, id: "a", text: "from disk" }] });
+    await act(async () => resolve("old text"));
+    await activeView(container, "from disk");
+  });
+});
+
+describe("EditorHost read-only and Convert", () => {
+  it("readOnlyFileRejectsInput", async () => {
+    const { container, rerender, props } = setup({
+      tabs: [json("a", { file: { ...FILE, held: "readonly" } })],
+      loadContent: () => Promise.resolve('{"a":1}'),
+    });
+    const v = await activeView(container, '{"a":1}');
+    expect(v.state.readOnly).toBe(true);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe('{"a":1}');
+    rerender({ tabs: [json("a", { file: FILE })] });
+    expect(v.state.readOnly).toBe(false);
+    expect(props.onChange).not.toHaveBeenCalled();
+  });
+
+  it("is read-only while the Tab's shadow can't be read", async () => {
+    const { container, rerender } = setup({
+      shadowUnreadable: new Set(["a"]),
+    });
+    const v = await activeView(container, "text of a");
+    expect(v.state.readOnly).toBe(true);
+    rerender({ shadowUnreadable: new Set() });
+    expect(v.state.readOnly).toBe(false);
+  });
+
+  it("a Convert is undoable and reported both ways", async () => {
+    const { container, rerender, props } = setup({
+      tabs: [tab("a", { file: FILE })],
+    });
+    const v = await activeView(container, "text of a");
+    rerender({
+      convertRequest: { seq: 1, id: "a", patch: { lineEnding: "lf" } },
+    });
+    const lf = { ...FILE.format, lineEnding: "lf" as const };
+    expect(props.onTabPatch).toHaveBeenLastCalledWith("a", {
+      file: { ...FILE, format: lf },
+    });
+    rerender({ tabs: [tab("a", { file: { ...FILE, format: lf } })] });
+    act(() => void undo(v));
+    expect(props.onTabPatch).toHaveBeenLastCalledWith("a", {
+      file: { ...FILE, format: FILE.format },
+    });
+  });
+});
+
+describe("EditorHost folding", () => {
+  it("foldKeysFoldJsonObject", async () => {
+    const src = '{\n  "a": {\n    "b": 1\n  }\n}';
+    const { container } = setup({
+      tabs: [json("a", { selection: { anchor: 4, head: 4 } })],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    await waitFor(() => expect(syntaxTree(v.state).length).toBe(src.length));
+    const press = (key: string, keyCode: number) =>
+      act(() => {
+        fireEvent.keyDown(v.contentDOM, {
+          key,
+          keyCode,
+          ctrlKey: true,
+          shiftKey: true,
+        });
+      });
+    press("{", 219);
+    expect(foldedRanges(v.state).size).toBe(1);
+    press("}", 221);
+    expect(foldedRanges(v.state).size).toBe(0);
+    expect(container.querySelector(".cm-foldGutter")).not.toBeNull();
   });
 });

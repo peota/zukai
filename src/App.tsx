@@ -8,6 +8,7 @@ import {
 } from "./app/browserGuard";
 import type { LanguageId } from "./model/types";
 import { EditorHost } from "./editor/EditorHost";
+import type { FormatResult } from "./editor/jsonFormat";
 import { TabBar } from "./ui/TabBar";
 import { StatusBar } from "./ui/StatusBar";
 import { LanguagePicker } from "./ui/LanguagePicker";
@@ -92,6 +93,14 @@ export default function App() {
   const onCursor = useCallback(
     (line: number, col: number) => setCursor({ id: activeId, line, col }),
     [activeId],
+  );
+
+  const { showNotice } = w;
+  const onFormatResult = useCallback(
+    (r: FormatResult) => {
+      if (!r.ok) showNotice(`Invalid JSON at line ${r.line}, col ${r.col}`);
+    },
+    [showNotice],
   );
 
   /** Give the keyboard back to the editor. */
@@ -194,6 +203,11 @@ export default function App() {
             isClosing={w.isClosing}
             focusSignal={focusSignal}
             findRequest={w.findRequest}
+            formatRequest={w.formatRequest}
+            convertRequest={w.convertRequest}
+            replaceRequests={w.replaceRequests}
+            shadowUnreadable={w.shadowUnreadable}
+            onFormatResult={onFormatResult}
           />
         )}
       </main>

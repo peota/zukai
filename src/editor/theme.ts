@@ -37,6 +37,24 @@ const paper = EditorView.theme({
     padding: "0 4px 0 16px",
     minWidth: "32px",
   },
+  // A quiet fold gutter: open markers appear while the gutter is hovered;
+  // a folded line's marker always shows.
+  ".cm-foldGutter .cm-gutterElement": {
+    padding: "0 4px 0 2px",
+    cursor: "pointer",
+    color: "var(--z-faint)",
+  },
+  ".cm-foldGutter .cm-gutterElement:hover": { color: "var(--z-muted)" },
+  ".z-fold-open": { opacity: "0", transition: "opacity 120ms" },
+  ".cm-gutters:hover .z-fold-open": { opacity: "1" },
+  ".cm-foldPlaceholder": {
+    backgroundColor: "var(--z-accent-soft)",
+    border: "none",
+    borderRadius: "3px",
+    color: "var(--z-muted)",
+    padding: "0 4px",
+    margin: "0 2px",
+  },
   ".cm-activeLine": { backgroundColor: "var(--z-active-line)" },
   ".cm-activeLineGutter": {
     backgroundColor: "var(--z-active-line)",
