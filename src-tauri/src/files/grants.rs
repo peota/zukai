@@ -77,21 +77,26 @@ impl Grants {
         Ok(path)
     }
 
-    /// The granted path `p` refers to, or `NotGranted`. The lock is never
-    /// held across file system calls.
+    /// The granted path `p` refers to, or `NotGranted`. `p` is either the
+    /// granted path byte for byte, or canonicalizes to exactly it: a key
+    /// match alone could be another file (`a.txt` next to `A.txt` in a
+    /// case-sensitive folder). The lock is never held across file system
+    /// calls.
     pub fn check(&self, p: &str) -> Result<PathBuf, FileError> {
         let path = Path::new(p);
         if !path.is_absolute() {
             return Err(FileError::NotGranted);
         }
-        if let Some(granted) = self.map().get(&key(path)) {
+        if let Some(granted) = self.map().get(&key(path))
+            && granted.as_os_str() == path.as_os_str()
+        {
             return Ok(granted.clone());
         }
         let canon = canonical(path).map_err(|_| FileError::NotGranted)?;
-        self.map()
-            .get(&key(&canon))
-            .cloned()
-            .ok_or(FileError::NotGranted)
+        match self.map().get(&key(&canon)) {
+            Some(granted) if granted.as_os_str() == canon.as_os_str() => Ok(granted.clone()),
+            _ => Err(FileError::NotGranted),
+        }
     }
 
     /// Like `check`, but `p` must be spelled exactly as the granted path.
@@ -314,6 +319,24 @@ mod tests {
         assert_eq!(g.check(&exact.to_uppercase()).unwrap(), granted);
         #[cfg(windows)]
         assert_eq!(g.check(&format!(r"\\?\{exact}")).unwrap(), granted);
+    }
+
+    #[test]
+    fn check_never_resolves_a_key_match_to_another_file() {
+        // Two files whose keys collide (as `a.txt` and `A.txt` do in a
+        // case-sensitive folder on Windows or macOS): a request for one must
+        // never resolve to the other.
+        let dir = tempfile::tempdir().unwrap();
+        let g = Grants::default();
+        let other = g.grant(&abs(dir.path(), "other.txt")).unwrap();
+        let mine = canonical(&abs(dir.path(), "mine.txt")).unwrap();
+        g.map().insert(key(&mine), other.clone());
+        assert!(matches!(
+            g.check(mine.to_str().unwrap()),
+            Err(FileError::NotGranted)
+        ));
+        // The granted one is still reachable by its own spelling.
+        assert_eq!(g.check(other.to_str().unwrap()).unwrap(), other);
     }
 
     #[test]
