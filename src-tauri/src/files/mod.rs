@@ -1,8 +1,9 @@
 //! Reading and writing real files on disk.
-#![allow(dead_code)] // consumers land in later tasks of this slice
 
+pub mod commands;
 pub mod encoding;
 pub mod fingerprint;
+pub mod grants;
 pub mod io;
 
 use serde::{Serialize, Serializer, ser::SerializeStruct};

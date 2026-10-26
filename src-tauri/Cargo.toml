@@ -26,6 +26,8 @@ encoding_rs = "0.8"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
+dunce = "1"
+tauri-plugin-dialog = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
