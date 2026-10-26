@@ -108,11 +108,10 @@ export function useWorkspace(): Workspace {
           writeScratchpad,
           fileWrite,
           fileFingerprint,
-          // An unreadable shadow is never replaced (see useFiles).
-          shadowWrite: (tid, t) =>
-            keptShadows.has(tid) ? Promise.resolve() : shadowWrite(tid, t),
-          shadowDelete: (tid) =>
-            keptShadows.has(tid) ? Promise.resolve() : shadowDelete(tid),
+          shadowWrite,
+          shadowDelete,
+          // A Tab whose shadow is unread is never written (see useFiles).
+          isUnreadable: (tid) => keptShadows.has(tid),
           onWritten: (tid, written) => onDisk.set(tid, written),
         })(id, text),
       ),
