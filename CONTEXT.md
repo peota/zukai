@@ -19,7 +19,7 @@ A Document that lives only in Zukai's own storage and has no path on disk. Every
 _Avoid_: note, untitled, temp file.
 
 **File**
-A Document backed by a path on the user's disk. Edits to a File are autosaved to that path, just like a Scratchpad's are saved to Zukai's storage (see [ADR 0001](docs/adr/0001-files-autosave-to-disk.md)).
+A Document backed by a path on the user's disk. Edits to a File are autosaved to that path, just like a Scratchpad's are saved to Zukai's storage (see [ADR 0001](docs/adr/0001-files-autosave-to-disk.md)). Only paths the user has granted to Rust (by opening, dropping or saving them) can be read or written; every other path is refused.
 _Avoid_: external file, document (when you mean specifically the on-disk kind).
 
 **Kind**
@@ -119,6 +119,15 @@ An open File whose path no longer exists because it was deleted or moved. The Ta
 Everything needed to bring the workspace back after a restart: open Tabs and their order, Splits, the active Tab, cursor and scroll positions, Sort/Filter, Undo history, and Pending edit state. It is stored in `session.json` (see [ADR 0005](docs/adr/0005-scratchpads-as-plain-files.md)).
 _Avoid_: workspace (when you mean the saved state).
 
+**Fingerprint**
+A File's modified time, size and xxh3-64 content hash as Zukai last read or wrote it. Before every write, Rust re-hashes the file on disk. If the content differs from the Fingerprint, the write is refused and the Tab enters a Disk conflict. An empty hash marks a file over 50 MB that wasn't read; it never matches.
+
+**Held**
+A File Tab is held while it is in a Disk conflict, is a Missing File, is read-only (not readable as text), or has text its encoding can't represent. A held Tab never writes the File; its text goes to its Shadow file instead. If a Shadow file itself can't be read, the Tab stays held, can't be edited or moved, and the read is retried on the next launch.
+
+**Shadow file**
+`pending/<tab id>.txt` in the app data folder, holding a held Tab's unsaved text. It is written atomically and restored after a restart. It is deleted only once the Tab is resolved. Shadow files that no Tab references are recovered as Scratchpads at launch.
+
 ## Recovery
 
 **Undo history**
@@ -128,13 +137,21 @@ A Tab's list of edits that can be undone. For Text Tabs it's saved with the Sess
 A copy of a Document as it was on disk before Zukai changed it. One is taken at the first change in a session and again after a long pause in editing. Zukai keeps the last 10 per Document for 30 days, within a total size limit. "Restore previous version…" on the Tab lists them. See [ADR 0007](docs/adr/0007-persistent-undo-and-snapshots.md).
 _Avoid_: backup, version (unless you mean a Snapshot).
 
+## JSON tools
+
+**Format (Beautify / Minify)**
+Commands for Tabs whose Language is JSON, from the `{ }` chip in the status bar. Beautify (Shift+Alt+F) re-indents with 2 spaces, the selection if there is one, and otherwise the whole Document. Minify removes whitespace outside strings. Both are one undoable edit that autosave treats like typing. They re-indent existing tokens and never re-serialise values, so key order, number text and string escapes are untouched, and comments survive. Invalid JSON changes nothing and the status bar names the line and column.
+
+**Folding**
+Collapsing a region of text (such as a JSON object) behind a marker in the fold gutter. Mod+Shift+[ folds, Mod+Shift+] unfolds, and clicking a marker toggles it. Copying a selection that spans folded regions copies the hidden text too.
+
 ## Closing
 
 **Recently Closed**
 A list of Tabs the user closed. Mod+Shift+T reopens the most recent one, and a small menu lists the rest. Closing a Tab never asks for confirmation.
 - A Scratchpad that is empty when closed is deleted at once and never appears in Recently Closed.
 - A non-empty Scratchpad is kept in Recently Closed for 30 days, then deleted for good.
-- A closed File appears in Recently Closed as a reference to its path. The content stays on disk.
+- A closed File appears in Recently Closed as a reference to its path. The content stays on disk. It never expires, unless it carries Shadow file text (unsaved text from being Held); then it is kept for 30 days.
 
 ## Quick capture
 
