@@ -703,3 +703,230 @@ describe("useFiles close, reopen and restore", () => {
     );
   });
 });
+
+function gate() {
+  let open!: () => void;
+  const promise = new Promise<void>((r) => (open = r));
+  return { promise, open };
+}
+
+describe("useFiles interleavings (fix round 1)", () => {
+  it("typing during a reload's read becomes a conflict, keeping the text", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    const g = gate();
+    const read = f.fileRead.getMockImplementation()!;
+    f.fileRead.mockImplementationOnce(async (path) => {
+      await g.promise;
+      return read(path);
+    });
+    disk[P] = { text: "theirs", hash: "h2" };
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    await waitFor(() => expect(f.fileRead).toHaveBeenCalledTimes(2));
+    act(() => result.current.setContent(id, "typed"));
+    g.open();
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
+    await settle();
+    expect(shadows[id]).toBe("typed");
+    expect(disk[P].text).toBe("theirs");
+    expect(await result.current.loadContent(id)).toBe("typed");
+  });
+
+  it("an event for Zukai's own write arriving mid-write is ignored", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    const g = gate();
+    const write = f.fileWrite.getMockImplementation()!;
+    f.fileWrite.mockImplementationOnce(async (...args) => {
+      const out = await write(...args); // on disk; the reply is slow
+      await g.promise;
+      return out;
+    });
+    act(() => result.current.setContent(id, "mine"));
+    await waitFor(() => expect(f.fileWrite).toHaveBeenCalled());
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    g.open();
+    await act(() => new Promise((res) => setTimeout(res, 30)));
+    expect(fileTabOf(result)!.file!.held).toBeNull();
+    expect(f.fileRead).toHaveBeenCalledTimes(1);
+    expect(disk[P].text).toBe("mine");
+  });
+
+  it("a real change arriving mid-write is a conflict, not overwritten", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    const g = gate();
+    const write = f.fileWrite.getMockImplementation()!;
+    f.fileWrite.mockImplementationOnce(async (...args) => {
+      await g.promise;
+      return write(...args);
+    });
+    act(() => result.current.setContent(id, "mine"));
+    await waitFor(() => expect(f.fileWrite).toHaveBeenCalled());
+    disk[P] = { text: "theirs", hash: "h2" };
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    g.open();
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
+    await waitFor(() => expect(shadows[id]).toBe("mine"));
+    expect(disk[P].text).toBe("theirs");
+  });
+
+  it("an autosave queued behind Save As goes to the new File", async () => {
+    const target = "C:\\d\\notes.txt";
+    f.filePickSave.mockResolvedValue(target);
+    const g = gate();
+    const saveAs = f.fileSaveAs.getMockImplementation()!;
+    f.fileSaveAs.mockImplementationOnce(async (...args) => {
+      await g.promise;
+      return saveAs(...args);
+    });
+    const { result } = await mount();
+    await result.current.loadContent("a");
+    let saving!: Promise<void>;
+    act(() => {
+      saving = result.current.saveAs("a");
+    });
+    await waitFor(() => expect(f.fileSaveAs).toHaveBeenCalled());
+    act(() => result.current.setContent("a", "alpha 2"));
+    await settle(); // the autosave is now queued behind the Save As
+    g.open();
+    await act(() => saving);
+    await waitFor(() => expect(disk[target]?.text).toBe("alpha 2"));
+    expect(scratch.a).toBeUndefined();
+    expect(s.writeScratchpad).not.toHaveBeenCalledWith("a", "alpha 2");
+    // The Session named the File before the scratchpad was deleted.
+    const named = s.writeSession.mock.calls.findIndex(([json]) =>
+      json.includes("notes.txt"),
+    );
+    expect(named).toBeGreaterThanOrEqual(0);
+    expect(s.writeSession.mock.invocationCallOrder[named]).toBeLessThan(
+      s.deleteScratchpad.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("Save to original never overwrites a File that came back", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "kept"));
+    delete disk[P];
+    act(() => h.fileChanged!({ path: P, kind: "removed" }));
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("missing"));
+    await settle();
+    disk[P] = { text: "back", hash: "h3" };
+    await act(() => result.current.saveToOriginal(id));
+    expect(f.fileSaveAs).not.toHaveBeenCalled();
+    expect(disk[P].text).toBe("back");
+    expect(fileTabOf(result)!.file!.held).toBe("conflict");
+    expect(await result.current.loadContent(id)).toBe("kept");
+  });
+
+  it("Save to original reloads a File that came back when nothing was typed", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    delete disk[P];
+    act(() => h.fileChanged!({ path: P, kind: "removed" }));
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("missing"));
+    await settle();
+    disk[P] = { text: "back", hash: "h3" };
+    await act(() => result.current.saveToOriginal(id));
+    expect(f.fileSaveAs).not.toHaveBeenCalled();
+    expect(fileTabOf(result)!.file!.held).toBeNull();
+    expect(await result.current.loadContent(id)).toBe("back");
+  });
+
+  it("an unreadable shadow keeps the Tab held and the shadow intact", async () => {
+    shadows.f = "unsaved";
+    f.shadowRead.mockRejectedValue({ kind: "io", message: "denied" });
+    s.readSession.mockResolvedValue(
+      sessionJson([fileTab("f", P, { held: "conflict" }), newTabState("a")]),
+    );
+    const { result } = await mount();
+    expect(await result.current.loadContent("f")).toBe("");
+    expect(fileTabOf(result)!.file!.held).toBe("readonly");
+    expect(result.current.notice).toBe(
+      "Can't read the unsaved text of A.json: denied",
+    );
+    act(() => result.current.setContent("f", "x"));
+    await settle();
+    await act(() => result.current.closeTab("f"));
+    expect(result.current.state.closed[0].tab.file?.held).toBe("conflict");
+    expect(shadows.f).toBe("unsaved");
+    expect(f.shadowWrite).not.toHaveBeenCalled();
+    expect(f.shadowDelete).not.toHaveBeenCalled();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+
+    // A failed reopen leaves the entry; once the shadow reads, it comes back.
+    await act(() => result.current.reopenEntry(0));
+    expect(result.current.state.closed).toHaveLength(1);
+    f.shadowRead.mockImplementation(async (id) => shadows[id] ?? null);
+    await act(() => result.current.reopenEntry(0));
+    expect(await result.current.loadContent("f")).toBe("unsaved");
+    expect(fileTabOf(result)!.file!.held).toBe("conflict");
+  });
+
+  it("a restored Missing File that already came back is re-checked", async () => {
+    shadows.f = "mine";
+    s.readSession.mockResolvedValue(
+      sessionJson([fileTab("f", P, { held: "missing" }), newTabState("a")]),
+    );
+    const { result } = await mount();
+    expect(await result.current.loadContent("f")).toBe("mine");
+    // Its text isn't on disk: a conflict, not a silent reload.
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
+    expect(shadows.f).toBe("mine");
+  });
+
+  it("a File held by a re-check that was running when it closed keeps its text", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    await settle();
+    expect(disk[P].text).toBe("mine");
+    // A focus re-check is waiting on the disk when the Tab closes...
+    const g = gate();
+    const fingerprint = f.fileFingerprint.getMockImplementation()!;
+    f.fileFingerprint.mockImplementationOnce(async (path) => {
+      await g.promise;
+      return fingerprint(path);
+    });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(f.fileFingerprint).toHaveBeenCalled());
+    let closed!: Promise<void>;
+    act(() => {
+      closed = result.current.closeTab(id);
+    });
+    // ...and finds the File deleted.
+    delete disk[P];
+    g.open();
+    await act(() => closed);
+    const entry = result.current.state.closed[0];
+    expect(entry.tab.file?.held).toBe("missing");
+    expect(shadows[id]).toBe("mine");
+  });
+
+  it("closing a File that isn't held drops any stale shadow", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    shadows[id] = "stale";
+    await act(() => result.current.closeTab(id));
+    expect(shadows[id]).toBeUndefined();
+  });
+
+  it("shows one notice for folders and several missing paths", async () => {
+    const { result } = await mount();
+    act(() =>
+      h.openPaths!({
+        paths: [],
+        folders: ["C:\\d\\dir"],
+        missing: ["C:\\d\\a.txt", "C:\\d\\b.txt"],
+      }),
+    );
+    await waitFor(() =>
+      expect(result.current.notice).toBe(
+        "Open files, not folders. Can't find a.txt, b.txt",
+      ),
+    );
+  });
+});

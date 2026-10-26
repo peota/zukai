@@ -21,7 +21,12 @@ import {
   useFlushOnBlur,
   useWindowTitle,
 } from "./workspaceEffects";
-import type { FileFormat, TabState, WorkspaceState } from "../model/types";
+import type {
+  FileFormat,
+  FileInfo,
+  TabState,
+  WorkspaceState,
+} from "../model/types";
 import type { FindRequest } from "../find/findExtension";
 import * as ws from "../model/workspace";
 import { deriveTitle } from "../model/title";
@@ -94,6 +99,7 @@ export function useWorkspace(): Workspace {
     setState(next);
   }, []);
 
+  const [keptShadows] = useState(() => new Map<string, FileInfo["held"]>());
   /** Per-Tab lock shared by autosave writes and File actions. */
   const [lock] = useState(createKeyedLock);
   /** The Saver's write: scratchpad, File or shadow (the writer is stateless). */
@@ -107,12 +113,15 @@ export function useWorkspace(): Workspace {
           writeScratchpad,
           fileWrite,
           fileFingerprint,
-          shadowWrite,
-          shadowDelete,
+          // An unreadable shadow is never replaced (see useFiles).
+          shadowWrite: (tid, t) =>
+            keptShadows.has(tid) ? Promise.resolve() : shadowWrite(tid, t),
+          shadowDelete: (tid) =>
+            keptShadows.has(tid) ? Promise.resolve() : shadowDelete(tid),
           onWritten: (tid, written) => onDisk.set(tid, written),
         })(id, text),
       ),
-    [commit, lock, onDisk],
+    [commit, keptShadows, lock, onDisk],
   );
   // createSaver only stores writeDoc; refs are read when a write runs.
   // eslint-disable-next-line react-hooks/refs
@@ -175,6 +184,8 @@ export function useWorkspace(): Workspace {
     keepTitle,
     keyOf,
     newFileFormat: NEW_FILE,
+    keptShadows,
+    closing,
   });
   const { internal, ...filesApi } = files;
   const { loadContent, updateTab, afterRestore, closeFile } = internal;
