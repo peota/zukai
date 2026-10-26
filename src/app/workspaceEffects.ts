@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installExitHandshake } from "./exit";
+import { detectPlatform } from "./shortcuts";
+import { pathKey } from "../files/api";
 import type { SaveStatus, Saver } from "../storage/autosave";
 import { parseSessionFile, restoreWorkspace } from "../model/session";
 import type { WorkspaceState } from "../model/types";
@@ -12,6 +14,8 @@ import {
   readSession,
   reopenScratchpad,
 } from "../storage/api";
+
+const platform = detectPlatform();
 
 export const logError = (what: string) => (err: unknown) =>
   console.error(what, err);
@@ -75,6 +79,8 @@ export async function restoreSession(
     freshId,
     Date.now(),
     closedFiles,
+    null,
+    (p) => pathKey(p, platform),
   );
   if (expired.length > 0) {
     await purgeClosed(expired.map((e) => e.tab.id)).catch(
