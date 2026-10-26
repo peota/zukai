@@ -1,6 +1,7 @@
 pub mod atomic;
 pub mod scratchpads;
 pub mod session;
+pub mod shadow;
 pub mod startup_log;
 
 use serde::{Serialize, Serializer, ser::SerializeStruct};

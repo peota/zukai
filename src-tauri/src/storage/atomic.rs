@@ -7,6 +7,16 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Write `bytes` to `path` atomically: temp file in the same folder, fsync, rename.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    atomic_write_with_permissions(path, bytes, None)
+}
+
+/// Like [`atomic_write`], but applies `perms` to the temp file before the rename,
+/// so the replaced file never exists with different permissions.
+pub fn atomic_write_with_permissions(
+    path: &Path,
+    bytes: &[u8],
+    perms: Option<fs::Permissions>,
+) -> io::Result<()> {
     let name = path
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?
@@ -27,6 +37,9 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
         let mut f = File::create(&tmp)?;
         f.write_all(bytes)?;
         f.sync_all()?;
+        if let Some(perms) = perms {
+            f.set_permissions(perms)?;
+        }
         drop(f);
         fs::rename(&tmp, path)
     })();
