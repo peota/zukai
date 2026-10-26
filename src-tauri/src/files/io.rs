@@ -46,14 +46,14 @@ fn read_bytes(path: &Path) -> Result<(Vec<u8>, Fingerprint), FileError> {
     if !meta.is_file() {
         return Err(FileError::NotAFile);
     }
-    let bytes = read_capped(f, meta.len())?.ok_or(FileError::TooLarge)?;
+    let bytes = read_capped(&f, meta.len())?.ok_or(FileError::TooLarge)?;
     let fp = fingerprint::from_parts(&meta, &bytes);
     Ok((bytes, fp))
 }
 
-/// Reads the whole file, or returns `None` without reading if it is (or grows)
-/// past `MAX_OPEN_BYTES`.
-fn read_capped(f: File, len: u64) -> io::Result<Option<Vec<u8>>> {
+/// Reads the whole file, or returns `None` without reading if its metadata
+/// length `len` is past `MAX_OPEN_BYTES` (or it grows past it while reading).
+fn read_capped(f: &File, len: u64) -> io::Result<Option<Vec<u8>>> {
     if len > MAX_OPEN_BYTES {
         return Ok(None);
     }
@@ -180,16 +180,22 @@ pub fn write_file(
     }
     // Always compare content: mtime and size can't be trusted (FAT's 2 s
     // granularity, SMB caching, tools that restore mtime).
-    let disk = match read_capped(f, meta.len())? {
-        // Larger than anything Zukai could have written for this Tab.
-        None => Fingerprint {
-            mtime_ms: mtime_ms(&meta),
-            size: meta.len(),
-            hash: String::new(),
-        },
-        Some(bytes) => fingerprint::from_parts(&meta, &bytes),
+    let Some(disk_bytes) = read_capped(&f, meta.len())? else {
+        // Over the cap: Zukai can't have this content, so it is always a
+        // conflict, whatever `expected` says (even a fingerprint from an
+        // earlier over-cap Conflict). The empty hash marks "never read".
+        return Ok(WriteOutcome::Conflict {
+            fingerprint: Fingerprint {
+                mtime_ms: mtime_ms(&meta),
+                size: meta.len(),
+                hash: String::new(),
+            },
+        });
     };
-    if disk.hash != expected.hash {
+    let disk = fingerprint::from_parts(&meta, &disk_bytes);
+    // An empty expected hash only ever comes from an over-cap Conflict; it
+    // never matches real content.
+    if expected.hash.is_empty() || disk.hash != expected.hash {
         return Ok(WriteOutcome::Conflict { fingerprint: disk });
     }
 
@@ -506,6 +512,58 @@ mod tests {
             other => panic!("expected Conflict, got {other:?}"),
         }
         assert_eq!(fs::metadata(&p).unwrap().len(), MAX_OPEN_BYTES + 1);
+    }
+
+    #[test]
+    fn over_cap_disk_file_is_always_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.txt");
+        fs::write(&p, b"small").unwrap();
+        let r = read_file(&p).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&p)
+            .unwrap()
+            .set_len(MAX_OPEN_BYTES + 1)
+            .unwrap();
+        let disk_mtime = fs::metadata(&p).unwrap().modified().unwrap();
+
+        let first = write_file(&p, "mine", &r.format, &r.fingerprint).unwrap();
+        let WriteOutcome::Conflict { fingerprint } = first else {
+            panic!("expected Conflict, got {first:?}");
+        };
+        // Adopting the Conflict fingerprint (e.g. "Keep mine") must not unlock
+        // an overwrite of a file Zukai never read.
+        let second = write_file(&p, "mine", &r.format, &fingerprint).unwrap();
+        assert!(
+            matches!(second, WriteOutcome::Conflict { .. }),
+            "got {second:?}"
+        );
+        let meta = fs::metadata(&p).unwrap();
+        assert_eq!(meta.len(), MAX_OPEN_BYTES + 1);
+        assert_eq!(meta.modified().unwrap(), disk_mtime);
+    }
+
+    #[test]
+    fn read_capped_skips_over_cap_file_without_reading() {
+        use std::io::Seek;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("big.txt");
+        fs::File::create(&p)
+            .unwrap()
+            .set_len(MAX_OPEN_BYTES + 1)
+            .unwrap();
+        let f = fs::File::open(&p).unwrap();
+        let len = f.metadata().unwrap().len();
+        assert!(read_capped(&f, len).unwrap().is_none());
+        // Nothing was consumed from the handle.
+        assert_eq!((&f).stream_position().unwrap(), 0);
+
+        // At the cap exactly, the bytes are read.
+        let q = dir.path().join("ok.txt");
+        fs::write(&q, b"abc").unwrap();
+        let g = fs::File::open(&q).unwrap();
+        assert_eq!(read_capped(&g, 3).unwrap().as_deref(), Some(&b"abc"[..]));
     }
 
     #[cfg(unix)]
