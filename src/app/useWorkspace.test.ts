@@ -22,6 +22,17 @@ vi.mock("../storage/api", () => ({
   startupMark: vi.fn(),
 }));
 
+// No File Tabs here: the files commands just answer "nothing".
+vi.mock("../files/api", async (orig) => ({
+  ...(await orig<typeof import("../files/api")>()),
+  shadowList: async () => [],
+  fileWatch: async () => {},
+  takeLaunchPaths: async () => ({ paths: [], folders: [], missing: [] }),
+  grantsFilter: async (paths: string[]) => paths,
+  onFileChanged: async () => () => {},
+  onOpenPaths: async () => () => {},
+}));
+
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     show: () => Promise.resolve(),
