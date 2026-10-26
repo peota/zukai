@@ -16,8 +16,11 @@ import { TabContextMenu } from "./ui/TabContextMenu";
 import { FileFormatMenu } from "./ui/FileFormatMenu";
 import { EncodingPicker } from "./ui/EncodingPicker";
 import { convertPatch } from "./ui/encodings";
+import { folderHints } from "./ui/tabFolders";
+import { pathKey } from "./files/api";
 
 const platform = detectPlatform();
+const keyOf = (p: string) => pathKey(p, platform);
 const PLATFORM_ENDING = platform === "windows" ? "crlf" : "lf";
 const REOPEN_HINT = platform === "mac" ? "⇧⌘T" : "Ctrl+Shift+T";
 const BEAUTIFY_HINT = platform === "mac" ? "⇧⌥F" : "Shift+Alt+F";
@@ -44,7 +47,11 @@ export default function App() {
     kind: "encoding" | "lineEnding";
     anchor: DOMRect;
   } | null>(null);
-  const [encPicker, setEncPicker] = useState<"reopen" | "convert" | null>(null);
+  /** The encoding list, pinned to the Tab it was opened for. */
+  const [encPicker, setEncPicker] = useState<{
+    mode: "reopen" | "convert";
+    id: string;
+  } | null>(null);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -72,6 +79,15 @@ export default function App() {
   const here =
     active && cursor?.id === active.id ? cursor : { line: 1, col: 1 };
   const unreadable = !!active && w.shadowUnreadable.has(active.id);
+  const folders = folderHints(
+    w.state.tabs.flatMap((t) =>
+      t.file ? [{ id: t.id, path: t.file.path }] : [],
+    ),
+    keyOf,
+  );
+  const pickerTab = encPicker
+    ? w.state.tabs.find((t) => t.id === encPicker.id)
+    : undefined;
 
   const onCursor = useCallback(
     (line: number, col: number) => setCursor({ id: activeId, line, col }),
@@ -113,12 +129,14 @@ export default function App() {
 
   const pickEncoding = useCallback(
     (label: string) => {
-      if (encPicker === "reopen") void w.reopenWithEncoding(activeId, label);
-      else if (encPicker === "convert")
-        w.convert(activeId, convertPatch(label));
+      if (encPicker?.mode === "reopen") {
+        void w.reopenWithEncoding(encPicker.id, label);
+      } else if (encPicker?.mode === "convert") {
+        w.convert(encPicker.id, convertPatch(label));
+      }
       closeEncPicker();
     },
-    [activeId, closeEncPicker, encPicker, w],
+    [closeEncPicker, encPicker, w],
   );
 
   return (
@@ -132,6 +150,7 @@ export default function App() {
             ? { missing: t.file.held === "missing", path: t.file.path }
             : undefined,
           locked: w.shadowUnreadable.has(t.id),
+          folder: folders.get(t.id),
         }))}
         onActivate={w.activate}
         onClose={(id) => void w.closeTab(id)}
@@ -155,7 +174,9 @@ export default function App() {
           onLoadDisk={() => void w.loadDiskVersion(active.id)}
           onSaveAs={() => void w.saveAs(active.id)}
           onSaveToOriginal={() => void w.saveToOriginal(active.id)}
-          onReopenWithEncoding={() => setEncPicker("reopen")}
+          onReopenWithEncoding={() =>
+            setEncPicker({ mode: "reopen", id: active.id })
+          }
           onConvertToUtf8={() =>
             w.convert(active.id, { encoding: "utf-8", bom: false })
           }
@@ -203,10 +224,8 @@ export default function App() {
             : setFormatMenu({ kind: "lineEnding", anchor })
         }
         showFormat={active?.language === "json"}
-        onFormat={(kind) => {
-          w.requestFormat(kind);
-          refocus();
-        }}
+        onFormat={w.requestFormat}
+        onFormatClose={refocus}
         beautifyHint={BEAUTIFY_HINT}
         notice={w.notice ?? undefined}
       />
@@ -221,6 +240,7 @@ export default function App() {
           x={tabMenu.x}
           y={tabMenu.y}
           tabId={tabMenu.tabId}
+          tabCount={w.state.tabs.length}
           closed={w.state.closed}
           reopenHint={REOPEN_HINT}
           onClose={(id) => void w.closeTab(id)}
@@ -242,8 +262,10 @@ export default function App() {
           pending={w.hasPending(active.id)}
           readonly={active.file.held === "readonly"}
           unreadable={unreadable}
-          onReopenWithEncoding={() => setEncPicker("reopen")}
-          onConvertTo={() => setEncPicker("convert")}
+          onReopenWithEncoding={() =>
+            setEncPicker({ mode: "reopen", id: active.id })
+          }
+          onConvertTo={() => setEncPicker({ mode: "convert", id: active.id })}
           onConvert={(patch) => {
             w.convert(active.id, patch);
             refocus();
@@ -251,11 +273,13 @@ export default function App() {
           onDismiss={closeFormatMenu}
         />
       )}
-      {encPicker && active?.file && (
+      {encPicker && pickerTab?.file && (
         <EncodingPicker
-          key={encPicker}
-          title={encPicker === "reopen" ? "Reopen with encoding" : "Convert to"}
-          current={active.file.format.encoding}
+          key={`${encPicker.mode}:${encPicker.id}`}
+          title={
+            encPicker.mode === "reopen" ? "Reopen with encoding" : "Convert to"
+          }
+          current={pickerTab.file.format.encoding}
           onPick={pickEncoding}
           onClose={closeEncPicker}
         />

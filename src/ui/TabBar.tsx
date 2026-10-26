@@ -15,6 +15,8 @@ export interface TabBarItem {
   file?: { missing: boolean; path: string };
   /** Can't be renamed (its unsaved text can't be read yet). */
   locked?: boolean;
+  /** Parent folder, shown when another open File has the same name. */
+  folder?: string;
 }
 
 export interface TabBarProps {
@@ -86,10 +88,36 @@ export function TabBar({
       e.stopPropagation();
       drag.current = null;
       setDragView(null);
+      // The release that follows still clicks: don't activate on it.
+      swallowClick.current = true;
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [dragging]);
+
+  // A press released outside any Tab (no capture yet) must not linger and
+  // turn a later hover into a drag: the window sees every release.
+  const unlisten = useRef<(() => void) | null>(null);
+  useEffect(() => () => unlisten.current?.(), []);
+  const watchRelease = (pointerId: number) => {
+    unlisten.current?.();
+    const onRelease = (ev: globalThis.PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      unlisten.current?.();
+      const d = drag.current;
+      if (!d || d.pointerId !== pointerId) return;
+      drag.current = null;
+      setDragView(null);
+      if (d.moving) swallowClick.current = true;
+    };
+    window.addEventListener("pointerup", onRelease);
+    window.addEventListener("pointercancel", onRelease);
+    unlisten.current = () => {
+      window.removeEventListener("pointerup", onRelease);
+      window.removeEventListener("pointercancel", onRelease);
+      unlisten.current = null;
+    };
+  };
 
   // The bar only scrolls horizontally; map the vertical wheel onto it.
   const onWheel = (e: WheelEvent<HTMLDivElement>) => {
@@ -115,11 +143,18 @@ export function TabBar({
       dx: 0,
       moving: false,
     };
+    watchRelease(e.pointerId);
   };
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     if (!d || d.pointerId !== e.pointerId) return;
+    if ((e.buttons & 1) === 0) {
+      // The button is up (its release was missed): no press to drag.
+      drag.current = null;
+      setDragView(null);
+      return;
+    }
     const dx = e.clientX - d.startX;
     if (!d.moving && Math.abs(dx) < DRAG_THRESHOLD) return;
     if (!d.moving) {
@@ -225,13 +260,17 @@ export function TabBar({
               />
             ) : (
               <>
-                <span
-                  className={
-                    "min-w-0 flex-1 truncate" +
-                    (tab.file?.missing ? " line-through decoration-faint" : "")
-                  }
-                >
-                  {tab.title}
+                <span className="min-w-0 flex-1 truncate">
+                  <span
+                    className={
+                      tab.file?.missing ? "line-through decoration-faint" : ""
+                    }
+                  >
+                    {tab.title}
+                  </span>
+                  {tab.folder && (
+                    <span className="text-faint">{` · ${tab.folder}`}</span>
+                  )}
                 </span>
                 {tab.file && (
                   <span className="shrink-0 rounded-[4px] border border-hairline px-1 text-[10px] leading-[14px] text-faint">

@@ -104,6 +104,15 @@ describe("StatusBar", () => {
     expect(p.onFormat).toHaveBeenCalledWith("minify");
   });
 
+  it("dismissing the Format menu hands focus back", () => {
+    const onFormatClose = vi.fn();
+    setup({ showFormat: true, onFormatClose });
+    fireEvent.click(screen.getByRole("button", { name: "{ } Format" }));
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(onFormatClose).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the notice", () => {
     setup({ notice: "Open files, not folders" });
     expect(screen.getByText("Open files, not folders")).toBeInTheDocument();

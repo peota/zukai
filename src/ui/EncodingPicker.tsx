@@ -33,8 +33,13 @@ export function EncodingPicker({
     const onDown = (e: MouseEvent) => {
       if (!root.current?.contains(e.target as Node)) onClose();
     };
+    const onBlur = () => onClose();
     window.addEventListener("mousedown", onDown, true);
-    return () => window.removeEventListener("mousedown", onDown, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [onClose]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

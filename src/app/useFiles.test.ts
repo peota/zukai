@@ -348,6 +348,18 @@ describe("useFiles disk changes", () => {
     expect(await result.current.loadContent(id)).toBe("mine");
   });
 
+  it("reopenWithEncoding refuses while the Tab has pending edits", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "typed"));
+    await act(() => result.current.reopenWithEncoding(id, "windows-1252"));
+    expect(f.fileRereadAs).not.toHaveBeenCalled();
+    expect(result.current.notice).toBe(
+      "Can't reopen A.json with another encoding while it has unsaved edits",
+    );
+    expect(await result.current.loadContent(id)).toBe("typed");
+  });
+
   it("hasPending is true only while the text differs from the disk", async () => {
     const { result } = await mount();
     const id = await openP(result);
@@ -943,6 +955,10 @@ describe("useFiles interleavings (fix round 1)", () => {
     await act(() => result.current.saveToOriginal("f"));
     await act(() => result.current.keepMine("f"));
     await act(() => result.current.loadDiskVersion("f"));
+    f.fileRereadAs.mockClear();
+    await act(() => result.current.reopenWithEncoding("f", "windows-1252"));
+    expect(f.fileRereadAs).not.toHaveBeenCalled();
+    expect(result.current.notice).toBe(refused);
     expect(f.fileSaveAs).not.toHaveBeenCalled();
     expect(f.fileWrite).not.toHaveBeenCalled();
     expect(fileTabOf(result)!.file!.path).toBe(P);
