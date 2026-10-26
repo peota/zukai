@@ -59,6 +59,29 @@ describe.each(["mac", "other"] as Platform[])("matchShortcut (%s)", (p) => {
     expect(matchShortcut(ev("KeyZ", { key: "Ω", altKey: true }), p)).toEqual({
       type: "toggleWrap",
     }));
+  it("open, save and save as", () => {
+    expect(matchShortcut(ev("KeyO", m), p)).toEqual({ type: "open" });
+    expect(matchShortcut(ev("KeyS", m), p)).toEqual({ type: "save" });
+    expect(
+      matchShortcut(ev("KeyS", { ...m, key: "S", shiftKey: true }), p),
+    ).toEqual({ type: "saveAs" });
+  });
+  it("Shift+Alt+F formats, by typed letter or physical key", () => {
+    expect(
+      matchShortcut(ev("KeyF", { key: "F", shiftKey: true, altKey: true }), p),
+    ).toEqual({ type: "format" });
+    // macOS Option+Shift+F types a symbol.
+    expect(
+      matchShortcut(ev("KeyF", { key: "Ï", shiftKey: true, altKey: true }), p),
+    ).toEqual({ type: "format" });
+    expect(matchShortcut(ev("KeyF", { key: "f", altKey: true }), p)).toBeNull();
+    expect(
+      matchShortcut(
+        ev("KeyF", { ...m, key: "F", shiftKey: true, altKey: true }),
+        p,
+      ),
+    ).toBeNull();
+  });
   it("rejects extra modifiers", () => {
     expect(matchShortcut(ev("KeyN", { ...m, shiftKey: true }), p)).toBeNull();
     expect(matchShortcut(ev("KeyN", { ...m, altKey: true }), p)).toBeNull();
@@ -116,6 +139,13 @@ describe("keyboard layouts", () => {
     expect(
       matchShortcut(ev("KeyH", { key: "d", ctrlKey: true }), "other"),
     ).toBeNull());
+  it("AZERTY Ctrl+Shift+S (physical KeyS) is Save As by typed letter", () =>
+    expect(
+      matchShortcut(
+        ev("KeyO", { key: "S", ctrlKey: true, shiftKey: true }),
+        "other",
+      ),
+    ).toEqual({ type: "saveAs" }));
   it("Dvorak Cmd+Shift+T uses the typed letter", () =>
     expect(
       matchShortcut(

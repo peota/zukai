@@ -2,9 +2,13 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installExitHandshake } from "./exit";
 import { detectPlatform } from "./shortcuts";
-import { pathKey } from "../files/api";
+import { grantsFilter, pathKey, shadowDelete } from "../files/api";
 import type { SaveStatus, Saver } from "../storage/autosave";
-import { parseSessionFile, restoreWorkspace } from "../model/session";
+import {
+  parseSessionFile,
+  restoreWorkspace,
+  type SessionFile,
+} from "../model/session";
 import type { WorkspaceState } from "../model/types";
 import {
   backupSession,
@@ -79,15 +83,37 @@ export async function restoreSession(
     freshId,
     Date.now(),
     closedFiles,
-    null,
+    file ? await grantedPaths(file) : null,
     (p) => pathKey(p, platform),
   );
-  if (expired.length > 0) {
-    await purgeClosed(expired.map((e) => e.tab.id)).catch(
-      logError("purge closed"),
-    );
+  // An expired Scratchpad lives in closed/; an expired File only in its shadow.
+  const gone = expired.filter((e) => !e.tab.file).map((e) => e.tab.id);
+  if (gone.length > 0) {
+    await purgeClosed(gone).catch(logError("purge closed"));
+  }
+  for (const e of expired) {
+    if (e.tab.file)
+      await shadowDelete(e.tab.id).catch(logError("purge shadow"));
   }
   return state;
+}
+
+/**
+ * The Session's File paths that Rust granted under exactly that spelling.
+ * The rest are dropped, or session_write would refuse every later Session;
+ * a held one's text comes back as an orphan shadow. If Rust can't say, none.
+ */
+async function grantedPaths(file: SessionFile): Promise<Set<string>> {
+  const paths = [...file.tabs, ...file.closed.map((e) => e.tab)].flatMap((t) =>
+    t.file ? [t.file.path] : [],
+  );
+  if (paths.length === 0) return new Set();
+  try {
+    return new Set(await grantsFilter(paths));
+  } catch (err) {
+    logError("check granted paths")(err);
+    return new Set();
+  }
 }
 
 /**
