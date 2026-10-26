@@ -158,11 +158,7 @@ fn install_mac_menu(app: &tauri::App) -> tauri::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            files::open_paths::focus_main(app);
             files::open_paths::emit(app, &args, std::path::Path::new(&cwd));
         }))
         // The frontend shows the window once restored; the plugin must not
