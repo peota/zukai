@@ -12,7 +12,12 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 #[derive(Default)]
-pub struct Grants(Mutex<HashMap<String, PathBuf>>);
+pub struct Grants {
+    files: Mutex<HashMap<String, PathBuf>>,
+    /// The canonical Library root, set only by Rust (`library.json` or the
+    /// folder dialog).
+    root: Mutex<Option<PathBuf>>,
+}
 
 /// The real path of `p`, without `\\?\` verbatim prefixes on Windows. A path
 /// that doesn't exist yet (a Save As target) is its canonical parent joined
@@ -54,7 +59,53 @@ fn plain_absolute(p: &Path) -> bool {
 impl Grants {
     fn map(&self) -> MutexGuard<'_, HashMap<String, PathBuf>> {
         // The map is always consistent; a panic elsewhere doesn't poison it.
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+        self.files.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The canonical Library root, if one is granted.
+    pub fn root(&self) -> Option<PathBuf> {
+        self.root.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Makes `root` the one granted folder, replacing any earlier one, and
+    /// returns its canonical form. It must be an existing absolute folder.
+    pub fn set_root(&self, root: &Path) -> Result<PathBuf, FileError> {
+        if !root.is_absolute() {
+            return Err(FileError::NotGranted);
+        }
+        let canon = dunce::canonicalize(root)?;
+        if !canon.is_dir() {
+            return Err(FileError::Io(io::Error::other("not a folder")));
+        }
+        *self.root.lock().unwrap_or_else(|e| e.into_inner()) = Some(canon.clone());
+        Ok(canon)
+    }
+
+    /// The canonical form of `p` if it is the Library root or inside it,
+    /// else `NotGranted`. A path that doesn't exist yet is checked through
+    /// its parent; a link that resolves outside the root (or dangles) is
+    /// refused.
+    pub fn in_root(&self, p: &Path) -> Result<PathBuf, FileError> {
+        if !p.is_absolute() {
+            return Err(FileError::NotGranted);
+        }
+        let canon = canonical(p).map_err(|_| FileError::NotGranted)?;
+        self.within_root(canon)
+    }
+
+    /// `canon` (already canonical) if it is the root or inside it. Compared
+    /// by components, so `/lib2` is not inside `/lib`.
+    fn within_root(&self, canon: PathBuf) -> Result<PathBuf, FileError> {
+        let root = self.root().ok_or(FileError::NotGranted)?;
+        if !canon.starts_with(&root) {
+            return Err(FileError::NotGranted);
+        }
+        // `canonical` resolves every existing link, so a link left in the
+        // last place is dangling: a write there would follow it anywhere.
+        if std::fs::symlink_metadata(&canon).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(FileError::NotGranted);
+        }
+        Ok(canon)
     }
 
     /// Allows the webview to use `p` from now on, returning its canonical
@@ -78,7 +129,8 @@ impl Grants {
     }
 
     /// The granted path `p` refers to, or `NotGranted`. `p` is either the
-    /// granted path byte for byte, or canonicalizes to exactly it: a key
+    /// granted path byte for byte, or canonicalizes to exactly it or to a
+    /// path inside the Library root: a key
     /// match alone could be another file (`a.txt` next to `A.txt` in a
     /// case-sensitive folder). The lock is never held across file system
     /// calls.
@@ -94,12 +146,17 @@ impl Grants {
         }
         let canon = canonical(path).map_err(|_| FileError::NotGranted)?;
         match self.map().get(&key(&canon)) {
-            Some(granted) if granted.as_os_str() == canon.as_os_str() => Ok(granted.clone()),
-            _ => Err(FileError::NotGranted),
+            Some(granted) if granted.as_os_str() == canon.as_os_str() => {
+                return Ok(granted.clone());
+            }
+            _ => {}
         }
+        // Anything inside the Library root is granted as a folder.
+        self.within_root(canon)
     }
 
-    /// Like `check`, but `p` must be spelled exactly as the granted path.
+    /// Like `check`, but `p` must be spelled exactly as the granted path (for
+    /// a path in the Library, exactly its canonical form).
     /// A key match alone could be a different file (another case on a
     /// case-sensitive folder, a Unicode case fold NTFS doesn't do).
     pub fn check_exact(&self, p: &str) -> Result<PathBuf, FileError> {

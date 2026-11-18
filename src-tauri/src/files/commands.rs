@@ -15,7 +15,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 /// Runs blocking file work, with the allowlist, off the async runtime.
-pub(super) async fn blocking<T, F>(app: AppHandle, f: F) -> Result<T, FileError>
+pub(crate) async fn blocking<T, F>(app: AppHandle, f: F) -> Result<T, FileError>
 where
     T: Send + 'static,
     F: FnOnce(&Grants) -> Result<T, FileError> + Send + 'static,
@@ -26,7 +26,7 @@ where
 }
 
 /// Paths cross to the webview as strings; one that isn't UTF-8 can't round-trip.
-fn path_string(p: &Path) -> Result<String, FileError> {
+pub(crate) fn path_string(p: &Path) -> Result<String, FileError> {
     p.to_str()
         .map(str::to_owned)
         .ok_or_else(|| FileError::Io(std::io::Error::other("path is not valid UTF-8")))

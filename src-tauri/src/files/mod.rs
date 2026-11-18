@@ -24,6 +24,12 @@ pub enum FileError {
     Exists,
     #[error("invalid file name")]
     InvalidName,
+    /// The OS trash refused the item (e.g. on some network drives); nothing
+    /// was deleted, and Zukai never falls back to a permanent delete.
+    #[error("the trash isn't available here, so nothing was deleted")]
+    TrashUnavailable,
+    #[error("a folder can't be moved into itself")]
+    IntoSelf,
     /// Serialized with kind `"io"`: the frontend only ever sends labels it got from us.
     #[error("unknown encoding: {0}")]
     UnknownEncoding(String),
@@ -38,6 +44,8 @@ impl Serialize for FileError {
             FileError::TooLarge => "too_large",
             FileError::Exists => "exists",
             FileError::InvalidName => "invalid_name",
+            FileError::TrashUnavailable => "trash_unavailable",
+            FileError::IntoSelf => "into_self",
         };
         let mut st = s.serialize_struct("FileError", 2)?;
         st.serialize_field("kind", kind)?;
@@ -57,5 +65,9 @@ mod tests {
         assert!(v["message"].as_str().unwrap().contains("exists"));
         let v = serde_json::to_value(FileError::UnknownEncoding("x".into())).unwrap();
         assert_eq!(v["kind"], "io");
+        let v = serde_json::to_value(FileError::TrashUnavailable).unwrap();
+        assert_eq!(v["kind"], "trash_unavailable");
+        let v = serde_json::to_value(FileError::IntoSelf).unwrap();
+        assert_eq!(v["kind"], "into_self");
     }
 }

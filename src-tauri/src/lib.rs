@@ -1,5 +1,6 @@
 pub mod commands;
 mod files;
+pub mod library;
 pub mod storage;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -220,6 +221,17 @@ pub fn run() {
             files::commands::grants_filter,
             files::watch::file_watch,
             files::open_paths::take_launch_paths,
+            library::commands::library_root,
+            library::commands::library_use_default,
+            library::commands::library_choose,
+            library::commands::library_list,
+            library::commands::library_create_folder,
+            library::commands::library_create_file,
+            library::commands::library_rename,
+            library::commands::library_move,
+            library::commands::library_copy_into,
+            library::commands::library_trash,
+            library::commands::library_reveal,
             app_exit_after_flush,
             exit_flush_failed,
             app_startup_mark,
