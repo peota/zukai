@@ -23,7 +23,9 @@ export interface FileError {
     | "not_a_file"
     | "too_large"
     | "exists"
-    | "invalid_name";
+    | "invalid_name"
+    | "trash_unavailable"
+    | "into_self";
   message: string;
 }
 
