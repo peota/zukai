@@ -594,6 +594,20 @@ describe("useFiles save and save as", () => {
     expect(result.current.state.tabs.every((t) => !t.file)).toBe(true);
   });
 
+  it("a Kind refusal names the Tab's own Kind", async () => {
+    const pic = "C:\\d\\pic.png";
+    disk[pic] = { text: "", hash: "p1" };
+    const { result } = await mount();
+    const id = await openP(result, pic);
+    expect(fileTabOf(result, pic)!.kind).toBe("image");
+    f.filePickSave.mockResolvedValue("C:\\d\\x.txt");
+    await act(() => result.current.saveAs(id));
+    expect(result.current.notice).toBe(
+      "An image can only be saved as an image file",
+    );
+    expect(f.fileSaveAs).not.toHaveBeenCalled();
+  });
+
   it("Ctrl+S in a File flushes it", async () => {
     const { result } = await mount();
     const id = await openP(result);

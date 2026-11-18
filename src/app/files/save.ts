@@ -26,11 +26,16 @@ const CANVAS_FILTER = {
 function kindRefusal(kind: Kind, target: string): string | null {
   const into = kindOf(target);
   if (into === kind) return null;
-  if (kind === "canvas")
-    return "A canvas can only be saved as a .excalidraw file";
-  return into === "canvas"
-    ? "Can't save text as a .excalidraw drawing"
-    : `Can't save text as an image (${baseName(target)})`;
+  switch (kind) {
+    case "canvas":
+      return "A canvas can only be saved as a .excalidraw file";
+    case "image":
+      return "An image can only be saved as an image file";
+    case "text":
+      return into === "canvas"
+        ? "Can't save text as a .excalidraw drawing"
+        : `Can't save text as an image (${baseName(target)})`;
+  }
 }
 
 export interface SaveAsOptions {

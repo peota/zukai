@@ -92,9 +92,16 @@ pub fn read(base: &Path, id: &str) -> Result<String> {
 
 pub fn write(base: &Path, id: &str, content: &str, ext: ScratchExt) -> Result<()> {
     atomic_write(&pad_path(base, "scratchpads", id, ext)?, content.as_bytes())?;
-    // One id, one file: a file of the other extension is never read again.
+    // One id, one file. The text is already safe: if the other extension's
+    // file can't go, `find_pad` still picks the newer one (this), so the
+    // write isn't reported as failed.
     for other in ScratchExt::ALL.into_iter().filter(|e| *e != ext) {
-        remove_if_exists(&pad_path(base, "scratchpads", id, other)?)?;
+        if let Err(e) = remove_if_exists(&pad_path(base, "scratchpads", id, other)?) {
+            eprintln!(
+                "scratchpad {id}: can't remove its .{} file: {e}",
+                other.as_str()
+            );
+        }
     }
     Ok(())
 }

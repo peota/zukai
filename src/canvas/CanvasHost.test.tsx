@@ -80,12 +80,29 @@ vi.mock("@excalidraw/excalidraw", async () => {
       ...local,
       ...appState,
     }),
+    // Like the real one, only these appState keys are exported ("local").
     serializeAsJSON: (
       elements: El[],
-      _appState: object,
+      appState: Record<string, unknown>,
       files: object,
       type: string,
-    ) => JSON.stringify({ type: "excalidraw", source: type, elements, files }),
+    ) =>
+      JSON.stringify({
+        type: "excalidraw",
+        source: type,
+        elements,
+        appState: Object.fromEntries(
+          Object.entries(appState).filter(([k]) =>
+            [
+              "gridSize",
+              "gridStep",
+              "gridModeEnabled",
+              "viewBackgroundColor",
+            ].includes(k),
+          ),
+        ),
+        files,
+      }),
   };
 });
 vi.mock("@excalidraw/excalidraw/index.css", () => ({}));
@@ -201,11 +218,26 @@ describe("CanvasHost", () => {
         type: "excalidraw",
         source: "local",
         elements: moved,
+        appState: {},
         files: {},
       }),
     );
     // The same drawing again (a re-render, a pointer move): no new save.
     change([{ id: "a", version: 2 }], { scrollX: 1 }, {});
+    expect(props.onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("backgroundChangeAloneSaves", async () => {
+    const { props } = await setup();
+    const { change } = await mounted();
+    change([A1], { viewBackgroundColor: "#1e1e1e", scrollX: 3 }, {});
+    expect(props.onChange).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.parse((props.onChange as ReturnType<typeof vi.fn>).mock.calls[0][1])
+        .appState,
+    ).toEqual({ viewBackgroundColor: "#1e1e1e" });
+    // The same background again (with a scroll): no new save.
+    change([A1], { viewBackgroundColor: "#1e1e1e", scrollX: 9 }, {});
     expect(props.onChange).toHaveBeenCalledTimes(1);
   });
 
@@ -294,6 +326,18 @@ describe("CanvasHost", () => {
     // Excalidraw's own keys still reach it.
     fireEvent.keyDown(canvas, { key: "r", code: "KeyR" });
     expect(fx.keydown).toHaveBeenCalledTimes(1);
+    expect(props.onShortcut).toHaveBeenCalledTimes(1);
+    // So do the text editor's commands (find, wrap, format): Excalidraw's
+    // Ctrl+F is its search.
+    fireEvent.keyDown(canvas, { key: "f", code: "KeyF", ctrlKey: true });
+    fireEvent.keyDown(canvas, { key: "z", code: "KeyZ", altKey: true });
+    fireEvent.keyDown(canvas, {
+      key: "F",
+      code: "KeyF",
+      altKey: true,
+      shiftKey: true,
+    });
+    expect(fx.keydown).toHaveBeenCalledTimes(4);
     expect(props.onShortcut).toHaveBeenCalledTimes(1);
   });
 });

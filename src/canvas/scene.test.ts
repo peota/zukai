@@ -67,4 +67,24 @@ describe("scene", () => {
     // Deleted elements don't count.
     expect(sceneSignature([...elements, el("z", 9, true)], {})).toBe(base);
   });
+
+  it("sceneSignatureCountsTheExportedAppState", () => {
+    const elements = [el("a", 1)];
+    const white = { viewBackgroundColor: "#fff", gridSize: 20 };
+    const base = sceneSignature(elements, {}, white);
+    // Key order doesn't matter; a value does.
+    expect(
+      sceneSignature(
+        elements,
+        {},
+        { gridSize: 20, viewBackgroundColor: "#fff" },
+      ),
+    ).toBe(base);
+    expect(
+      sceneSignature(elements, {}, { ...white, viewBackgroundColor: "#000" }),
+    ).not.toBe(base);
+    expect(sceneSignature(elements, {}, { ...white, gridSize: 10 })).not.toBe(
+      base,
+    );
+  });
 });
