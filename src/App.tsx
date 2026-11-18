@@ -9,6 +9,7 @@ import {
 import type { LanguageId } from "./model/types";
 import { EditorHost } from "./editor/EditorHost";
 import { CanvasHost } from "./canvas/CanvasHost";
+import { ImageHost, type ImageInfo } from "./image/ImageHost";
 import type { FormatResult } from "./editor/jsonFormat";
 import { TabBar } from "./ui/TabBar";
 import { StatusBar } from "./ui/StatusBar";
@@ -19,7 +20,9 @@ import { FileFormatMenu } from "./ui/FileFormatMenu";
 import { EncodingPicker } from "./ui/EncodingPicker";
 import { convertPatch } from "./ui/encodings";
 import { folderHints } from "./ui/tabFolders";
-import { pathKey } from "./files/api";
+import { fileReadBytes, openDefault, pathKey } from "./files/api";
+import { baseName } from "./files/paths";
+import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
 import { useColorScheme } from "./ui/useColorScheme";
 
@@ -81,12 +84,35 @@ export default function App() {
 
   const active = w.state.tabs.find((t) => t.id === activeId);
   const isCanvas = active?.kind === "canvas";
+  const isImage = active?.kind === "image";
   const theme = useColorScheme();
-  /** The text editor never sees a Canvas Tab (its text is JSON). */
+  /** The text editor only sees text (a Canvas is JSON, an Image bytes). */
   const editorTabs = useMemo(
-    () => w.state.tabs.filter((t) => t.kind !== "canvas"),
+    () => w.state.tabs.filter((t) => t.kind === "text"),
     [w.state.tabs],
   );
+  /** The Image Tab's size and format, once its image has loaded. */
+  const [imageInfo, setImageInfo] = useState<{
+    id: string;
+    info: ImageInfo;
+  } | null>(null);
+  const onImageInfo = useCallback(
+    (info: ImageInfo) => setImageInfo({ id: activeId, info }),
+    [activeId],
+  );
+  /** A reload of the Image Tab from disk (a newer replace) reads it again. */
+  const imageReloadSeq = isImage
+    ? w.replaceRequests.reduce(
+        (n, r) => (r.id === activeId && r.seq > n ? r.seq : n),
+        0,
+      )
+    : 0;
+  // An Image Tab's text is never shown, but loading it records the File's
+  // fingerprint and state, so disk changes reach it (and it can go Missing).
+  const { loadContent } = w;
+  useEffect(() => {
+    if (isImage) loadContent(activeId).catch(() => {});
+  }, [isImage, activeId, loadContent]);
   const here =
     active && cursor?.id === active.id ? cursor : { line: 1, col: 1 };
   const unreadable = !!active && w.shadowUnreadable.has(active.id);
@@ -169,6 +195,23 @@ export default function App() {
   );
   const onShortcut = useCallback((cmd: Command) => void run(cmd), [run]);
 
+  /** The read-only bar's Open with default app (Rust refuses executables). */
+  const openWithDefault = useCallback(
+    async (path: string) => {
+      try {
+        const r = await openDefault(path);
+        if (r.kind === "refused_exec") {
+          showNotice(
+            `${baseName(path)} could run a program, so it isn't opened`,
+          );
+        }
+      } catch (err) {
+        showNotice(`Can't open ${baseName(path)}: ${asFileError(err).message}`);
+      }
+    },
+    [showNotice],
+  );
+
   const lib = w.library;
 
   return (
@@ -245,14 +288,19 @@ export default function App() {
             onConvertToUtf8={() =>
               w.convert(active.id, { encoding: "utf-8", bom: false })
             }
+            onOpenDefault={
+              active.file
+                ? () => void openWithDefault(active.file!.path)
+                : undefined
+            }
           />
         )}
         <main className="min-h-0 flex-1 bg-editor">
           {w.ready && (
-            <div className={isCanvas ? "hidden" : "size-full"}>
+            <div className={isCanvas || isImage ? "hidden" : "size-full"}>
               <EditorHost
                 tabs={editorTabs}
-                activeId={isCanvas ? "" : activeId}
+                activeId={isCanvas || isImage ? "" : activeId}
                 loadContent={w.loadContent}
                 onChange={w.setContent}
                 onTabPatch={updateTab}
@@ -281,20 +329,33 @@ export default function App() {
               onShortcut={onShortcut}
             />
           )}
+          {w.ready && isImage && active.file && (
+            <ImageHost
+              key={active.id}
+              tab={active}
+              readBytes={fileReadBytes}
+              reloadSeq={imageReloadSeq}
+              onInfo={onImageInfo}
+            />
+          )}
         </main>
         <StatusBar
           line={here.line}
           col={here.col}
           language={active?.language ?? "plaintext"}
           saveStatus={w.saveStatus}
-          kindLabel={isCanvas ? "Canvas" : undefined}
+          kindLabel={isCanvas ? "Canvas" : isImage ? "Image" : undefined}
+          image={
+            isImage && imageInfo?.id === activeId ? imageInfo.info : undefined
+          }
           onPickLanguage={() => (picking ? closePicker() : setPicking(true))}
           platformLineEnding={PLATFORM_ENDING}
           file={
             active?.file
               ? {
                   format: active.file.format,
-                  readonly: active.file.held === "readonly" || unreadable,
+                  readonly:
+                    active.file.held === "readonly" || unreadable || isImage,
                 }
               : undefined
           }

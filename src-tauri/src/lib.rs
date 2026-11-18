@@ -222,6 +222,8 @@ pub fn run() {
             files::commands::file_pick_open,
             files::commands::file_pick_save,
             files::commands::grants_filter,
+            files::commands::file_read_bytes,
+            files::commands::open_default,
             files::watch::file_watch,
             files::open_paths::take_launch_paths,
             library::commands::library_root,

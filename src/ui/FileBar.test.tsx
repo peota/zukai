@@ -34,6 +34,7 @@ function setup(tab: TabState, unreadable = false) {
     onSaveToOriginal: vi.fn(),
     onReopenWithEncoding: vi.fn(),
     onConvertToUtf8: vi.fn(),
+    onOpenDefault: vi.fn(),
   };
   const view = render(<FileBar {...props} />);
   return { props, view };
@@ -113,6 +114,48 @@ describe("FileBar", () => {
       screen.getByRole("button", { name: "Reopen with encoding…" }),
     );
     expect(props.onReopenWithEncoding).toHaveBeenCalledTimes(1);
+  });
+
+  it("readonlyBarShowsOpenWithDefaultApp", () => {
+    const pdf = tabWith("readonly");
+    pdf.file!.path = "/data/report.pdf";
+    const { props, view } = setup(pdf);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open with default app" }),
+    );
+    expect(props.onOpenDefault).toHaveBeenCalledTimes(1);
+    view.unmount();
+
+    // Hidden for anything that would run (any case, trailing dot).
+    for (const name of ["setup.EXE", "run.sh", "x.Bat", "go.cmd."]) {
+      const exec = tabWith("readonly");
+      exec.file!.path = `/data/${name}`;
+      const { view: v } = setup(exec);
+      expect(
+        screen.queryByRole("button", { name: "Open with default app" }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Reopen with encoding…" }),
+      ).toBeInTheDocument();
+      v.unmount();
+    }
+  });
+
+  it("an Image Tab has no read-only text bar, and Missing offers no save", () => {
+    const pic: TabState = { ...tabWith("readonly"), kind: "image" };
+    pic.file!.path = "/data/pic.png";
+    const { view } = setup(pic);
+    expect(view.container).toBeEmptyDOMElement();
+    view.unmount();
+    const gone: TabState = {
+      ...pic,
+      file: { ...pic.file!, held: "missing" },
+    };
+    setup(gone);
+    expect(
+      screen.getByText("pic.png was moved or deleted."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("an unreadable shadow shows an info bar with no actions", () => {

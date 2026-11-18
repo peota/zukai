@@ -18,19 +18,21 @@ const CANVAS_FILTER = {
   extensions: ["excalidraw"],
 };
 
+export const IMAGE_READ_ONLY = "Images are read-only in Zukai";
+
 /**
  * Why a Tab of Kind `kind` can't be saved to `target`, or null if it can.
  * Save As keeps the Kind: a drawing goes only into a .excalidraw file, and
  * text never into a drawing or an image (it would be unreadable there).
  */
 function kindRefusal(kind: Kind, target: string): string | null {
+  // An image is only ever viewed: its Tab has no bytes to write.
+  if (kind === "image") return IMAGE_READ_ONLY;
   const into = kindOf(target);
   if (into === kind) return null;
   switch (kind) {
     case "canvas":
       return "A canvas can only be saved as a .excalidraw file";
-    case "image":
-      return "An image can only be saved as an image file";
     case "text":
       return into === "canvas"
         ? "Can't save text as a .excalidraw drawing"
@@ -153,6 +155,7 @@ export function useSave(c: FilesContext, d: SaveDeps) {
     async (id: string, opts: SaveAsOptions = {}) => {
       const tab = tabOf(id);
       if (!tab || refuseUnreadable(id)) return;
+      if (tab.kind === "image") return showNotice(IMAGE_READ_ONLY);
       const canvas = tab.kind === "canvas";
       const suggested =
         opts.suggested ??
@@ -182,7 +185,7 @@ export function useSave(c: FilesContext, d: SaveDeps) {
   const save = useCallback(
     async (id: string) => {
       const tab = tabOf(id);
-      if (!tab) return;
+      if (!tab || tab.kind === "image") return;
       if (!tab.file) return saveAs(id);
       // Autosave already runs; Ctrl+S writes now. A failure shows "Not saved".
       await saver.flush(id).catch(logError("save"));
