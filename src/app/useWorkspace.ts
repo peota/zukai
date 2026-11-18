@@ -392,6 +392,11 @@ export function useWorkspace(): Workspace {
           return saveAs(s.activeId);
         case "format":
           return requestFormat();
+        case "toggleSidebar":
+        case "focusSidebar":
+        case "newCanvas":
+          // Wired with the Library in useLibrary (Task 7).
+          return;
       }
     },
     [

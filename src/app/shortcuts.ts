@@ -13,7 +13,10 @@ export type Command =
   | { type: "open" }
   | { type: "save" }
   | { type: "saveAs" }
-  | { type: "format" };
+  | { type: "format" }
+  | { type: "toggleSidebar" }
+  | { type: "focusSidebar" }
+  | { type: "newCanvas" };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -72,8 +75,17 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
   }
 
   if (e.shiftKey) {
-    if (letter === "t") return { type: "reopenTab" };
-    return letter === "s" ? { type: "saveAs" } : null;
+    switch (letter) {
+      case "t":
+        return { type: "reopenTab" };
+      case "s":
+        return { type: "saveAs" };
+      case "e":
+        return { type: "focusSidebar" };
+      case "n":
+        return { type: "newCanvas" };
+    }
+    return null;
   }
 
   switch (letter) {
@@ -91,6 +103,8 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
       return { type: "open" };
     case "s":
       return { type: "save" };
+    case "b":
+      return { type: "toggleSidebar" };
   }
   // Digits by physical key: AZERTY types symbols on the number row.
   const digit = /^Digit([1-9])$/.exec(e.code);

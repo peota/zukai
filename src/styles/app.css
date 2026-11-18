@@ -19,6 +19,11 @@
   --z-active-line: rgb(55 53 47 / 0.03);
   --z-selection-match: rgb(35 131 226 / 0.1);
 
+  /* Library sidebar (spec 5.2): a slightly tinted panel, soft row fills. */
+  --z-side: #fbfbfa;
+  --z-row-hover: #efeeeb;
+  --z-row-sel: #e9e8e4;
+
   /* File bars (spec section 6): amber conflict, soft red missing, grey info. */
   --z-bar-warn-bg: #fbf3db;
   --z-bar-warn-fg: #7a5a12;
@@ -63,6 +68,10 @@
     --z-active-line: rgb(255 255 255 / 0.03);
     --z-selection-match: rgb(82 156 202 / 0.12);
 
+    --z-side: #1d1d1d;
+    --z-row-hover: #262626;
+    --z-row-sel: #2e2e2e;
+
     --z-bar-warn-bg: #3a3122;
     --z-bar-warn-fg: #e6c07b;
     --z-bar-err-bg: #3d2523;
@@ -98,6 +107,9 @@
   --color-accent: var(--z-accent);
   --color-accent-soft: var(--z-accent-soft);
   --color-danger: var(--z-danger);
+  --color-side: var(--z-side);
+  --color-row-hover: var(--z-row-hover);
+  --color-row-sel: var(--z-row-sel);
   --color-bar-warn-bg: var(--z-bar-warn-bg);
   --color-bar-warn-fg: var(--z-bar-warn-fg);
   --color-bar-err-bg: var(--z-bar-err-bg);
