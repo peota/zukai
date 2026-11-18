@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../storage/api";
 import { useWorkspace } from "./useWorkspace";
 
@@ -20,6 +20,17 @@ vi.mock("../storage/api", () => ({
   writeSession: vi.fn(),
   backupSession: vi.fn(),
   startupMark: vi.fn(),
+}));
+
+// No File Tabs here: the files commands just answer "nothing".
+vi.mock("../files/api", async (orig) => ({
+  ...(await orig<typeof import("../files/api")>()),
+  shadowList: async () => [],
+  fileWatch: async () => {},
+  takeLaunchPaths: async () => ({ paths: [], folders: [], missing: [] }),
+  grantsFilter: async (paths: string[]) => paths,
+  onFileChanged: async () => () => {},
+  onOpenPaths: async () => () => {},
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -83,6 +94,19 @@ beforeEach(() => {
   m.purgeClosed.mockResolvedValue(undefined);
   m.writeSession.mockResolvedValue(undefined);
   vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+// Each hook owns a 300 ms debounced saver and shares the module-level
+// sessionSaver. Timers armed by one test would otherwise fire during a later
+// test, writing into that test's `disk` (and `writeSession` mock). Drain every
+// saver (exit flushAll covers them all) before cleanup unmounts the hook.
+afterEach(async () => {
+  try {
+    await h.flushAll?.();
+  } catch {
+    // A test that made writes fail leaves them failed; the timers are cleared.
+  }
+  h.flushAll = null;
 });
 
 /** Restore yields Tabs a ("alpha") and b (empty), with a active and loaded. */

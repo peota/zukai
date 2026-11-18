@@ -1,4 +1,4 @@
-export type Platform = "mac" | "other";
+export type Platform = "mac" | "windows" | "other";
 
 export type Command =
   | { type: "newTab" }
@@ -9,7 +9,11 @@ export type Command =
   | { type: "find" }
   | { type: "replace" }
   | { type: "toggleWrap" }
-  | { type: "quit" };
+  | { type: "quit" }
+  | { type: "open" }
+  | { type: "save" }
+  | { type: "saveAs" }
+  | { type: "format" };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -45,6 +49,17 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
     return { type: "toggleWrap" };
   }
 
+  // Shift+Alt+F beautifies JSON (no Mod).
+  if (
+    e.altKey &&
+    e.shiftKey &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    letterOf(e) === "f"
+  ) {
+    return { type: "format" };
+  }
+
   const modDown = mac ? e.metaKey : e.ctrlKey;
   const otherMod = mac ? e.ctrlKey : e.metaKey;
   if (!modDown || otherMod) return null;
@@ -57,7 +72,8 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
   }
 
   if (e.shiftKey) {
-    return letter === "t" ? { type: "reopenTab" } : null;
+    if (letter === "t") return { type: "reopenTab" };
+    return letter === "s" ? { type: "saveAs" } : null;
   }
 
   switch (letter) {
@@ -71,6 +87,10 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
       return mac ? null : { type: "replace" };
     case "q":
       return { type: "quit" };
+    case "o":
+      return { type: "open" };
+    case "s":
+      return { type: "save" };
   }
   // Digits by physical key: AZERTY types symbols on the number row.
   const digit = /^Digit([1-9])$/.exec(e.code);
@@ -84,5 +104,6 @@ export function detectPlatform(): Platform {
     userAgentData?: { platform?: string };
   };
   const s = nav.userAgentData?.platform ?? nav.userAgent ?? "";
-  return /mac/i.test(s) ? "mac" : "other";
+  if (/mac/i.test(s)) return "mac";
+  return /win/i.test(s) ? "windows" : "other";
 }

@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installExitHandshake } from "./exit";
+import { detectPlatform } from "./shortcuts";
+import { grantsFilter, pathKey, shadowDelete } from "../files/api";
 import type { SaveStatus, Saver } from "../storage/autosave";
-import { parseSessionFile, restoreWorkspace } from "../model/session";
+import {
+  parseSessionFile,
+  restoreWorkspace,
+  type SessionFile,
+} from "../model/session";
 import type { WorkspaceState } from "../model/types";
 import {
   backupSession,
@@ -12,6 +18,8 @@ import {
   readSession,
   reopenScratchpad,
 } from "../storage/api";
+
+const platform = detectPlatform();
 
 export const logError = (what: string) => (err: unknown) =>
   console.error(what, err);
@@ -32,8 +40,17 @@ export function flushAll(savers: Saver[]): Promise<void> {
  * - A session.json that exists but can't be read or parsed is copied to
  *   session.json.bak before the rebuilt Session overwrites it.
  */
+export interface RestoreOptions {
+  /**
+   * Rust couldn't say which Session Files are granted (twice): every File Tab
+   * was kept, and Session writes must wait until a later check succeeds.
+   */
+  onGrantsUnchecked?(): void;
+}
+
 export async function restoreSession(
   freshId: () => string,
+  opts: RestoreOptions = {},
 ): Promise<WorkspaceState> {
   const [ids, json, closedList] = await Promise.allSettled([
     listScratchpads(),
@@ -75,13 +92,52 @@ export async function restoreSession(
     freshId,
     Date.now(),
     closedFiles,
+    file ? await grantedPaths(file, opts) : null,
+    (p) => pathKey(p, platform),
   );
-  if (expired.length > 0) {
-    await purgeClosed(expired.map((e) => e.tab.id)).catch(
-      logError("purge closed"),
-    );
+  // An expired Scratchpad lives in closed/; an expired File only in its shadow.
+  const gone = expired.filter((e) => !e.tab.file).map((e) => e.tab.id);
+  if (gone.length > 0) {
+    await purgeClosed(gone).catch(logError("purge closed"));
+  }
+  for (const e of expired) {
+    if (e.tab.file)
+      await shadowDelete(e.tab.id).catch(logError("purge shadow"));
   }
   return state;
+}
+
+/** The File paths of a workspace's open Tabs and Recently Closed entries. */
+export function filePathsOf(s: {
+  tabs: WorkspaceState["tabs"];
+  closed: WorkspaceState["closed"];
+}): string[] {
+  return [...s.tabs, ...s.closed.map((e) => e.tab)].flatMap((t) =>
+    t.file ? [t.file.path] : [],
+  );
+}
+
+/**
+ * The Session's File paths that Rust granted under exactly that spelling.
+ * The rest are dropped, or session_write would refuse every later Session;
+ * a held one's text comes back as an orphan shadow. If Rust can't say (it
+ * is asked twice), null: every File is kept and the caller is told.
+ */
+async function grantedPaths(
+  file: SessionFile,
+  opts: RestoreOptions,
+): Promise<Set<string> | null> {
+  const paths = filePathsOf(file);
+  if (paths.length === 0) return new Set();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return new Set(await grantsFilter(paths));
+    } catch (err) {
+      logError("check granted paths")(err);
+    }
+  }
+  opts.onGrantsUnchecked?.();
+  return null;
 }
 
 /**

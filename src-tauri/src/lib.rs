@@ -1,7 +1,8 @@
 pub mod commands;
+mod files;
 pub mod storage;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
@@ -12,6 +13,16 @@ static FLUSHED: AtomicBool = AtomicBool::new(false);
 
 /// True while an exit watchdog thread is pending.
 static WATCHDOG_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Watchdog generation. Each watchdog fires only if the generation is still
+/// the one it captured at spawn; cancelling bumps it, invalidating sleepers.
+static WATCHDOG_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// A watchdog captured at `captured` may force the exit only if no cancel
+/// happened since.
+fn should_fire(captured: u64, current: u64) -> bool {
+    captured == current
+}
 
 /// If the frontend never answers `before-exit`, force the exit after this long.
 pub const EXIT_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -25,6 +36,18 @@ pub const BEFORE_EXIT_EVENT: &str = "zukai://before-exit";
 fn app_exit_after_flush(app: AppHandle) {
     FLUSHED.store(true, Ordering::SeqCst);
     app.exit(0);
+}
+
+/// The first flush failed and the app stays open: cancel the pending watchdog
+/// and re-arm so the next quit request starts a fresh one.
+#[tauri::command]
+fn exit_flush_failed() {
+    cancel_watchdog();
+}
+
+fn cancel_watchdog() {
+    WATCHDOG_GENERATION.fetch_add(1, Ordering::SeqCst);
+    WATCHDOG_PENDING.store(false, Ordering::SeqCst);
 }
 
 /// Record a startup milestone reached in the frontend (restore, show).
@@ -44,9 +67,13 @@ fn log_startup(app: &AppHandle, message: &str) {
 fn request_exit(app: &AppHandle) {
     let _ = app.emit(BEFORE_EXIT_EVENT, ());
     if !WATCHDOG_PENDING.swap(true, Ordering::SeqCst) {
+        let generation = WATCHDOG_GENERATION.load(Ordering::SeqCst);
         let app = app.clone();
         std::thread::spawn(move || {
             std::thread::sleep(EXIT_FLUSH_TIMEOUT);
+            if !should_fire(generation, WATCHDOG_GENERATION.load(Ordering::SeqCst)) {
+                return;
+            }
             FLUSHED.store(true, Ordering::SeqCst);
             app.exit(0);
         });
@@ -130,12 +157,9 @@ fn install_mac_menu(app: &tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            files::open_paths::focus_main(app);
+            files::open_paths::emit(app, &args, std::path::Path::new(&cwd));
         }))
         // The frontend shows the window once restored; the plugin must not
         // show it early (that would flash a blank frame).
@@ -144,7 +168,24 @@ pub fn run() {
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
                 .build(),
         )
+        .plugin(tauri_plugin_dialog::init())
+        .manage(files::grants::Grants::default())
+        .manage(files::watch::Watcher::default())
+        .manage(files::open_paths::LaunchPaths::default())
+        .on_window_event(|window, event| {
+            // Rust needs the drop (it grants the paths), so the webview's own
+            // drag and drop stays disabled by Tauri while this is enabled.
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                files::open_paths::emit_dropped(window.app_handle(), paths.clone());
+            }
+        })
         .setup(|app| {
+            // This process's own argv waits for the UI (`take_launch_paths`).
+            let argv: Vec<String> = std::env::args().collect();
+            if let Ok(cwd) = std::env::current_dir() {
+                app.state::<files::open_paths::LaunchPaths>()
+                    .set(files::open_paths::argv_paths(&argv, &cwd));
+            }
             log_startup(app.handle(), "launch");
             #[cfg(target_os = "macos")]
             install_mac_menu(app)?;
@@ -163,12 +204,37 @@ pub fn run() {
             commands::session_read,
             commands::session_write,
             commands::session_backup,
+            commands::shadow_write,
+            commands::shadow_read,
+            commands::shadow_delete,
+            commands::shadow_list,
+            files::commands::file_read,
+            files::commands::file_reread_as,
+            files::commands::file_write,
+            files::commands::file_save_as,
+            files::commands::file_rename,
+            files::commands::file_fingerprint,
+            files::commands::file_fingerprint_quick,
+            files::commands::file_pick_open,
+            files::commands::file_pick_save,
+            files::commands::grants_filter,
+            files::watch::file_watch,
+            files::open_paths::take_launch_paths,
             app_exit_after_flush,
+            exit_flush_failed,
             app_startup_mark,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Opened { urls } = &event {
+                let paths = urls
+                    .iter()
+                    .filter_map(|u| u.to_file_path().ok())
+                    .collect::<Vec<_>>();
+                files::open_paths::opened(app, paths);
+            }
             if let RunEvent::ExitRequested { api, code, .. } = event
                 && code.is_none()
                 && !FLUSHED.load(Ordering::SeqCst)
@@ -177,4 +243,19 @@ pub fn run() {
                 request_exit(app);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_watchdog_is_stale_and_rearmed_one_is_current() {
+        let first = WATCHDOG_GENERATION.load(Ordering::SeqCst);
+        WATCHDOG_GENERATION.fetch_add(1, Ordering::SeqCst); // cancel
+        let second = WATCHDOG_GENERATION.load(Ordering::SeqCst); // re-arm
+        let now = WATCHDOG_GENERATION.load(Ordering::SeqCst);
+        assert!(!should_fire(first, now));
+        assert!(should_fire(second, now));
+    }
 }

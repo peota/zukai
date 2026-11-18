@@ -82,11 +82,41 @@ describe("installExitHandshake", () => {
     const preventDefault = vi.fn();
     await closeHandler!({ preventDefault });
     expect(preventDefault).toHaveBeenCalled();
-    expect(calls).toEqual([]);
+    expect(calls).toEqual(["invoke:exit_flush_failed"]);
     expect(err).toHaveBeenCalled();
     await closeHandler!({ preventDefault });
     expect(flushAll).toHaveBeenCalledTimes(2);
-    expect(calls).toEqual(["invoke:app_exit_after_flush"]);
+    expect(calls).toEqual([
+      "invoke:exit_flush_failed",
+      "invoke:app_exit_after_flush",
+    ]);
+    err.mockRestore();
+  });
+
+  it("firstFailedFlushCancelsWatchdog", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const flushAll = vi.fn(async () => {
+      throw new Error("disk full");
+    });
+    await installExitHandshake(flushAll);
+    await closeHandler!({ preventDefault: vi.fn() });
+    expect(calls).toEqual(["invoke:exit_flush_failed"]);
+    expect(calls).not.toContain("invoke:app_exit_after_flush");
+    err.mockRestore();
+  });
+
+  it("exitFlushFailedIpcErrorIsSwallowed", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("ipc"));
+    const flushAll = vi.fn(async () => {
+      throw new Error("disk full");
+    });
+    await installExitHandshake(flushAll);
+    await expect(
+      closeHandler!({ preventDefault: vi.fn() }),
+    ).resolves.toBeUndefined();
+    expect(err).toHaveBeenCalledTimes(2);
     err.mockRestore();
   });
 

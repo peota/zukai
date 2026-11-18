@@ -6,6 +6,8 @@ import {
   closeTab,
   cycle,
   ensureOneTab,
+  findByPath,
+  openFileTab,
   moveTab,
   newTab,
   newTabState,
@@ -19,6 +21,7 @@ const ws = (ids: string[], activeId = ids[0]): WorkspaceState => ({
   activeId,
   closed: [],
 });
+const same = (p: string) => p;
 const ids = (s: WorkspaceState) => s.tabs.map((t) => t.id);
 
 describe("newTabState", () => {
@@ -52,21 +55,21 @@ describe("newTab", () => {
 
 describe("closeTab", () => {
   it("closing the active middle tab activates the right neighbour", () => {
-    const r = closeTab(ws(["a", "b", "c"], "b"), "b", false, 1);
+    const r = closeTab(ws(["a", "b", "c"], "b"), "b", false, 1, same);
     expect(ids(r.state)).toEqual(["a", "c"]);
     expect(r.state.activeId).toBe("c");
     expect(r.effect).toBe("closed");
   });
   it("closing the active last tab activates the left neighbour", () => {
-    const r = closeTab(ws(["a", "b", "c"], "c"), "c", false, 1);
+    const r = closeTab(ws(["a", "b", "c"], "c"), "c", false, 1, same);
     expect(r.state.activeId).toBe("b");
   });
   it("closing a non-active tab keeps active", () => {
-    const r = closeTab(ws(["a", "b", "c"], "a"), "c", false, 1);
+    const r = closeTab(ws(["a", "b", "c"], "a"), "c", false, 1, same);
     expect(r.state.activeId).toBe("a");
   });
   it("closing the only tab leaves none until ensureOneTab", () => {
-    const r = closeTab(ws(["a"]), "a", true, 1);
+    const r = closeTab(ws(["a"]), "a", true, 1, same);
     expect(r.state.tabs).toEqual([]);
     expect(r.effect).toBe("deleted");
     const e = ensureOneTab(r.state, "fresh");
@@ -75,11 +78,11 @@ describe("closeTab", () => {
   });
   it("empty tabs are deleted and not listed; non-empty are listed newest first with index", () => {
     let s = ws(["a", "b", "c", "d"], "a");
-    const e = closeTab(s, "d", true, 1);
+    const e = closeTab(s, "d", true, 1, same);
     expect(e.effect).toBe("deleted");
     expect(e.state.closed).toEqual([]);
-    s = closeTab(s, "b", false, 10).state;
-    const r = closeTab(s, "c", false, 20);
+    s = closeTab(s, "b", false, 10, same).state;
+    const r = closeTab(s, "c", false, 20, same);
     expect(r.state.closed.map((c) => c.tab.id)).toEqual(["c", "b"]);
     expect(r.state.closed[0]).toMatchObject({ index: 1, closedAt: 20 });
     expect(r.state.closed[1]).toMatchObject({ index: 1, closedAt: 10 });
@@ -101,7 +104,7 @@ describe("reopenClosed", () => {
     expect(r.state).toEqual(s);
   });
   it("reinserts at original index and activates", () => {
-    const s = closeTab(ws(["a", "b", "c"], "b"), "b", false, 1).state;
+    const s = closeTab(ws(["a", "b", "c"], "b"), "b", false, 1, same).state;
     const r = reopenClosed(s);
     expect(ids(r.state)).toEqual(["a", "b", "c"]);
     expect(r.state.activeId).toBe("b");
@@ -109,9 +112,9 @@ describe("reopenClosed", () => {
     expect(r.state.closed).toEqual([]);
   });
   it("clamps index after reordering/shrinking", () => {
-    let s = closeTab(ws(["a", "b", "c", "d"], "d"), "d", false, 1).state;
-    s = closeTab(s, "c", true, 2).state;
-    s = closeTab(s, "b", true, 3).state;
+    let s = closeTab(ws(["a", "b", "c", "d"], "d"), "d", false, 1, same).state;
+    s = closeTab(s, "c", true, 2, same).state;
+    s = closeTab(s, "b", true, 3, same).state;
     const r = reopenClosed(s);
     expect(ids(r.state)).toEqual(["a", "d"]);
     expect(r.state.activeId).toBe("d");
@@ -165,5 +168,67 @@ describe("updateTab", () => {
     const s = updateTab(ws(["a", "b"]), "b", { wrap: true, scrollTop: 5 });
     expect(s.tabs[1]).toMatchObject({ wrap: true, scrollTop: 5 });
     expect(s.tabs[0].wrap).toBe(false);
+  });
+});
+
+const withFile = (id: string, path: string) => ({
+  ...newTabState(id),
+  file: {
+    path,
+    format: {
+      encoding: "utf-8",
+      bom: false,
+      lineEnding: "lf" as const,
+      mixed: false,
+    },
+    fingerprint: null,
+    held: null,
+  },
+});
+
+describe("file tabs", () => {
+  it("openFileTabInsertsAfterActive", () => {
+    const s = openFileTab(ws(["a", "b", "c"], "a"), withFile("f", "p"));
+    expect(ids(s)).toEqual(["a", "f", "b", "c"]);
+    expect(s.activeId).toBe("f");
+  });
+
+  it("findByPathUsesKey", () => {
+    const s = {
+      ...ws(["a"]),
+      tabs: [newTabState("a"), withFile("f", "/X.txt")],
+    };
+    expect(findByPath(s, "/X.txt", same)?.id).toBe("f");
+    expect(findByPath(s, "/x.txt", same)).toBeUndefined();
+    expect(findByPath(s, "/x.txt", (p) => p.toLowerCase())?.id).toBe("f");
+  });
+
+  it("reclosingSamePathReplacesEntry", () => {
+    const s: WorkspaceState = {
+      tabs: [withFile("f2", "p")],
+      activeId: "f2",
+      closed: [
+        { tab: withFile("f1", "p"), index: 0, closedAt: 1 },
+        { tab: withFile("g", "q"), index: 0, closedAt: 2 },
+      ],
+    };
+    const { state } = closeTab(s, "f2", false, 9, same);
+    expect(state.closed.map((e) => e.tab.id)).toEqual(["f2", "g"]);
+  });
+
+  it("reopenClosed takes an index into closed", () => {
+    const s: WorkspaceState = {
+      tabs: [newTabState("a")],
+      activeId: "a",
+      closed: [
+        { tab: newTabState("x"), index: 0, closedAt: 2 },
+        { tab: newTabState("y"), index: 5, closedAt: 1 },
+      ],
+    };
+    const r = reopenClosed(s, 1);
+    expect(r.reopened?.id).toBe("y");
+    expect(ids(r.state)).toEqual(["a", "y"]);
+    expect(r.state.closed.map((e) => e.tab.id)).toEqual(["x"]);
+    expect(reopenClosed(s, 7).reopened).toBeNull();
   });
 });
