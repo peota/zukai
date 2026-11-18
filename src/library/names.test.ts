@@ -80,6 +80,6 @@ describe("long names", () => {
     const s = sanitizeFileName("a".repeat(150) + " . . " + "b".repeat(100));
     expect(s.length).toBeLessThanOrEqual(200);
     expect(s).toMatch(/[^ .]$/);
-    expect(sanitizeFileName("CON" + " ".repeat(300) + "z")).toBe("CON_");
+    expect(sanitizeFileName("CON" + ".".repeat(300) + "z")).toBe("CON_");
   });
 });
