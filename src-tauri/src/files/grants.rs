@@ -131,6 +131,17 @@ impl Grants {
     /// outside or dangle; the missing rest is plain names, which can't
     /// lead anywhere else. Win32 alias names are refused.
     pub fn grant_in_root(&self, p: &Path) -> Result<PathBuf, FileError> {
+        let path = self.resolve_in_root(p)?;
+        if path.is_dir() {
+            return Err(FileError::NotAFile);
+        }
+        self.map().insert(key(&path), path.clone());
+        Ok(path)
+    }
+
+    /// Where `p` (which may not exist, nor its folder) really is, if that
+    /// is provably inside the root: see `grant_in_root`.
+    fn resolve_in_root(&self, p: &Path) -> Result<PathBuf, FileError> {
         if !plain_absolute(p) || win32_alias(p) {
             return Err(FileError::NotGranted);
         }
@@ -147,13 +158,26 @@ impl Grants {
         } else {
             base.join(rest)
         };
-        // The final guard: exactly what is inserted is inside the root.
-        let path = self.within_root(path)?;
-        if path.is_dir() {
-            return Err(FileError::NotAFile);
+        // The final guard: exactly the path returned is inside the root.
+        self.within_root(path)
+    }
+
+    /// A stored grant, re-checked on every use when it lies (lexically) in
+    /// the Library root: the folders on its way may have changed since it
+    /// was granted (a link to an outside folder renamed into the place of a
+    /// missing one), and a write must never follow them out. One that no
+    /// longer resolves inside the root is dropped. Grants elsewhere (Files
+    /// the user opened) are returned as they are.
+    fn still_granted(&self, granted: PathBuf) -> Result<PathBuf, FileError> {
+        let in_library = self.root().is_some_and(|r| granted.starts_with(r));
+        if in_library && self.resolve_in_root(&granted).is_err() {
+            let mut map = self.map();
+            if map.get(&key(&granted)) == Some(&granted) {
+                map.remove(&key(&granted));
+            }
+            return Err(FileError::NotGranted);
         }
-        self.map().insert(key(&path), path.clone());
-        Ok(path)
+        Ok(granted)
     }
 
     /// Allows the webview to use `p` from now on, returning its canonical
@@ -187,17 +211,22 @@ impl Grants {
         if !path.is_absolute() {
             return Err(FileError::NotGranted);
         }
-        if let Some(granted) = self.map().get(&key(path))
-            && granted.as_os_str() == path.as_os_str()
-        {
-            return Ok(granted.clone());
+        let stored = self
+            .map()
+            .get(&key(path))
+            .filter(|g| g.as_os_str() == path.as_os_str())
+            .cloned();
+        if let Some(granted) = stored {
+            return self.still_granted(granted);
         }
         let canon = canonical(path).map_err(|_| FileError::NotGranted)?;
-        match self.map().get(&key(&canon)) {
-            Some(granted) if granted.as_os_str() == canon.as_os_str() => {
-                return Ok(granted.clone());
-            }
-            _ => {}
+        let stored = self
+            .map()
+            .get(&key(&canon))
+            .filter(|g| g.as_os_str() == canon.as_os_str())
+            .cloned();
+        if let Some(granted) = stored {
+            return self.still_granted(granted);
         }
         // Anything inside the Library root is granted as a folder.
         if win32_alias(path) {

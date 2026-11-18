@@ -162,12 +162,23 @@ pub(crate) fn create_file(
     path_string(&ops::create_file(&folder(g, parent)?, stem, ext, contents)?)
 }
 
+/// `entry`, but not a link that resolves outside the root (or dangles):
+/// renamed or moved into the place of a folder, it could carry a path
+/// under it out of the Library. The sidebar never offers it anyway.
+fn movable(g: &Grants, p: &str) -> Result<PathBuf, FileError> {
+    let item = entry(g, p)?;
+    if fs::symlink_metadata(&item)?.file_type().is_symlink() {
+        g.in_root(&item)?;
+    }
+    Ok(item)
+}
+
 pub(crate) fn rename(g: &Grants, path: &str, new_name: &str) -> Result<String, FileError> {
-    path_string(&ops::rename_entry(&entry(g, path)?, new_name)?)
+    path_string(&ops::rename_entry(&movable(g, path)?, new_name)?)
 }
 
 pub(crate) fn move_to(g: &Grants, path: &str, dest_dir: &str) -> Result<String, FileError> {
-    let src = entry(g, path)?;
+    let src = movable(g, path)?;
     path_string(&ops::move_entry(&src, &folder(g, dest_dir)?)?)
 }
 
@@ -916,6 +927,62 @@ mod tests {
             follow(&g, s(&root), s(&outside), &[s(&a).to_owned()]),
             [None]
         );
+    }
+
+    /// A stale grant under a folder that went away, then an outside link put
+    /// in that folder's place (renamed by Zukai or by anything else): the
+    /// grant must not let a write follow the link out.
+    #[test]
+    fn stale_grant_never_follows_a_link_renamed_into_its_place() {
+        let (_tmp, g, root, outside) = library();
+        let p = root.join("p");
+        let x = p.join("sub").join("x.txt");
+        let granted = follow(&g, s(&p), s(&root), &[s(&x).to_owned()]);
+        let stale = root.join("sub").join("x.txt");
+        assert_eq!(granted, [Some(s(&stale).to_owned())]);
+        // Inside the root, a granted path is usable.
+        assert_eq!(g.check(s(&stale)).unwrap(), stale);
+
+        link_dir(&root.join("out"), &outside);
+        // Zukai refuses to move an outside link (into place or anywhere).
+        assert!(matches!(
+            rename(&g, s(&root.join("out")), "sub"),
+            Err(FileError::NotGranted)
+        ));
+        fs::create_dir(root.join("dest")).unwrap();
+        assert!(matches!(
+            move_to(&g, s(&root.join("out")), s(&root.join("dest"))),
+            Err(FileError::NotGranted)
+        ));
+        // Another program does it anyway.
+        fs::rename(root.join("out"), root.join("sub")).unwrap();
+        assert!(matches!(g.check(s(&stale)), Err(FileError::NotGranted)));
+        assert!(g.check_exact(s(&stale)).is_err());
+        assert!(g.check(s(&outside.join("x.txt"))).is_err());
+        // The stale grant is gone for good, even once the link is.
+        #[cfg(windows)]
+        fs::remove_dir(root.join("sub")).unwrap(); // the junction itself
+        #[cfg(unix)]
+        fs::remove_file(root.join("sub")).unwrap(); // the symlink itself
+        fs::create_dir(root.join("sub")).unwrap();
+        assert!(g.check(s(&stale)).is_ok(), "the root grant still covers it");
+        assert!(!outside.join("x.txt").exists());
+
+        // Ordinary in-root grants and writes still work.
+        fs::write(root.join("sub").join("y.txt"), "y").unwrap();
+        let y = root.join("sub").join("y.txt");
+        assert_eq!(g.grant(&y).unwrap(), y);
+        assert_eq!(g.check(s(&y)).unwrap(), y);
+    }
+
+    /// Grants outside the root (Files opened from a dialog) are untouched.
+    #[test]
+    fn grants_outside_the_root_are_not_rechecked() {
+        let (_tmp, g, _root, outside) = library();
+        let f = outside.join("opened.txt");
+        fs::write(&f, "o").unwrap();
+        assert_eq!(g.grant(&f).unwrap(), f);
+        assert_eq!(g.check_exact(s(&f)).unwrap(), f);
     }
 
     /// A folder link (a junction on Windows, a symlink elsewhere).
