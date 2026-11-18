@@ -12,6 +12,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 /// How many matches `library_search` returns.
 pub const SEARCH_LIMIT: usize = 200;
@@ -57,6 +58,8 @@ struct State {
     free: Vec<u32>,
     building: bool,
     ready: bool,
+    /// When the current build started.
+    started: Option<Instant>,
 }
 
 /// Managed state, cheap to clone: the Library watcher holds a clone.
@@ -104,6 +107,7 @@ impl State {
         self.root = root;
         self.free = Vec::new();
         self.ready = false;
+        self.started = self.building.then(Instant::now);
         let nodes = if self.building {
             vec![Node {
                 parent: ROOT,
@@ -270,6 +274,25 @@ impl NameIndex {
         }
     }
 
+    /// Rebuilds the index of the current root if its build started longer
+    /// than `age` ago. Windows drops watcher events silently when its buffer
+    /// overflows, so the UI asks for this when the window regains focus.
+    /// Returns whether a rebuild started.
+    pub fn rebuild_if_older(&self, age: Duration) -> bool {
+        let (root, started) = {
+            let s = self.lock();
+            (s.root.clone(), s.started)
+        };
+        let stale = started.is_none_or(|t| t.elapsed() >= age);
+        match root {
+            Some(root) if stale => {
+                self.start_build(root);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Forgets everything and stops any build (there is no Library root).
     pub fn clear(&self) {
         let (_, old) = self.lock().fresh(None);
@@ -407,6 +430,21 @@ pub(crate) mod tests {
         let mut v: Vec<&str> = r.entries.iter().map(|e| e.name.as_str()).collect();
         v.sort_unstable();
         v
+    }
+
+    #[test]
+    fn rebuild_if_older_only_rebuilds_a_stale_index() {
+        let (_tmp, _g, root, _outside) = library();
+        let index = NameIndex::default();
+        assert!(!index.rebuild_if_older(Duration::ZERO), "no root, no build");
+        index.start_build(root.clone());
+        wait_ready(&index);
+        fs::write(root.join("late.md"), "").unwrap();
+        assert!(!index.rebuild_if_older(Duration::from_secs(30)));
+        assert!(index.search("late", 10).entries.is_empty());
+        assert!(index.rebuild_if_older(Duration::ZERO));
+        wait_ready(&index);
+        assert_eq!(names(&index.search("late", 10)), ["late.md"]);
     }
 
     #[test]

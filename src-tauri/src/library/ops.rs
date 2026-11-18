@@ -244,6 +244,19 @@ pub fn create_file(
     first_free(parent, stem, ext, false, |p| new_file(p, contents))
 }
 
+/// A new, empty file `stem.ext`, `stem (2).ext`… in `parent`, claimed for a
+/// Save that writes it next (an Inbox item dropped on a folder): named like
+/// a move or copy, and never replacing anything.
+pub fn reserve_file(parent: &Path, stem: &str, ext: &str) -> Result<PathBuf, FileError> {
+    validate_name(stem)?;
+    let ext_ok =
+        !ext.is_empty() && ext.len() <= 16 && ext.chars().all(|c| c.is_ascii_alphanumeric());
+    if !ext_ok {
+        return Err(FileError::InvalidName);
+    }
+    first_free(parent, stem, ext, true, |p| new_file(p, b""))
+}
+
 /// Writes `contents` to a file that must not exist yet. If writing fails,
 /// the file this call just made is removed again.
 fn new_file(path: &Path, contents: &[u8]) -> Result<PathBuf, FileError> {
@@ -637,6 +650,21 @@ mod tests {
         assert_eq!(unique_name(dir, "a", "png"), dir.join("a (3).png"));
         fs::create_dir(dir.join("proj")).unwrap();
         assert_eq!(unique_name(dir, "proj", ""), dir.join("proj (2)"));
+    }
+
+    #[test]
+    fn reserve_file_takes_a_parenthesised_free_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("Note.md"), "keep").unwrap();
+        let p = reserve_file(dir, "Note", "md").unwrap();
+        assert_eq!(p, dir.join("Note (2).md"));
+        assert_eq!(fs::read(&p).unwrap(), b"");
+        assert_eq!(fs::read(dir.join("Note.md")).unwrap(), b"keep");
+        assert!(matches!(
+            reserve_file(dir, "a/b", "md"),
+            Err(FileError::InvalidName)
+        ));
     }
 
     #[test]

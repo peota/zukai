@@ -41,6 +41,8 @@ pub struct Watcher {
     /// ticket of the set currently applied.
     gate: Mutex<u64>,
     issued: AtomicU64,
+    /// The Files of the set currently applied.
+    files: Mutex<Vec<PathBuf>>,
 }
 
 impl Watcher {
@@ -72,9 +74,10 @@ impl Watcher {
         let new = if files.is_empty() {
             None
         } else {
-            Some(start(files, sink)?)
+            Some(start(files.clone(), sink)?)
         };
         *applied = ticket;
+        *self.files.lock().unwrap_or_else(|e| e.into_inner()) = files;
         let old = std::mem::replace(
             &mut *self.active.lock().unwrap_or_else(|e| e.into_inner()),
             new,
@@ -82,6 +85,28 @@ impl Watcher {
         drop(old);
         Ok(())
     }
+
+    /// Stops watching (closing every folder handle) and returns the Files
+    /// that were watched, for `restore`. Windows refuses to rename a folder
+    /// while a handle is open inside it.
+    pub fn suspend(&self) -> Vec<PathBuf> {
+        let _applied = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        drop(self.active.lock().unwrap_or_else(|e| e.into_inner()).take());
+        std::mem::take(&mut *self.files.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// Watches `files` again after `suspend`, unless a newer set arrives.
+    pub fn restore(&self, files: Vec<PathBuf>, sink: Sink) -> Result<(), FileError> {
+        self.set_ordered(self.ticket(), files, sink)
+    }
+}
+
+/// Sends changes to the UI.
+pub fn app_sink(app: &AppHandle) -> Sink {
+    let app = app.clone();
+    Arc::new(move |change| {
+        let _ = app.emit(FILE_CHANGED_EVENT, change);
+    })
 }
 
 fn start(files: Vec<PathBuf>, sink: Sink) -> Result<Active, FileError> {
@@ -153,13 +178,8 @@ pub async fn file_watch(app: AppHandle, paths: Vec<String>) -> Result<(), FileEr
     tauri::async_runtime::spawn_blocking(move || {
         let grants: State<Grants> = app.state();
         let files: Vec<PathBuf> = paths.iter().filter_map(|p| grants.check(p).ok()).collect();
-        let sink: Sink = {
-            let app = app.clone();
-            Arc::new(move |change| {
-                let _ = app.emit(FILE_CHANGED_EVENT, change);
-            })
-        };
-        app.state::<Watcher>().set_ordered(ticket, files, sink)
+        app.state::<Watcher>()
+            .set_ordered(ticket, files, app_sink(&app))
     })
     .await
     .map_err(|e| FileError::Io(std::io::Error::other(e)))?
@@ -289,6 +309,19 @@ mod tests {
         std::fs::write(&file, "changed").unwrap();
         assert!(rx.recv_timeout(Duration::from_millis(600)).is_err());
         assert!(rx2.recv_timeout(Duration::from_millis(600)).is_err());
+    }
+
+    #[test]
+    fn suspend_stops_and_restore_resumes() {
+        let (_dir, file, w, rx) = setup("a.txt");
+        assert_eq!(w.suspend(), vec![file.clone()]);
+        std::fs::write(&file, "while suspended").unwrap();
+        assert!(rx.recv_timeout(Duration::from_millis(600)).is_err());
+        let (sink, rx2) = sink_pair();
+        w.restore(vec![file.clone()], sink).unwrap();
+        drain(&rx2);
+        std::fs::write(&file, "after").unwrap();
+        assert_eq!(next(&rx2).kind, Kind::Changed);
     }
 
     #[test]
