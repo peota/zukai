@@ -48,7 +48,9 @@ fn data_dir(app: &AppHandle) -> Result<PathBuf, FileError> {
     crate::storage::data_dir(app).map_err(|e| other(&e.to_string()))
 }
 
-/// Grants the stored root if its folder is there. Never creates anything.
+/// Grants the stored root if its folder is there and it still leads to the
+/// folder that was chosen (not a link put in its place). Never creates
+/// anything.
 pub(crate) fn root_state(g: &Grants, data: &Path) -> RootState {
     let Some(stored) = root::load_root(data) else {
         return RootState {
@@ -56,7 +58,7 @@ pub(crate) fn root_state(g: &Grants, data: &Path) -> RootState {
             available: false,
         };
     };
-    match g.set_root(&stored).and_then(|c| path_string(&c)) {
+    match g.load_root(&stored).and_then(|c| path_string(&c)) {
         Ok(root) => RootState {
             root: Some(root),
             available: true,
@@ -1128,7 +1130,9 @@ mod tests {
         assert!(next.check(&a).is_err(), "no I/O while offline");
         assert!(next.check(&m).is_err());
 
-        // C: the drive comes back; Rust finds the root again by itself.
+        // C: the drive comes back; Rust finds the root again by itself
+        // (once the remembered miss of the checks above has run out).
+        next.forget_recover_miss();
         fs::rename(&away, &root).unwrap();
         assert_eq!(next.check(&a).unwrap(), root.join("a.md"));
         assert!(next.root().is_some());
@@ -1168,6 +1172,9 @@ mod tests {
         assert_eq!(g.grant(&x).unwrap(), x, "kept as given while missing");
         assert!(g.check(s(&x)).is_err());
         fs::create_dir(&later).unwrap();
+        // The miss above is remembered for a few seconds.
+        assert!(g.check(s(&x)).is_err());
+        g.forget_recover_miss();
         assert_eq!(g.check(s(&x)).unwrap(), x);
         assert_eq!(g.root(), Some(later));
     }
@@ -1456,5 +1463,60 @@ mod tests {
             Err(FileError::NotAFile)
         ));
         assert!(resolve(&g, s(&outside.join("secret.md"))).is_err());
+    }
+
+    /// A dead network share as the root: granting the Session never probes
+    /// it once per path, and checks share one remembered miss.
+    #[test]
+    fn a_missing_root_is_probed_at_most_once_for_a_session() {
+        use crate::files::grants::{check_session, filter_exact, grant_session};
+        let (tmp, g, root, _outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root).unwrap();
+        let paths: Vec<String> = (0..20)
+            .map(|i| s(&root.join(format!("f{i}.md"))).to_owned())
+            .collect();
+        let tabs: Vec<_> = paths
+            .iter()
+            .map(|p| serde_json::json!({ "id": p, "file": { "path": p } }))
+            .collect();
+        let json = serde_json::json!({ "version": 3, "tabs": tabs, "closed": [] }).to_string();
+        fs::rename(&root, tmp.path().join("away")).unwrap();
+
+        let next = Grants::default();
+        assert!(!root_state(&next, data.path()).available);
+        assert_eq!(grant_session(&next, json.clone()), json);
+        assert_eq!(next.recover_probes(), 0, "no probe while granting");
+        assert_eq!(filter_exact(&next, paths.clone()), paths);
+        check_session(&next, &json).unwrap();
+        for p in &paths {
+            assert!(next.check(p).is_err());
+        }
+        assert!(next.recover_probes() <= 1, "{}", next.recover_probes());
+    }
+
+    /// The stored root was replaced by a link to another folder: it is not
+    /// the Library that was chosen, so neither the load nor a later
+    /// recovery grants it.
+    #[test]
+    fn a_stored_root_that_became_a_link_elsewhere_is_refused() {
+        let (tmp, g, root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root).unwrap();
+        fs::write(outside.join("secret.md"), "s").unwrap();
+        fs::rename(&root, tmp.path().join("away")).unwrap();
+        link_dir(&root, &outside);
+
+        let next = Grants::default();
+        let state = root_state(&next, data.path());
+        assert!(!state.available);
+        assert_eq!(state.root.as_deref(), Some(s(&root)));
+        assert_eq!(next.root(), None);
+        assert!(next.check(s(&root.join("secret.md"))).is_err());
+        assert!(next.check(s(&outside.join("secret.md"))).is_err());
+        next.forget_recover_miss();
+        let _ = next.grant(&root.join("secret.md"));
+        assert!(next.check(s(&root.join("secret.md"))).is_err());
+        assert_eq!(next.root(), None, "recovery refuses it too");
     }
 }
