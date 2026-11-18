@@ -38,6 +38,34 @@ pub struct Entry {
     pub link: Option<LinkKind>,
 }
 
+/// What a folder listing shows of `item`: its name, whether it is a folder
+/// (for a link, whether its target is) and its link kind. `None` for
+/// dotfiles, names that aren't UTF-8 (they can't cross to the webview and
+/// back) and entries whose type can't be read. Links are classified against
+/// `root` (canonical), never descended into.
+pub(crate) fn visible(
+    item: &fs::DirEntry,
+    root: &Path,
+) -> Option<(String, bool, Option<LinkKind>)> {
+    let name = item.file_name().into_string().ok()?;
+    if name.starts_with('.') {
+        return None;
+    }
+    let kind = item.file_type().ok()?;
+    if !kind.is_symlink() {
+        return Some((name, kind.is_dir(), None));
+    }
+    let target = dunce::canonicalize(item.path()).ok();
+    let inside = target.as_ref().is_some_and(|t| t.starts_with(root));
+    let is_dir = target.is_some_and(|t| t.is_dir());
+    let link = if inside {
+        LinkKind::Inside
+    } else {
+        LinkKind::Outside
+    };
+    Some((name, is_dir, Some(link)))
+}
+
 /// The visible entries of `dir` (no dotfiles), folders first, each group in
 /// natural, case-insensitive order (`a2` before `a10`). Links are not
 /// followed, only classified against `root` (canonical).
@@ -48,36 +76,15 @@ pub fn list_dir(dir: &Path, root: &Path) -> io::Result<Vec<Entry>> {
         let Ok(item) = item else {
             continue;
         };
-        // A name that isn't UTF-8 can't cross to the webview and back.
-        let Ok(name) = item.file_name().into_string() else {
+        let Some((name, is_dir, link)) = visible(&item, root) else {
             continue;
         };
-        if name.starts_with('.') {
+        let Some(path) = item.path().to_str().map(str::to_owned) else {
             continue;
-        }
-        let path = item.path();
-        let Some(path_str) = path.to_str().map(str::to_owned) else {
-            continue;
-        };
-        let Ok(kind) = item.file_type() else {
-            continue;
-        };
-        let (is_dir, link) = if kind.is_symlink() {
-            let target = dunce::canonicalize(&path).ok();
-            let inside = target.as_ref().is_some_and(|t| t.starts_with(root));
-            let is_dir = target.is_some_and(|t| t.is_dir());
-            let link = if inside {
-                LinkKind::Inside
-            } else {
-                LinkKind::Outside
-            };
-            (is_dir, Some(link))
-        } else {
-            (kind.is_dir(), None)
         };
         entries.push(Entry {
             name,
-            path: path_str,
+            path,
             is_dir,
             link,
         });

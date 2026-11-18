@@ -173,6 +173,8 @@ pub fn run() {
         .manage(files::grants::Grants::default())
         .manage(files::watch::Watcher::default())
         .manage(files::open_paths::LaunchPaths::default())
+        .manage(library::index::NameIndex::default())
+        .manage(library::watch::LibraryWatcher::default())
         .on_window_event(|window, event| {
             // Rust needs the drop (it grants the paths), so the webview's own
             // drag and drop stays disabled by Tauri while this is enabled.
@@ -232,6 +234,8 @@ pub fn run() {
             library::commands::library_copy_into,
             library::commands::library_trash,
             library::commands::library_reveal,
+            library::commands::library_watch,
+            library::commands::library_search,
             app_exit_after_flush,
             exit_flush_failed,
             app_startup_mark,

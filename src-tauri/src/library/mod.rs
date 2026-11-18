@@ -5,8 +5,10 @@
 //! (`ops.rs`, `commands.rs`).
 
 pub mod commands;
+pub mod index;
 pub mod ops;
 pub mod root;
+pub mod watch;
 
 #[cfg(test)]
 pub(crate) mod tests {
