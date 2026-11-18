@@ -203,6 +203,10 @@ export function useFilesContext(x: FilesInternals) {
    */
   const keepAside = useCallback(
     (id: string) => {
+      // An Image Tab's text is a lossy decode of its bytes: never kept.
+      if (stateRef.current.tabs.find((t) => t.id === id)?.kind === "image") {
+        return;
+      }
       const schedule = () => {
         if (
           !contents.has(id) ||

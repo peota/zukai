@@ -99,8 +99,14 @@ async function setup(over: Partial<ImageHostProps> = {}) {
 
 /** jsdom never decodes images: give it a size, then fire load. */
 function loaded(img: HTMLElement, width: number, height: number) {
-  Object.defineProperty(img, "naturalWidth", { value: width });
-  Object.defineProperty(img, "naturalHeight", { value: height });
+  Object.defineProperty(img, "naturalWidth", {
+    value: width,
+    configurable: true,
+  });
+  Object.defineProperty(img, "naturalHeight", {
+    value: height,
+    configurable: true,
+  });
   fireEvent.load(img);
 }
 
@@ -240,16 +246,67 @@ describe("ImageHost", () => {
     expect(num("data-y")).toBe(135);
   });
 
-  it("an unreadable file shows a message instead", async () => {
+  it("an unreadable file shows a message instead, and no size", async () => {
+    const onInfo = vi.fn();
     render(
       <ImageHost
         tab={imageTab()}
         readBytes={() => Promise.reject(new Error("gone"))}
         reloadSeq={0}
+        onInfo={onInfo}
       />,
     );
     expect(
       await screen.findByText("This image can't be shown."),
     ).toBeInTheDocument();
+    await vi.waitFor(() => expect(onInfo).toHaveBeenLastCalledWith(null));
+  });
+
+  it("a Missing image shows nothing and reports no size", async () => {
+    const { props, view, img } = await setup();
+    loaded(img, 800, 600);
+    const tab = imageTab();
+    tab.file!.held = "missing";
+    view.rerender(<ImageHost {...props} tab={tab} />);
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(props.onInfo).toHaveBeenLastCalledWith(null);
+  });
+
+  it("a reloaded image is measured again", async () => {
+    const { props, view, img } = await setup();
+    loaded(img, 800, 600);
+    view.rerender(<ImageHost {...props} reloadSeq={1} />);
+    // The new bytes may have another size: hidden until they load.
+    await vi.waitFor(() =>
+      expect(screen.getByRole("img").style.opacity).toBe("0"),
+    );
+    loaded(screen.getByRole("img"), 40, 30);
+    expect(num("data-zoom")).toBe(1);
+    expect(props.onInfo).toHaveBeenLastCalledWith({
+      width: 40,
+      height: 30,
+      format: "PNG",
+      bytes: 10,
+    });
+  });
+
+  it("zoom keys typed in a field are left to the field", async () => {
+    const { img } = await setup();
+    loaded(img, 800, 600);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    const ev = new KeyboardEvent("keydown", {
+      key: "-",
+      code: "Minus",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      input.dispatchEvent(ev);
+    });
+    expect(ev.defaultPrevented).toBe(false);
+    expect(viewport()).toHaveAttribute("data-fit", "true");
+    input.remove();
   });
 });

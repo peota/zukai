@@ -1,10 +1,9 @@
 import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
-import type { FileFormat, LanguageId } from "../model/types";
+import type { FileFormat, ImageInfo, LanguageId } from "../model/types";
 import type { SaveStatus } from "../storage/autosave";
 import { encodingLabel, lineEndingLabel } from "./encodings";
 import { Menu } from "./Menu";
-import type { ImageInfo } from "../image/ImageHost";
 
 export type FormatKind = "beautify" | "minify";
 

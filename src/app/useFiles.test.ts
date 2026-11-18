@@ -614,6 +614,49 @@ describe("useFiles save and save as", () => {
     expect(f.fileWrite).not.toHaveBeenCalled();
   });
 
+  it("a disk change reloads an Image Tab (a new replace for its reloadSeq)", async () => {
+    const pic = "C:\\d\\pic.png";
+    disk[pic] = { text: "", hash: "p1" };
+    const { result } = await mount();
+    const id = await openP(result, pic);
+    disk[pic] = { text: "", hash: "p2" };
+    act(() => h.fileChanged!({ path: pic, kind: "changed" }));
+    await waitFor(() =>
+      expect(result.current.replaceRequests.some((r) => r.id === id)).toBe(
+        true,
+      ),
+    );
+    expect(fileTabOf(result, pic)!.file!.fingerprint).toEqual(fp("p2"));
+    expect(f.fileWrite).not.toHaveBeenCalled();
+  });
+
+  it("a Missing Image Tab never shadows, and reopens from the disk", async () => {
+    const pic = "C:\\d\\pic.png";
+    disk[pic] = { text: "\uFFFDPNG", hash: "p1" };
+    const { result } = await mount();
+    const id = await openP(result, pic);
+    delete disk[pic];
+    act(() => h.fileChanged!({ path: pic, kind: "removed" }));
+    await waitFor(() =>
+      expect(fileTabOf(result, pic)!.file!.held).toBe("missing"),
+    );
+    await settle();
+    expect(shadows[id]).toBeUndefined();
+    await act(() => result.current.closeTab(id));
+    expect(shadows[id]).toBeUndefined();
+    expect(f.shadowWrite).not.toHaveBeenCalled();
+
+    // It comes back; reopening reads the disk, not a shadow.
+    disk[pic] = { text: "\uFFFDPNG2", hash: "p2" };
+    await act(() => result.current.reopenEntry(id));
+    const tab = fileTabOf(result, pic)!;
+    expect([null, "readonly"]).toContain(tab.file!.held);
+    expect(tab.file!.fingerprint).toEqual(fp("p2"));
+    expect(f.shadowRead).not.toHaveBeenCalledWith(id);
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(f.fileSaveAs).not.toHaveBeenCalled();
+  });
+
   it("Ctrl+S in a File flushes it", async () => {
     const { result } = await mount();
     const id = await openP(result);

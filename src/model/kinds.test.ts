@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { isExecPath, kindOf } from "./kinds";
+import rust from "../../src-tauri/src/files/exec.rs?raw";
+import { EXEC_EXTS, isExecPath, kindOf } from "./kinds";
 
 describe("kindOf", () => {
   it("kindOfByExtension", () => {
@@ -20,11 +21,34 @@ describe("isExecPath", () => {
       "x.Lnk",
       "go.cmd. ",
       "/a/b.command",
+      "x.scr",
+      "x.PIF",
+      "x.cpl",
+      "x.jar",
+      "x.hta",
+      "x.js",
+      "x.wsf",
+      "x.reg",
+      "x.url",
+      "x.appref-ms",
+      "x.pkg",
+      "x.AppImage",
     ]) {
       expect(isExecPath(p)).toBe(true);
     }
     for (const p of ["/a/x.pdf", "/a/sh", "/a.exe/readme", "x.exe.txt"]) {
       expect(isExecPath(p)).toBe(false);
     }
+  });
+});
+
+describe("EXEC_EXTS", () => {
+  it("is the list Rust enforces (src-tauri/src/files/exec.rs)", () => {
+    const lists = [...rust.matchAll(/const \w+: &\[&str\] = &\[([^\]]*)\]/g)];
+    const exts = lists.flatMap((m) =>
+      [...m[1].matchAll(/"([^"]+)"/g)].map((x) => `.${x[1]}`),
+    );
+    expect(exts.length).toBeGreaterThan(50);
+    expect([...EXEC_EXTS].sort()).toEqual(exts.sort());
   });
 });

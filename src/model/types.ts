@@ -68,6 +68,15 @@ export interface TabState {
   file?: FileInfo;
 }
 
+/** What the status bar shows for an Image Tab once its image has loaded. */
+export interface ImageInfo {
+  width: number;
+  height: number;
+  /** "PNG", "JPEG", "SVG", … */
+  format: string;
+  bytes: number;
+}
+
 /** closedAt is a ms epoch. */
 export interface ClosedEntry {
   tab: TabState;

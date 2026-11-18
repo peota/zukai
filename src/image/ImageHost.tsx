@@ -7,16 +7,8 @@ import {
 } from "react";
 import type { CSSProperties } from "react";
 import { detectPlatform } from "../app/shortcuts";
-import type { TabState } from "../model/types";
-
-/** What the status bar shows for an Image Tab. */
-export interface ImageInfo {
-  width: number;
-  height: number;
-  /** "PNG", "JPEG", "SVG", … */
-  format: string;
-  bytes: number;
-}
+import { isEditorTarget } from "../app/browserGuard";
+import type { ImageInfo, TabState } from "../model/types";
 
 export interface ImageHostProps {
   /** An Image Tab (a File). */
@@ -25,7 +17,8 @@ export interface ImageHostProps {
   readBytes(path: string): Promise<ArrayBuffer>;
   /** Bumped when the File changed on disk: read it again. */
   reloadSeq: number;
-  onInfo?(info: ImageInfo): void;
+  /** The loaded image's size and format; null when nothing is shown. */
+  onInfo?(info: ImageInfo | null): void;
 }
 
 /** MIME type and status-bar name, by extension. */
@@ -93,6 +86,17 @@ const CHECKER: CSSProperties = {
 
 const platform = detectPlatform();
 
+/** A field, an editable element or the editor: where Mod+- etc. aren't ours. */
+function typesText(t: EventTarget | null): boolean {
+  return (
+    t instanceof Element &&
+    (isEditorTarget(t) ||
+      t.closest(
+        "input, textarea, select, [contenteditable]:not([contenteditable='false'])",
+      ) !== null)
+  );
+}
+
 /**
  * A read-only Image Tab. The bytes become a `blob:` URL shown in an `<img>`,
  * so an SVG is only ever an image (its scripts never run). Fits by default;
@@ -130,6 +134,8 @@ export function ImageHost({
         if (!live) return;
         url = URL.createObjectURL(new Blob([buf], { type: format.mime }));
         setFailed(false);
+        // A new image: its size is known once it loads.
+        setNat(null);
         setSrc({ url, bytes: buf.byteLength });
       },
       (err: unknown) => {
@@ -165,6 +171,8 @@ export function ImageHost({
   // Mod+= / Mod+- / Mod+0, wherever the focus is while this Tab is shown.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Typing somewhere (a sidebar field, a rename) keeps its own keys.
+      if (typesText(e.target)) return;
       const mac = platform === "mac";
       if (!(mac ? e.metaKey : e.ctrlKey) || (mac ? e.ctrlKey : e.metaKey)) {
         return;
@@ -241,6 +249,11 @@ export function ImageHost({
       });
     }
   };
+
+  // Nothing shown: the status bar shows no size either.
+  useEffect(() => {
+    if (missing || failed) onInfo?.(null);
+  }, [missing, failed, onInfo]);
 
   const message = missing ? null : failed ? "This image can't be shown." : null;
 

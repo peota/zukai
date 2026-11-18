@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { FileInfo, TabState } from "../model/types";
-import { FileBar } from "./FileBar";
+import { FileBar, type FileBarProps } from "./FileBar";
 
 function tabWith(held: FileInfo["held"], encoding = "utf-8"): TabState {
   return {
@@ -24,7 +24,11 @@ function tabWith(held: FileInfo["held"], encoding = "utf-8"): TabState {
   };
 }
 
-function setup(tab: TabState, unreadable = false) {
+function setup(
+  tab: TabState,
+  unreadable = false,
+  over: Partial<FileBarProps> = {},
+) {
   const props = {
     tab,
     unreadable,
@@ -35,6 +39,9 @@ function setup(tab: TabState, unreadable = false) {
     onReopenWithEncoding: vi.fn(),
     onConvertToUtf8: vi.fn(),
     onOpenDefault: vi.fn(),
+    onReveal: vi.fn(),
+    revealLabel: "Show in Finder",
+    ...over,
   };
   const view = render(<FileBar {...props} />);
   return { props, view };
@@ -126,22 +133,27 @@ describe("FileBar", () => {
     expect(props.onOpenDefault).toHaveBeenCalledTimes(1);
     view.unmount();
 
-    // Hidden for anything that would run (any case, trailing dot).
-    for (const name of ["setup.EXE", "run.sh", "x.Bat", "go.cmd."]) {
+    // Anything that would run (any case, trailing dot) is only ever shown
+    // in the file manager: no opener, no Reopen with encoding.
+    for (const name of ["setup.EXE", "run.sh", "x.Bat", "go.cmd.", "a.scr"]) {
       const exec = tabWith("readonly");
       exec.file!.path = `/data/${name}`;
-      const { view: v } = setup(exec);
-      expect(
-        screen.queryByRole("button", { name: "Open with default app" }),
-      ).toBeNull();
-      expect(
-        screen.getByRole("button", { name: "Reopen with encoding…" }),
-      ).toBeInTheDocument();
+      const { props: ep, view: v } = setup(exec);
+      expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual([
+        "Show in Finder",
+      ]);
+      fireEvent.click(screen.getByRole("button", { name: "Show in Finder" }));
+      expect(ep.onReveal).toHaveBeenCalledTimes(1);
       v.unmount();
     }
+    // Outside the Library (no onReveal): no actions at all.
+    const outside = tabWith("readonly");
+    outside.file!.path = "/elsewhere/setup.exe";
+    setup(outside, false, { onReveal: undefined });
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("an Image Tab has no read-only text bar, and Missing offers no save", () => {
+  it("an Image Tab has no read-only text bar; Missing shows Show in … disabled", () => {
     const pic: TabState = { ...tabWith("readonly"), kind: "image" };
     pic.file!.path = "/data/pic.png";
     const { view } = setup(pic);
@@ -151,11 +163,15 @@ describe("FileBar", () => {
       ...pic,
       file: { ...pic.file!, held: "missing" },
     };
-    setup(gone);
+    const { props } = setup(gone);
     expect(
       screen.getByText("pic.png was moved or deleted."),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button")).toBeNull();
+    const reveal = screen.getByRole("button", { name: "Show in Finder" });
+    expect(reveal).toBeDisabled();
+    fireEvent.click(reveal);
+    expect(props.onReveal).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 
   it("an unreadable shadow shows an info bar with no actions", () => {

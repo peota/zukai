@@ -16,6 +16,10 @@ export interface FileBarProps {
   onConvertToUtf8(): void;
   /** Opens the File in the OS's default app (never offered for executables). */
   onOpenDefault?(): void;
+  /** Shows the File in the OS file manager; absent outside the Library. */
+  onReveal?(): void;
+  /** "Show in Explorer" / "Show in Finder". */
+  revealLabel?: string;
 }
 
 export type BarKind = "warn" | "err" | "info";
@@ -33,10 +37,14 @@ export function FileBar(p: FileBarProps) {
       </Bar>
     );
   }
+  const reveal = p.revealLabel ?? "Show in Explorer";
   if (p.tab.kind === "image") {
-    // An image is never edited: nothing to save, no text to re-read.
+    // An image is never edited: nothing to save, no text to re-read. A
+    // missing one has nothing to show in the file manager either.
     return file.held === "missing" ? (
-      <Bar kind="err">{`${name} was moved or deleted.`}</Bar>
+      <Bar kind="err" actions={<BarButton disabled>{reveal}</BarButton>}>
+        {`${name} was moved or deleted.`}
+      </Bar>
     ) : null;
   }
   switch (file.held) {
@@ -90,16 +98,21 @@ export function FileBar(p: FileBarProps) {
         <Bar
           kind="info"
           actions={
-            <>
-              {p.onOpenDefault && !isExecPath(file.path) && (
-                <BarButton onClick={p.onOpenDefault}>
-                  Open with default app
+            isExecPath(file.path) ? (
+              // It could run something: only ever shown, never opened.
+              p.onReveal && <BarButton onClick={p.onReveal}>{reveal}</BarButton>
+            ) : (
+              <>
+                {p.onOpenDefault && (
+                  <BarButton onClick={p.onOpenDefault}>
+                    Open with default app
+                  </BarButton>
+                )}
+                <BarButton onClick={p.onReopenWithEncoding}>
+                  Reopen with encoding…
                 </BarButton>
-              )}
-              <BarButton onClick={p.onReopenWithEncoding}>
-                Reopen with encoding…
-              </BarButton>
-            </>
+              </>
+            )
           }
         >
           This file isn't readable as text, so it's open read-only to protect
@@ -140,20 +153,23 @@ export function Bar({
 
 function BarButton({
   primary = false,
+  disabled = false,
   onClick,
   children,
 }: {
   primary?: boolean;
-  onClick(): void;
+  disabled?: boolean;
+  onClick?(): void;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
       tabIndex={-1}
+      disabled={disabled}
       onClick={onClick}
       className={
-        "shrink-0 rounded-tab px-2.5 py-[3px] text-[11.5px] " +
+        "shrink-0 rounded-tab px-2.5 py-[3px] text-[11.5px] disabled:pointer-events-none disabled:opacity-50 " +
         (primary
           ? "bg-bar-btn-primary-bg text-bar-btn-primary-fg hover:opacity-90"
           : "bg-bar-btn-bg text-text shadow-[0_0_0_1px_var(--z-bar-btn-ring)] hover:bg-bar-btn-hover")
