@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from "react";
 import { filePickOpen, takeLaunchPaths, type OpenPaths } from "../../files/api";
 import { baseName, languageOf } from "../../files/paths";
+import { kindOf } from "../../model/kinds";
 import type { TabState } from "../../model/types";
 import * as ws from "../../model/workspace";
 import { logError } from "../workspaceEffects";
@@ -35,7 +36,7 @@ export function useOpening(c: FilesContext) {
           contents.set(id, r.read.text);
           onDisk.set(id, r.read.text);
           const fresh: TabState = {
-            ...ws.newTabState(id),
+            ...ws.newTabState(id, kindOf(path)),
             title: baseName(path),
             language: languageOf(path),
             languageGuessed: true,

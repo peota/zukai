@@ -1,8 +1,10 @@
+import type { Kind } from "./kinds";
 import type { TabState, WorkspaceState } from "./types";
 
-export function newTabState(id: string): TabState {
+export function newTabState(id: string, kind: Kind = "text"): TabState {
   return {
     id,
+    kind,
     title: "Untitled",
     renamed: false,
     language: "plaintext",
@@ -14,9 +16,17 @@ export function newTabState(id: string): TabState {
   };
 }
 
-export function newTab(s: WorkspaceState, id: string): WorkspaceState {
+export function newTab(
+  s: WorkspaceState,
+  id: string,
+  kind: Kind = "text",
+): WorkspaceState {
   const at = s.tabs.findIndex((t) => t.id === s.activeId) + 1;
-  const tabs = [...s.tabs.slice(0, at), newTabState(id), ...s.tabs.slice(at)];
+  const tabs = [
+    ...s.tabs.slice(0, at),
+    newTabState(id, kind),
+    ...s.tabs.slice(at),
+  ];
   return { ...s, tabs, activeId: id };
 }
 

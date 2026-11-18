@@ -123,7 +123,9 @@ beforeEach(() => {
   scratch = { a: "alpha" };
   disk = { [P]: { text: "{}", hash: "h1" } };
   shadows = {};
-  s.listScratchpads.mockImplementation(async () => Object.keys(scratch));
+  s.listScratchpads.mockImplementation(async () =>
+    Object.keys(scratch).map((id) => ({ id, ext: "txt" as const })),
+  );
   s.listClosedScratchpads.mockResolvedValue([]);
   s.backupSession.mockResolvedValue(undefined);
   s.startupMark.mockResolvedValue(undefined);
@@ -1119,7 +1121,7 @@ describe("useFiles interleavings (fix round 1)", () => {
     await act(() => saving);
     await waitFor(() => expect(disk[target]?.text).toBe("alpha 2"));
     expect(scratch.a).toBeUndefined();
-    expect(s.writeScratchpad).not.toHaveBeenCalledWith("a", "alpha 2");
+    expect(s.writeScratchpad).not.toHaveBeenCalledWith("a", "alpha 2", "txt");
     // The Session named the File before the scratchpad was deleted.
     const named = s.writeSession.mock.calls.findIndex(([json]) =>
       json.includes("notes.txt"),

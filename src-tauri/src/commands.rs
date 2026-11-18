@@ -20,9 +20,14 @@ pub async fn scratchpad_read(app: AppHandle, id: String) -> Result<String> {
 }
 
 #[tauri::command]
-pub async fn scratchpad_write(app: AppHandle, id: String, content: String) -> Result<()> {
+pub async fn scratchpad_write(
+    app: AppHandle,
+    id: String,
+    content: String,
+    ext: scratchpads::ScratchExt,
+) -> Result<()> {
     storage::validate_id(&id)?;
-    blocking(app, move |b| scratchpads::write(&b, &id, &content)).await
+    blocking(app, move |b| scratchpads::write(&b, &id, &content, ext)).await
 }
 
 #[tauri::command]
@@ -44,7 +49,7 @@ pub async fn scratchpad_reopen(app: AppHandle, id: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn scratchpad_list(app: AppHandle) -> Result<Vec<String>> {
+pub async fn scratchpad_list(app: AppHandle) -> Result<Vec<scratchpads::ScratchEntry>> {
     blocking(app, |b| scratchpads::list(&b)).await
 }
 

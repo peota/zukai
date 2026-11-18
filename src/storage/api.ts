@@ -1,11 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ClosedFile } from "../model/session";
+import type { ClosedFile, ScratchExt, ScratchFile } from "../model/session";
 
 export const readScratchpad = (id: string): Promise<string> =>
   invoke<string>("scratchpad_read", { id });
 
-export const writeScratchpad = (id: string, content: string): Promise<void> =>
-  invoke<void>("scratchpad_write", { id, content });
+export const writeScratchpad = (
+  id: string,
+  content: string,
+  ext: ScratchExt,
+): Promise<void> => invoke<void>("scratchpad_write", { id, content, ext });
 
 export const deleteScratchpad = (id: string): Promise<void> =>
   invoke<void>("scratchpad_delete", { id });
@@ -16,8 +19,8 @@ export const closeScratchpad = (id: string): Promise<void> =>
 export const reopenScratchpad = (id: string): Promise<void> =>
   invoke<void>("scratchpad_reopen", { id });
 
-export const listScratchpads = (): Promise<string[]> =>
-  invoke<string[]>("scratchpad_list");
+export const listScratchpads = (): Promise<ScratchFile[]> =>
+  invoke<ScratchFile[]>("scratchpad_list");
 
 export const listClosedScratchpads = (): Promise<ClosedFile[]> =>
   invoke<ClosedFile[]>("scratchpad_list_closed");

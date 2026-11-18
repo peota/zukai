@@ -23,7 +23,7 @@ const fresh = () => `fresh${++n}`;
 const session = (tabIds: string[], closedIds: string[] = []) =>
   JSON.stringify(
     toSessionFile({
-      tabs: tabIds.map(newTabState),
+      tabs: tabIds.map((id) => newTabState(id)),
       activeId: tabIds[0] ?? "",
       closed: closedIds.map((id) => ({
         tab: newTabState(id),
@@ -49,9 +49,9 @@ describe("restoreSession", () => {
   it("moves an open Tab's file back from closed/ before loading", async () => {
     // Crash between closeScratchpad and the session write.
     m.readSession.mockResolvedValue(session(["a", "b"]));
-    m.listScratchpads.mockResolvedValue(["b"]);
+    m.listScratchpads.mockResolvedValue([{ id: "b", ext: "txt" }]);
     m.listClosedScratchpads.mockResolvedValue([
-      { id: "a", modifiedMs: Date.now() },
+      { id: "a", ext: "txt", modifiedMs: Date.now() },
     ]);
     const state = await restoreSession(fresh);
     expect(m.reopenScratchpad).toHaveBeenCalledWith("a");
@@ -61,9 +61,9 @@ describe("restoreSession", () => {
 
   it("does not move back a file that the Session lists as closed", async () => {
     m.readSession.mockResolvedValue(session(["b"], ["a"]));
-    m.listScratchpads.mockResolvedValue(["b"]);
+    m.listScratchpads.mockResolvedValue([{ id: "b", ext: "txt" }]);
     m.listClosedScratchpads.mockResolvedValue([
-      { id: "a", modifiedMs: Date.now() },
+      { id: "a", ext: "txt", modifiedMs: Date.now() },
     ]);
     const state = await restoreSession(fresh);
     expect(m.reopenScratchpad).not.toHaveBeenCalled();
@@ -72,9 +72,9 @@ describe("restoreSession", () => {
 
   it("makes stranded closed files reachable when session.json is corrupt", async () => {
     m.readSession.mockResolvedValue("{corrupt");
-    m.listScratchpads.mockResolvedValue(["b"]);
+    m.listScratchpads.mockResolvedValue([{ id: "b", ext: "txt" }]);
     m.listClosedScratchpads.mockResolvedValue([
-      { id: "x", modifiedMs: Date.now() - 10 },
+      { id: "x", ext: "txt", modifiedMs: Date.now() - 10 },
     ]);
     const state = await restoreSession(fresh);
     expect(state.tabs.map((t) => t.id)).toEqual(["b"]);
@@ -96,14 +96,18 @@ describe("restoreSession", () => {
   it("does not back up a good or missing session.json", async () => {
     await restoreSession(fresh);
     m.readSession.mockResolvedValue(session(["a"]));
-    m.listScratchpads.mockResolvedValue(["a"]);
+    m.listScratchpads.mockResolvedValue([{ id: "a", ext: "txt" }]);
     await restoreSession(fresh);
     expect(m.backupSession).not.toHaveBeenCalled();
   });
 
   it("keeps old closed files found only on disk instead of purging them", async () => {
     m.listClosedScratchpads.mockResolvedValue([
-      { id: "old", modifiedMs: Date.now() - 31 * 24 * 60 * 60 * 1000 },
+      {
+        id: "old",
+        ext: "txt",
+        modifiedMs: Date.now() - 31 * 24 * 60 * 60 * 1000,
+      },
     ]);
     const state = await restoreSession(fresh);
     expect(m.purgeClosed).not.toHaveBeenCalled();
@@ -112,7 +116,7 @@ describe("restoreSession", () => {
 
   it("keeps the Session's closed list when closed/ cannot be listed", async () => {
     m.readSession.mockResolvedValue(session(["b"], ["a"]));
-    m.listScratchpads.mockResolvedValue(["b"]);
+    m.listScratchpads.mockResolvedValue([{ id: "b", ext: "txt" }]);
     m.listClosedScratchpads.mockRejectedValue(new Error("io"));
     const state = await restoreSession(fresh);
     expect(state.closed.map((e) => e.tab.id)).toEqual(["a"]);

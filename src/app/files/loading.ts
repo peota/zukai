@@ -202,7 +202,7 @@ export function useLoading(c: FilesContext) {
           if (text === null) continue;
           if (text !== "") {
             const id = freshId();
-            await writeScratchpad(id, text);
+            await writeScratchpad(id, text, "txt");
             contents.set(id, text);
             onDisk.set(id, text);
             const tab = { ...ws.newTabState(id), title: deriveTitle(text) };

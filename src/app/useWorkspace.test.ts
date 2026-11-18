@@ -79,7 +79,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.flushAll = null;
   disk = { a: "alpha", b: "" };
-  m.listScratchpads.mockResolvedValue(["a", "b"]);
+  m.listScratchpads.mockResolvedValue([
+    { id: "a", ext: "txt" },
+    { id: "b", ext: "txt" },
+  ]);
   m.listClosedScratchpads.mockResolvedValue([]);
   m.backupSession.mockResolvedValue(undefined);
   m.startupMark.mockResolvedValue(undefined);
@@ -140,7 +143,7 @@ describe("useWorkspace close", () => {
     expect(tabIds(result)).toEqual(["a", "b"]);
     act(() => result.current.setContent("a", "after"));
     await waitFor(() =>
-      expect(m.writeScratchpad).toHaveBeenCalledWith("a", "after"),
+      expect(m.writeScratchpad).toHaveBeenCalledWith("a", "after", "txt"),
     );
   });
 
@@ -185,14 +188,14 @@ describe("useWorkspace close", () => {
       closed = result.current.closeTab("a");
     });
     await waitFor(() =>
-      expect(m.writeScratchpad).toHaveBeenCalledWith("a", "one"),
+      expect(m.writeScratchpad).toHaveBeenCalledWith("a", "one", "txt"),
     );
     expect(result.current.isClosing("a")).toBe(true);
     act(() => result.current.setContent("a", "one two"));
     gate.resolve();
     await act(() => closed);
 
-    expect(m.writeScratchpad).toHaveBeenLastCalledWith("a", "one two");
+    expect(m.writeScratchpad).toHaveBeenLastCalledWith("a", "one two", "txt");
     expect(order(m.writeScratchpad, 1)).toBeLessThan(order(m.closeScratchpad));
     expect(disk.a).toBe("one two");
     expect(tabIds(result)).not.toContain("a");
@@ -218,7 +221,7 @@ describe("useWorkspace close", () => {
     expect(m.closeScratchpad).not.toHaveBeenCalled();
     // Autosave picks the late text up again.
     await waitFor(() =>
-      expect(m.writeScratchpad).toHaveBeenLastCalledWith("a", "one two"),
+      expect(m.writeScratchpad).toHaveBeenLastCalledWith("a", "one two", "txt"),
     );
   });
 });
