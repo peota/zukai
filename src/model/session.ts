@@ -1,16 +1,18 @@
 import type {
   ClosedEntry,
+  FileInfo,
+  Fingerprint,
   LanguageId,
   TabState,
   WorkspaceState,
 } from "./types";
 import { ensureOneTab, newTabState } from "./workspace";
 
-export const SESSION_VERSION = 1;
+export const SESSION_VERSION = 2;
 export const CLOSED_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface SessionFile {
-  version: 1;
+  version: 2;
   tabs: TabState[];
   activeId: string;
   closed: ClosedEntry[];
@@ -39,10 +41,43 @@ function isNum(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
 
+const HELD: readonly string[] = [
+  "conflict",
+  "missing",
+  "unencodable",
+  "readonly",
+];
+
+function isFingerprint(v: unknown): v is Fingerprint {
+  return (
+    isObject(v) &&
+    isNum(v.mtimeMs) &&
+    isNum(v.size) &&
+    typeof v.hash === "string"
+  );
+}
+
+function isFileInfo(v: unknown): v is FileInfo {
+  if (!isObject(v)) return false;
+  const f = v.format;
+  return (
+    typeof v.path === "string" &&
+    v.path !== "" &&
+    isObject(f) &&
+    typeof f.encoding === "string" &&
+    typeof f.bom === "boolean" &&
+    (f.lineEnding === "lf" || f.lineEnding === "crlf") &&
+    typeof f.mixed === "boolean" &&
+    (v.fingerprint === null || isFingerprint(v.fingerprint)) &&
+    (v.held === null || (typeof v.held === "string" && HELD.includes(v.held)))
+  );
+}
+
 function isTabState(v: unknown): v is TabState {
   if (!isObject(v)) return false;
   const sel = v.selection;
   return (
+    (v.file === undefined || isFileInfo(v.file)) &&
     typeof v.id === "string" &&
     typeof v.title === "string" &&
     typeof v.renamed === "boolean" &&
@@ -81,21 +116,23 @@ export function parseSessionFile(json: string | null): SessionFile | null {
   } catch {
     return null;
   }
-  if (!isObject(data) || data.version !== SESSION_VERSION) return null;
+  // v1 had no File Tabs; its shape is a subset of v2, so it migrates as is.
+  if (!isObject(data) || (data.version !== 1 && data.version !== 2)) {
+    return null;
+  }
   if (
     !Array.isArray(data.tabs) ||
-    !data.tabs.every(isTabState) ||
     typeof data.activeId !== "string" ||
-    !Array.isArray(data.closed) ||
-    !data.closed.every(isClosedEntry)
+    !Array.isArray(data.closed)
   ) {
     return null;
   }
+  // A malformed entry is dropped alone; the rest of the session survives.
   return {
     version: SESSION_VERSION,
-    tabs: data.tabs,
+    tabs: data.tabs.filter(isTabState),
     activeId: data.activeId,
-    closed: data.closed,
+    closed: data.closed.filter(isClosedEntry),
   };
 }
 
@@ -106,7 +143,9 @@ export function purgeExpired(
   const kept: ClosedEntry[] = [];
   const expired: ClosedEntry[] = [];
   for (const e of closed) {
-    (now - e.closedAt > CLOSED_TTL_MS ? expired : kept).push(e);
+    // A closed File has no shadow text unless held, so it never expires.
+    const forever = e.tab.file !== undefined && e.tab.file.held === null;
+    (!forever && now - e.closedAt > CLOSED_TTL_MS ? expired : kept).push(e);
   }
   return { kept, expired };
 }
@@ -121,20 +160,38 @@ export interface ClosedFile {
  * Rebuild the workspace from session.json and the files on disk.
  * `closedFiles` (when known) is the content of `closed/`: entries whose file
  * is gone are dropped, and files the Session doesn't mention become Recently
- * Closed entries (closedAt = file time, reopened at the end), so no closed
- * text is ever stranded and the 30-day purge reaches it.
+ * Closed entries (closedAt = now, reopened at the end), so no closed text is
+ * ever stranded and a stale file is not purged in the launch that recovers it.
  */
 export function restoreWorkspace(
   file: SessionFile | null,
   scratchpadIds: string[],
   freshId: () => string,
   now: number,
-  closedFiles: ClosedFile[] | null = null,
+  closedFiles: ClosedFile[] | null,
+  grantedPaths: ReadonlySet<string> | null,
+  keyOf: (path: string) => string,
 ): { state: WorkspaceState; expired: ClosedEntry[] } {
-  const base = file ?? { tabs: [], activeId: "", closed: [] };
+  const raw = file ?? { tabs: [], activeId: "", closed: [] };
+  // Rust refuses to save a Session naming a File it hasn't granted.
+  const granted = (t: TabState) =>
+    !t.file || grantedPaths === null || grantedPaths.has(t.file.path);
+  const base = {
+    ...raw,
+    tabs: raw.tabs.filter(granted),
+    closed: raw.closed.filter((e) => granted(e.tab)),
+  };
   const known = new Set<string>();
+  const openPaths = new Set<string>();
   const uniqueTabs = base.tabs.filter((t) => {
     if (known.has(t.id)) return false;
+    // One Tab per File: the first wins (a dropped one's shadow, if any, is
+    // recovered as an orphan).
+    if (t.file) {
+      const k = keyOf(t.file.path);
+      if (openPaths.has(k)) return false;
+      openPaths.add(k);
+    }
     known.add(t.id);
     return true;
   });
@@ -147,8 +204,9 @@ export function restoreWorkspace(
     ? base.activeId
     : (tabs[0]?.id ?? "");
   const onDisk = closedFiles && new Set(closedFiles.map((f) => f.id));
+  // A closed File's text is on disk (or in its shadow), never in closed/.
   const listed = onDisk
-    ? base.closed.filter((e) => onDisk.has(e.tab.id))
+    ? base.closed.filter((e) => e.tab.file || onDisk.has(e.tab.id))
     : base.closed;
   const mentioned = new Set([
     ...tabs.map((t) => t.id),
@@ -159,9 +217,19 @@ export function restoreWorkspace(
     .map((f) => ({
       tab: newTabState(f.id),
       index: tabs.length,
-      closedAt: f.modifiedMs,
+      closedAt: now,
     }));
-  const all = [...listed, ...recovered].sort((x, y) => y.closedAt - x.closedAt);
+  const seenPaths = new Set<string>();
+  const all = [...listed, ...recovered]
+    .sort((x, y) => y.closedAt - x.closedAt)
+    .filter((e) => {
+      // Newest entry per File path wins.
+      if (!e.tab.file) return true;
+      const k = keyOf(e.tab.file.path);
+      if (seenPaths.has(k)) return false;
+      seenPaths.add(k);
+      return true;
+    });
   const { kept, expired } = purgeExpired(all, now);
   const open = new Set(tabs.map((t) => t.id));
   const closed = kept.filter((e) => {
