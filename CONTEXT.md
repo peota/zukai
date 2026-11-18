@@ -23,8 +23,8 @@ A Document backed by a path on the user's disk. Edits to a File are autosaved to
 _Avoid_: external file, document (when you mean specifically the on-disk kind).
 
 **Kind**
-What a Document shows: **Text**, **Canvas**, **Image** or **Table**. A Document's Kind is fixed when it's created and never changes. Save As refuses a name whose extension would change the Kind.
-- Files get their Kind from the extension: `.csv` and `.tsv` are Table, `.excalidraw` is Canvas, `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.bmp` and `.svg` are Image, everything else is Text. The list lives in `src/model/kinds.ts`.
+What a Document shows: **Text**, **Canvas**, **Image** or **Table** (M2). A Document's Kind is fixed when it's created and never changes. Save As refuses a name whose extension would change the Kind.
+- Files get their Kind from the extension: `.excalidraw` is Canvas, `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.bmp` and `.svg` are Image, everything else is Text. The list lives in `src/model/kinds.ts`. In M2, `.csv` and `.tsv` become Table.
 - Scratchpads are Text (Mod+N, the default) or Canvas (Mod+Shift+N). There are no Table or Image Scratchpads in v1.
 _Avoid_: type, mode, format.
 

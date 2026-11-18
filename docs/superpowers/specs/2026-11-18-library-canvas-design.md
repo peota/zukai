@@ -194,7 +194,7 @@ This follows [ADR 0002](../../adr/0002-tauri-shell-with-embedded-excalidraw.md).
    - First, every affected Tab is flushed. If any flush fails, the operation is refused with a notice.
    - **Held Tabs.** Their Shadow files are keyed by Tab id, so they don't move. A Held Tab under a moved folder keeps its held state with the new path.
    - **After the operation**, Rust re-watches, and the UI rewrites every path reference: open Tabs, Recently Closed entries and expanded-folder state.
-   - **Windows.** If the rename fails because a watcher handle is open, Zukai drops those watchers, retries once, and then re-watches.
+   - **Windows.** If a rename, move or trash fails because a watcher handle is open, Zukai drops those watchers, retries for up to 2 s while the folder is still held open, and then re-watches. `ERROR_ACCESS_DENIED` (5) is ambiguous: a real permission (ACL) refusal looks the same, so it also waits up to 2 s before the error is shown.
 6. **Session version 3.**
    - v2 Sessions migrate. A File Tab whose path ends in `.excalidraw` becomes Canvas, and an image extension becomes Image.
    - An older build reading v3 falls back to the existing "future version → back up and rebuild" behaviour.
