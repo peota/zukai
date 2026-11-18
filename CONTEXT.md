@@ -23,10 +23,20 @@ A Document backed by a path on the user's disk. Edits to a File are autosaved to
 _Avoid_: external file, document (when you mean specifically the on-disk kind).
 
 **Kind**
-What a Document shows: **Text**, **Canvas** or **Table**. A Document's Kind is fixed when it's created and never changes.
-- Files get their Kind from the extension: `.csv` and `.tsv` are Table, `.excalidraw` is Canvas, everything else is Text.
-- Scratchpads are Text (Mod+N, the default) or Canvas (a separate shortcut). There are no Table Scratchpads in v1.
+What a Document shows: **Text**, **Canvas**, **Image** or **Table**. A Document's Kind is fixed when it's created and never changes. Save As refuses a name whose extension would change the Kind.
+- Files get their Kind from the extension: `.csv` and `.tsv` are Table, `.excalidraw` is Canvas, `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.bmp` and `.svg` are Image, everything else is Text. The list lives in `src/model/kinds.ts`.
+- Scratchpads are Text (Mod+N, the default) or Canvas (Mod+Shift+N). There are no Table or Image Scratchpads in v1.
 _Avoid_: type, mode, format.
+
+**Canvas**
+The Kind for drawings, shown in an embedded Excalidraw editor (`@excalidraw/excalidraw`, pinned to 0.18.1) with its online and collaboration features turned off. Excalidraw is loaded the first time a Canvas Tab opens, so a text-only session never loads it.
+- A Canvas Scratchpad is stored as `scratchpads/<id>.excalidraw`; a Canvas File is any `.excalidraw` file.
+- The scene is saved as standard `.excalidraw` JSON through the same autosave, Fingerprint and atomic-write path as text, and only when the drawing changes, never for a scroll or zoom. The viewport is remembered per Tab in the Session.
+- Disk changes and Disk conflicts follow the Text rules. A file that isn't a valid drawing opens read-only with a notice and is never saved over.
+- App shortcuts win over Excalidraw's inside a Canvas.
+
+**Image**
+The Kind for pictures: a read-only viewer that fits the window, with zoom (Mod+= / Mod+- / Mod+0) and pan. The status bar shows the dimensions, the format and the size, and the image reloads when the file changes on disk. Bytes are read through Rust under the same grants. SVG is only ever shown as an image (`<img src="blob:…">`), never as live markup, so no script in it runs.
 
 **View**
 A way of displaying a Document that doesn't change what it is. A Table has two Views: the **grid** and the **raw text**. Switching View keeps the same Document and the same autosave.
@@ -63,6 +73,32 @@ Changed through the **Settings UI**, which opens as a Tab (Mod+, or "Settings" i
 - Keybindings are a searchable list where you press a key combination to record it, with conflict warnings.
 - The UI writes only the values you changed into `settings.json` in the app data folder. An "Open settings.json" link opens it as a normal Tab for editing by hand or keeping in dotfiles. Edits to the file update the UI live, and invalid JSON keeps the last valid settings active.
 Common toggles (theme, word wrap, show whitespace) are also in the Command palette.
+
+## Library
+
+The Library replaces "no project concept" and "no notes library" (see [ADR 0011](docs/adr/0011-library-sidebar.md)).
+
+**Library**
+A real folder on disk that holds the user's projects, `<Documents>/Zukai` by default. Its root is created on first launch and can be re-pointed with **Choose Library folder…**, which never moves or copies anything. The root path is stored only by Rust, in `library.json` in the app data folder, never in `session.json`, so the webview can't set it. If the root is missing at launch, the Sidebar says so and offers to choose another folder or create it again; open Tabs are unaffected.
+- Rust holds a **folder grant** for the root: everything inside it may be read and written, after resolving `..` and links. Nothing outside it is affected.
+- Links (symlinks, junctions) are never followed by the tree walk or the watcher. A link that resolves inside the root behaves like its target. A link that resolves outside is shown with a link icon and can't be opened, renamed or moved.
+- Every operation (new, rename, move, delete, copy-in) runs in Rust inside the grant and never replaces an existing name; clashes get ` (2)`. Delete goes to the operating system's trash, and is refused if there's no trash. Open Tabs follow their Files through renames and moves.
+- Rust watches the root and the tree updates when files change outside Zukai.
+_Avoid_: workspace, vault, project root.
+
+**Library folder**
+A project folder inside the Library: an ordinary folder whose notes, canvases and images are ordinary files, usable outside Zukai (Explorer, sync, zip, git).
+_Avoid_: project, notebook.
+
+**Sidebar**
+The panel left of the tab bar that shows the Library tree and the Inbox. Mod+B toggles it (hidden, Zukai looks as before), and Mod+Shift+E focuses it. It is 240 px wide by default and its width can be dragged. Whether it's open, its width and which folders are expanded are stored in the Session (`sidebar { open, width, expanded }`).
+_Avoid_: explorer, file tree (when you mean the whole panel).
+
+**Inbox**
+The Sidebar's list of open Scratchpads, by Title. Scratchpads stay loose until moved into the Library with **Move to Library…** or by dragging onto a Library folder; both are Save As into that folder.
+
+**Open with default app**
+A button on the read-only bar of a File Zukai can't show, which hands it to the operating system. It never launches executables or scripts: the refused list is in `src-tauri/src/files/exec.rs`, plus files with the Unix execute bit and what Windows calls dangerous. For those, only **Show in Explorer / Finder** is offered. It's never triggered by a click in the tree.
 
 ## v1 editing scope (Notepad++ benchmark)
 
@@ -168,9 +204,10 @@ Running `zukai --capture` opens Quick capture in the running instance, or starts
 Every way of opening a File goes to the one running instance: drag and drop, `zukai <path>…`, Explorer or Finder, and Mod+O (the native dialog, multi-select). A File that's already open switches to its existing Tab.
 - The installer registers Zukai under "Open with" for text, code, `.csv`/`.tsv` and `.excalidraw`, and never sets itself as the default, except that it may claim `.excalidraw` when no other app handles it.
 - Settings → Files has a "Make Zukai the default for…" button that opens the operating system's default-apps screen.
-- Folders can't be opened, because Zukai has no project concept. Dropping a folder shows a notice.
+- Folders are reached through the Library, never opened as Tabs. Dropping a folder onto the window shows a notice; files dropped onto a Library folder in the Sidebar are copied into it.
 
 ## Relationships
 
 - Save As turns a Scratchpad into a File.
-- The tab bar is the user's active set, and Recently Closed is the archive. There is no separate notes library.
+- The tab bar is the user's active set, Recently Closed is the archive, and the Library is where projects live as real folders (see [ADR 0011](docs/adr/0011-library-sidebar.md)).
+- Save As into a Library folder moves a Scratchpad from the Inbox into the Library.
