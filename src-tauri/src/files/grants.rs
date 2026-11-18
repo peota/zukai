@@ -123,6 +123,39 @@ impl Grants {
         Ok(canon)
     }
 
+    /// Like `grant`, for a path that must be inside the Library root, which
+    /// may not exist yet, nor its folder (a Missing File that moved with
+    /// its parent). Never grants anything not provably inside the root:
+    /// the deepest part that exists (a link in the last place is taken as
+    /// the link) must pass `in_root`, which refuses links that resolve
+    /// outside or dangle; the missing rest is plain names, which can't
+    /// lead anywhere else. Win32 alias names are refused.
+    pub fn grant_in_root(&self, p: &Path) -> Result<PathBuf, FileError> {
+        if !plain_absolute(p) || win32_alias(p) {
+            return Err(FileError::NotGranted);
+        }
+        let mut existing = p;
+        while std::fs::symlink_metadata(existing).is_err() {
+            existing = existing.parent().ok_or(FileError::NotGranted)?;
+        }
+        let base = self.in_root(existing)?;
+        let rest = p
+            .strip_prefix(existing)
+            .map_err(|_| FileError::NotGranted)?;
+        let path = if rest.as_os_str().is_empty() {
+            base
+        } else {
+            base.join(rest)
+        };
+        // The final guard: exactly what is inserted is inside the root.
+        let path = self.within_root(path)?;
+        if path.is_dir() {
+            return Err(FileError::NotAFile);
+        }
+        self.map().insert(key(&path), path.clone());
+        Ok(path)
+    }
+
     /// Allows the webview to use `p` from now on, returning its canonical
     /// form. `p` must be absolute and not a folder. A File whose folder is
     /// gone (a Session entry) is granted as given if it is a plain absolute

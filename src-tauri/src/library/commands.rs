@@ -268,6 +268,7 @@ fn with_watchers_released<T>(
 /// `None` for one that isn't under `from` or can't be granted. Each new path
 /// is granted exactly as returned, including Files whose folder is gone
 /// (Missing), so the next `session_write` accepts the Session naming them.
+/// Nothing outside the root is ever granted (`Grants::grant_in_root`).
 pub(crate) fn follow(g: &Grants, from: &str, to: &str, paths: &[String]) -> Vec<Option<String>> {
     let (from, to) = (Path::new(from), Path::new(to));
     if g.in_root(to).is_err() {
@@ -277,12 +278,7 @@ pub(crate) fn follow(g: &Grants, from: &str, to: &str, paths: &[String]) -> Vec<
         .iter()
         .map(|p| {
             let rest = suffix_under(Path::new(p), from)?;
-            let new = to.join(rest);
-            // An existing File must still resolve inside the root.
-            if dunce::canonicalize(&new).is_ok() && g.in_root(&new).is_err() {
-                return None;
-            }
-            path_string(&g.grant(&new).ok()?).ok()
+            path_string(&g.grant_in_root(&to.join(rest)).ok()?).ok()
         })
         .collect()
 }
@@ -922,10 +918,105 @@ mod tests {
         );
     }
 
-    /// Trashing a folder is a rename into the Recycle Bin: Windows refuses
-    /// it while a watcher handle is open inside, like a rename.
+    /// A folder link (a junction on Windows, a symlink elsewhere).
+    fn link_dir(link: &Path, target: &Path) {
+        #[cfg(windows)]
+        crate::library::tests::junction(link, target);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).unwrap();
+    }
+
+    /// `follow` takes `from`, `to` and the paths from the webview: a link
+    /// inside the Library that points outside, or dangles, must never let it
+    /// grant past it.
+    #[test]
+    fn follow_never_grants_through_links_out_of_the_root() {
+        let (_tmp, g, root, outside) = library();
+        link_dir(&root.join("link"), &outside);
+        link_dir(&root.join("dangling"), &outside.join("not-yet"));
+        let from = root.join("p");
+        let under = |rel: &[&str]| {
+            let mut p = from.clone();
+            p.extend(rel);
+            s(&p).to_owned()
+        };
+        let out = follow(
+            &g,
+            s(&from),
+            s(&root),
+            &[
+                // (a) through a link to an outside folder
+                under(&["link", "new.txt"]),
+                under(&["link", "deeper", "new.txt"]),
+                // (b) a dangling link in the last place, and through it
+                under(&["dangling"]),
+                under(&["dangling", "new.txt"]),
+                // the positive control: a plain missing folder
+                under(&["sub", "ok.txt"]),
+            ],
+        );
+        assert_eq!(
+            out,
+            [
+                None,
+                None,
+                None,
+                None,
+                Some(s(&root.join("sub").join("ok.txt")).to_owned())
+            ]
+        );
+        // Nothing past the links was granted.
+        for escaped in [
+            outside.join("new.txt"),
+            outside.join("deeper").join("new.txt"),
+            outside.join("not-yet"),
+            outside.join("not-yet").join("new.txt"),
+            root.join("link").join("new.txt"),
+            root.join("dangling"),
+        ] {
+            assert!(g.check(s(&escaped)).is_err(), "{escaped:?} was granted");
+        }
+        // `to` itself through a link is refused outright.
+        assert_eq!(
+            follow(&g, s(&from), s(&root.join("link")), &[under(&["x.txt"])]),
+            [None]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn follow_refuses_a_file_link_out_of_the_root() {
+        let (_tmp, g, root, outside) = library();
+        let secret = outside.join("secret.md");
+        fs::write(&secret, "s").unwrap();
+        std::os::unix::fs::symlink(&secret, root.join("leak.md")).unwrap();
+        let from = root.join("p");
+        let out = follow(
+            &g,
+            s(&from),
+            s(&root),
+            &[s(&from.join("leak.md")).to_owned()],
+        );
+        assert_eq!(out, [None]);
+        assert!(g.check(s(&secret)).is_err());
+    }
+
     #[cfg(windows)]
     #[test]
+    fn follow_refuses_win32_alias_names() {
+        let (_tmp, g, root, _outside) = library();
+        let from = root.join("p");
+        let paths = [format!(r"{}\x.", s(&from)), format!(r"{}\y ", s(&from))];
+        assert_eq!(follow(&g, s(&from), s(&root), &paths), [None, None]);
+    }
+
+    /// Trashing a folder is a rename into the Recycle Bin: Windows refuses
+    /// it while a watcher handle is open inside, like a rename. It really
+    /// trashes a temporary folder (purged again afterwards), so it runs only
+    /// when asked: CI runs `cargo test -- --include-ignored`.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "uses the real Recycle Bin; CI runs it with --include-ignored"]
     fn trash_retries_after_dropping_watchers() {
         use crate::files::watch::Sink as FileSink;
         let (_tmp, g, root, _outside) = library();
@@ -955,6 +1046,13 @@ mod tests {
         .unwrap();
         assert!(released);
         assert!(!root.join("proj").exists());
+        // Purge what this test put in the Recycle Bin.
+        let mine: Vec<_> = trash::os_limited::list()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|item| item.original_parent == root && item.name == "proj")
+            .collect();
+        let _ = trash::os_limited::purge_all(mine);
     }
 
     #[test]
