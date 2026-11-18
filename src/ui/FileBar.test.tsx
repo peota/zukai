@@ -6,6 +6,7 @@ import { FileBar } from "./FileBar";
 function tabWith(held: FileInfo["held"], encoding = "utf-8"): TabState {
   return {
     id: "t",
+    kind: "text",
     title: "config.json",
     renamed: false,
     language: "json",

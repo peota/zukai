@@ -61,10 +61,16 @@ describe("documentWriter", () => {
     expect(deps.onWritten).not.toHaveBeenCalled();
   });
 
+  it("canvasScratchpadWritesExcalidraw", async () => {
+    tabs.set("c", newTabState("c", "canvas"));
+    await createDocumentWriter(deps)("c", "{}");
+    expect(deps.writeScratchpad).toHaveBeenCalledWith("c", "{}", "excalidraw");
+  });
+
   it("scratchpadWritesScratchpad", async () => {
     tabs.set("s", newTabState("s"));
     await createDocumentWriter(deps)("s", "hello");
-    expect(deps.writeScratchpad).toHaveBeenCalledWith("s", "hello");
+    expect(deps.writeScratchpad).toHaveBeenCalledWith("s", "hello", "txt");
     expect(deps.fileWrite).not.toHaveBeenCalled();
     expect(deps.shadowWrite).not.toHaveBeenCalled();
     expect(deps.onWritten).toHaveBeenCalledWith("s", "hello");

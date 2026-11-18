@@ -7,6 +7,7 @@ import type { SaveStatus, Saver } from "../storage/autosave";
 import {
   parseSessionFile,
   restoreWorkspace,
+  type ScratchFile,
   type SessionFile,
 } from "../model/session";
 import type { WorkspaceState } from "../model/types";
@@ -69,7 +70,9 @@ export async function restoreSession(
     json.status === "rejected" || (json.value !== null && file === null);
   if (broken) await backupSession().catch(logError("back up session"));
 
-  const open = new Set(ids.status === "fulfilled" ? ids.value : []);
+  const open = new Map<string, ScratchFile>(
+    (ids.status === "fulfilled" ? ids.value : []).map((f) => [f.id, f]),
+  );
   let closedFiles = closedList.status === "fulfilled" ? closedList.value : null;
   if (file && closedFiles) {
     const inClosed = new Set(closedFiles.map((f) => f.id));
@@ -77,7 +80,8 @@ export async function restoreSession(
       if (open.has(tab.id) || !inClosed.has(tab.id)) continue;
       try {
         await reopenScratchpad(tab.id);
-        open.add(tab.id);
+        const f = closedFiles.find((c) => c.id === tab.id);
+        open.set(tab.id, { id: tab.id, ext: f?.ext ?? "txt" });
         inClosed.delete(tab.id);
       } catch (err) {
         logError("move back stranded scratchpad")(err);
@@ -88,7 +92,7 @@ export async function restoreSession(
 
   const { state, expired } = restoreWorkspace(
     file,
-    [...open],
+    [...open.values()],
     freshId,
     Date.now(),
     closedFiles,

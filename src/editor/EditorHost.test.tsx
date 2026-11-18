@@ -16,6 +16,7 @@ import { beautify } from "./jsonFormat";
 function tab(id: string, over: Partial<TabState> = {}): TabState {
   return {
     id,
+    kind: "text",
     title: id,
     renamed: false,
     language: "plaintext",

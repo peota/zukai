@@ -5,6 +5,7 @@ import { TabContextMenu } from "./TabContextMenu";
 
 function entry(n: number, path?: string): ClosedEntry {
   const tab: TabState = {
+    kind: "text",
     id: `c${n}`,
     title: `Closed ${n}`,
     renamed: false,

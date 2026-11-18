@@ -17,7 +17,7 @@ import {
 } from "./workspace";
 
 const ws = (ids: string[], activeId = ids[0]): WorkspaceState => ({
-  tabs: ids.map(newTabState),
+  tabs: ids.map((id) => newTabState(id)),
   activeId,
   closed: [],
 });
@@ -28,6 +28,7 @@ describe("newTabState", () => {
   it("has defaults", () => {
     expect(newTabState("x")).toEqual({
       id: "x",
+      kind: "text",
       title: "Untitled",
       renamed: false,
       language: "plaintext",

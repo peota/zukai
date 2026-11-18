@@ -1,21 +1,30 @@
+import { kindOf, type Kind } from "./kinds";
 import type {
   ClosedEntry,
   FileInfo,
   Fingerprint,
   LanguageId,
+  SidebarState,
   TabState,
   WorkspaceState,
 } from "./types";
 import { ensureOneTab, newTabState } from "./workspace";
 
-export const SESSION_VERSION = 2;
+export const SESSION_VERSION = 3;
 export const CLOSED_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+export const DEFAULT_SIDEBAR: SidebarState = {
+  open: false,
+  width: 240,
+  expanded: [],
+};
+
 export interface SessionFile {
-  version: 2;
+  version: 3;
   tabs: TabState[];
   activeId: string;
   closed: ClosedEntry[];
+  sidebar: SidebarState;
 }
 
 const LANGUAGES: readonly LanguageId[] = [
@@ -73,10 +82,14 @@ function isFileInfo(v: unknown): v is FileInfo {
   );
 }
 
+const KINDS: readonly string[] = ["text", "canvas", "image"];
+
 function isTabState(v: unknown): v is TabState {
   if (!isObject(v)) return false;
   const sel = v.selection;
   return (
+    typeof v.kind === "string" &&
+    KINDS.includes(v.kind) &&
     (v.file === undefined || isFileInfo(v.file)) &&
     typeof v.id === "string" &&
     typeof v.title === "string" &&
@@ -99,13 +112,36 @@ function isClosedEntry(v: unknown): v is ClosedEntry {
   );
 }
 
-export function toSessionFile(s: WorkspaceState): SessionFile {
+function parseSidebar(v: unknown): SidebarState {
+  if (!isObject(v)) return { ...DEFAULT_SIDEBAR, expanded: [] };
+  return {
+    open: typeof v.open === "boolean" ? v.open : DEFAULT_SIDEBAR.open,
+    width: isNum(v.width) ? v.width : DEFAULT_SIDEBAR.width,
+    expanded: Array.isArray(v.expanded)
+      ? v.expanded.filter((x): x is string => typeof x === "string")
+      : [],
+  };
+}
+
+export function toSessionFile(
+  s: WorkspaceState,
+  sidebar: SidebarState = DEFAULT_SIDEBAR,
+): SessionFile {
   return {
     version: SESSION_VERSION,
     tabs: s.tabs,
     activeId: s.activeId,
     closed: s.closed,
+    sidebar,
   };
+}
+
+/** Before v3 a Tab had no Kind: a File's comes from its path. */
+function withKind(t: unknown): unknown {
+  if (!isObject(t) || t.kind !== undefined) return t;
+  const file = t.file;
+  const path = isObject(file) && typeof file.path === "string" ? file.path : "";
+  return { ...t, kind: path === "" ? "text" : kindOf(path) };
 }
 
 export function parseSessionFile(json: string | null): SessionFile | null {
@@ -116,10 +152,14 @@ export function parseSessionFile(json: string | null): SessionFile | null {
   } catch {
     return null;
   }
-  // v1 had no File Tabs; its shape is a subset of v2, so it migrates as is.
-  if (!isObject(data) || (data.version !== 1 && data.version !== 2)) {
+  // v1 had no File Tabs and v2 no Kinds or sidebar: both migrate to v3.
+  if (
+    !isObject(data) ||
+    (data.version !== 1 && data.version !== 2 && data.version !== 3)
+  ) {
     return null;
   }
+  const migrate = data.version !== 3;
   if (
     !Array.isArray(data.tabs) ||
     typeof data.activeId !== "string" ||
@@ -128,11 +168,20 @@ export function parseSessionFile(json: string | null): SessionFile | null {
     return null;
   }
   // A malformed entry is dropped alone; the rest of the session survives.
+  const tabs: unknown[] = migrate ? data.tabs.map(withKind) : data.tabs;
+  const closed: unknown[] = migrate
+    ? data.closed.map((e: unknown) =>
+        isObject(e) ? { ...e, tab: withKind(e.tab) } : e,
+      )
+    : data.closed;
   return {
     version: SESSION_VERSION,
-    tabs: data.tabs.filter(isTabState),
+    tabs: tabs.filter(isTabState),
     activeId: data.activeId,
-    closed: data.closed.filter(isClosedEntry),
+    closed: closed.filter(isClosedEntry),
+    sidebar: migrate
+      ? { ...DEFAULT_SIDEBAR, expanded: [] }
+      : parseSidebar(data.sidebar),
   };
 }
 
@@ -150,11 +199,25 @@ export function purgeExpired(
   return { kept, expired };
 }
 
+/** The extension of a scratchpad file: a Canvas is `excalidraw`. */
+export type ScratchExt = "txt" | "excalidraw";
+
+/** A file in `scratchpads/`, as listed by the storage layer. */
+export interface ScratchFile {
+  id: string;
+  ext: ScratchExt;
+}
+
 /** A file in `closed/`, as listed by the storage layer. */
 export interface ClosedFile {
   id: string;
+  ext: ScratchExt;
   modifiedMs: number;
 }
+
+/** The Kind a scratchpad file holds. */
+export const scratchKind = (ext: ScratchExt): Kind =>
+  ext === "excalidraw" ? "canvas" : "text";
 
 /**
  * Rebuild the workspace from session.json and the files on disk.
@@ -165,7 +228,7 @@ export interface ClosedFile {
  */
 export function restoreWorkspace(
   file: SessionFile | null,
-  scratchpadIds: string[],
+  scratchpads: ScratchFile[],
   freshId: () => string,
   now: number,
   closedFiles: ClosedFile[] | null,
@@ -195,10 +258,10 @@ export function restoreWorkspace(
     known.add(t.id);
     return true;
   });
-  const orphans = [...scratchpadIds]
-    .sort()
-    .filter((id) => !known.has(id))
-    .map(newTabState);
+  const orphans = [...scratchpads]
+    .sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
+    .filter((f) => !known.has(f.id))
+    .map((f) => newTabState(f.id, scratchKind(f.ext)));
   const tabs = [...uniqueTabs, ...orphans];
   const activeId = tabs.some((t) => t.id === base.activeId)
     ? base.activeId
@@ -215,7 +278,7 @@ export function restoreWorkspace(
   const recovered: ClosedEntry[] = (closedFiles ?? [])
     .filter((f) => !mentioned.has(f.id))
     .map((f) => ({
-      tab: newTabState(f.id),
+      tab: newTabState(f.id, scratchKind(f.ext)),
       index: tabs.length,
       closedAt: now,
     }));

@@ -1,3 +1,5 @@
+import type { Kind } from "./kinds";
+
 export type LanguageId =
   | "plaintext"
   | "markdown"
@@ -35,8 +37,16 @@ export interface FileInfo {
   held: HeldReason | null;
 }
 
+export interface SidebarState {
+  open: boolean;
+  width: number;
+  /** Folder keys expanded in the Library tree. */
+  expanded: string[];
+}
+
 export interface TabState {
   id: string;
+  kind: Kind;
   title: string;
   renamed: boolean;
   language: LanguageId;

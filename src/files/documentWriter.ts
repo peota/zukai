@@ -5,7 +5,11 @@ import { onWriteOutcome } from "./fileState";
 export interface DocumentWriterDeps {
   getTab(id: string): TabState | undefined;
   patchFile(id: string, f: FileInfo): void;
-  writeScratchpad(id: string, text: string): Promise<void>;
+  writeScratchpad(
+    id: string,
+    text: string,
+    ext: "txt" | "excalidraw",
+  ): Promise<void>;
   fileWrite(
     path: string,
     text: string,
@@ -73,7 +77,11 @@ export function createDocumentWriter(
     }
     const file = tab.file;
     if (!file) {
-      await deps.writeScratchpad(id, text);
+      await deps.writeScratchpad(
+        id,
+        text,
+        tab.kind === "canvas" ? "excalidraw" : "txt",
+      );
       deps.onWritten?.(id, text);
       return;
     }
