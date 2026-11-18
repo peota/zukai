@@ -13,11 +13,27 @@ import { ensureOneTab, newTabState } from "./workspace";
 export const SESSION_VERSION = 3;
 export const CLOSED_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-export const DEFAULT_SIDEBAR: SidebarState = {
+export const SIDEBAR_MIN_WIDTH = 180;
+export const SIDEBAR_MAX_WIDTH = 480;
+
+export const DEFAULT_SIDEBAR: Readonly<SidebarState> = Object.freeze({
   open: false,
   width: 240,
   expanded: [],
-};
+});
+
+/** A fresh copy of the default sidebar state: never hand out the default. */
+export const defaultSidebar = (): SidebarState => ({
+  ...DEFAULT_SIDEBAR,
+  expanded: [],
+});
+
+/** A sidebar width in whole pixels within 180–480. */
+export function clampSidebarWidth(w: number): number {
+  return Math.round(
+    Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, w)),
+  );
+}
 
 export interface SessionFile {
   version: 3;
@@ -113,10 +129,10 @@ function isClosedEntry(v: unknown): v is ClosedEntry {
 }
 
 function parseSidebar(v: unknown): SidebarState {
-  if (!isObject(v)) return { ...DEFAULT_SIDEBAR, expanded: [] };
+  if (!isObject(v)) return defaultSidebar();
   return {
     open: typeof v.open === "boolean" ? v.open : DEFAULT_SIDEBAR.open,
-    width: isNum(v.width) ? v.width : DEFAULT_SIDEBAR.width,
+    width: isNum(v.width) ? clampSidebarWidth(v.width) : DEFAULT_SIDEBAR.width,
     expanded: Array.isArray(v.expanded)
       ? v.expanded.filter((x): x is string => typeof x === "string")
       : [],
@@ -125,7 +141,7 @@ function parseSidebar(v: unknown): SidebarState {
 
 export function toSessionFile(
   s: WorkspaceState,
-  sidebar: SidebarState = DEFAULT_SIDEBAR,
+  sidebar: SidebarState = defaultSidebar(),
 ): SessionFile {
   return {
     version: SESSION_VERSION,
@@ -179,9 +195,7 @@ export function parseSessionFile(json: string | null): SessionFile | null {
     tabs: tabs.filter(isTabState),
     activeId: data.activeId,
     closed: closed.filter(isClosedEntry),
-    sidebar: migrate
-      ? { ...DEFAULT_SIDEBAR, expanded: [] }
-      : parseSidebar(data.sidebar),
+    sidebar: migrate ? defaultSidebar() : parseSidebar(data.sidebar),
   };
 }
 

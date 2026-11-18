@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { FileError } from "../files/api";
 
 export interface Entry {
@@ -28,10 +29,24 @@ export interface LibraryChanged {
   dirs: string[];
 }
 
+/** A drop from outside onto a Library folder: what was copied. */
+export interface LibraryDropped {
+  dir: string;
+  copied: number;
+  /** Names that couldn't be copied. */
+  failed: string[];
+}
+
+/** An OS drag over the window, in CSS pixels; `null` when it left or dropped. */
+export type DragPoint = { x: number; y: number } | null;
+
 export const libraryRoot = (): Promise<RootState> => invoke("library_root");
 export const libraryUseDefault = (): Promise<RootState> =>
   invoke("library_use_default");
 export const libraryChoose = (): Promise<RootState> => invoke("library_choose");
+/** Creates the stored root's folder again ("Create it again"). */
+export const libraryRecreate = (): Promise<RootState> =>
+  invoke("library_recreate");
 export const libraryList = (dir: string): Promise<Entry[]> =>
   invoke("library_list", { dir });
 export const libraryCreateFolder = (
@@ -58,8 +73,36 @@ export const libraryReveal = (path: string): Promise<void> =>
 export const librarySearch = (query: string): Promise<SearchResult> =>
   invoke("library_search", { query });
 export const libraryWatch = (): Promise<void> => invoke("library_watch");
+/** A new empty `stem.ext` (or `stem (2).ext`…) in `parent`, to save into. */
+export const libraryReserve = (
+  parent: string,
+  stem: string,
+  ext: string,
+): Promise<string> => invoke("library_reserve", { parent, stem, ext });
+/** The folder an OS drag is over: a drop then copies into it. */
+export const librarySetDropTarget = (dir: string | null): Promise<void> =>
+  invoke("library_set_drop_target", { dir });
+/** Rebuilds the name index if it is older than 30 s (on window focus). */
+export const libraryResync = (): Promise<boolean> => invoke("library_resync");
 
 export const onLibraryChanged = (
   cb: (e: LibraryChanged) => void,
 ): Promise<UnlistenFn> =>
   listen<LibraryChanged>("zukai://library-changed", (e) => cb(e.payload));
+
+export const onLibraryDropped = (
+  cb: (e: LibraryDropped) => void,
+): Promise<UnlistenFn> =>
+  listen<LibraryDropped>("zukai://library-dropped", (e) => cb(e.payload));
+
+/** OS drags over the window (Rust receives the drop itself). */
+export const onDragDrop = (cb: (p: DragPoint) => void): Promise<UnlistenFn> =>
+  getCurrentWebview().onDragDropEvent((e) => {
+    const p = e.payload;
+    if (p.type === "enter" || p.type === "over") {
+      const scale = window.devicePixelRatio || 1;
+      cb({ x: p.position.x / scale, y: p.position.y / scale });
+    } else {
+      cb(null);
+    }
+  });

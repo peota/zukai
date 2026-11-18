@@ -85,6 +85,14 @@ pub(crate) fn use_root(g: &Grants, data: &Path, dir: &Path) -> Result<RootState,
     })
 }
 
+/// "Create it again": makes the stored root's folder again (it was deleted
+/// or renamed) and grants it. Only the path Rust stored is ever created.
+pub(crate) fn recreate_root(g: &Grants, data: &Path) -> Result<RootState, FileError> {
+    let stored = root::load_root(data).ok_or_else(|| other("no Library folder chosen"))?;
+    fs::create_dir_all(&stored)?;
+    use_root(g, data, &stored)
+}
+
 /// A folder inside the root (or the root itself).
 fn folder(g: &Grants, p: &str) -> Result<PathBuf, FileError> {
     let dir = g.in_root(Path::new(p))?;
@@ -364,6 +372,12 @@ pub async fn library_use_default(app: AppHandle) -> Result<RootState, FileError>
         use_root(g, &data, &dir)
     })
     .await
+}
+
+#[tauri::command]
+pub async fn library_recreate(app: AppHandle) -> Result<RootState, FileError> {
+    let handle = app.clone();
+    blocking(app, move |g| recreate_root(g, &data_dir(&handle)?)).await
 }
 
 /// The native folder dialog. It only points Zukai at the chosen folder;
@@ -817,6 +831,21 @@ mod tests {
         );
         assert!(matches!(out, Err(FileError::Exists)));
         assert_eq!((calls, released), (1, false));
+    }
+
+    #[test]
+    fn recreate_makes_the_stored_root_again() {
+        let (_tmp, g, _root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        assert!(recreate_root(&g, data.path()).is_err(), "nothing stored");
+        let lib = outside.join("lib");
+        fs::create_dir(&lib).unwrap();
+        use_root(&g, data.path(), &lib).unwrap();
+        fs::remove_dir(&lib).unwrap();
+        let state = recreate_root(&Grants::default(), data.path()).unwrap();
+        assert!(state.available);
+        assert_eq!(state.root.as_deref(), Some(s(&lib)));
+        assert!(lib.is_dir());
     }
 
     #[test]

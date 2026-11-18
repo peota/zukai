@@ -83,8 +83,15 @@ export const fileFingerprintQuick = (
 export const filePickOpen = (): Promise<string[]> =>
   invoke<string[]>("file_pick_open");
 
-export const filePickSave = (suggestedName: string): Promise<string | null> =>
-  invoke<string | null>("file_pick_save", { suggestedName });
+/** `directory`: where the dialog starts (the Library root for Move to Library…). */
+export const filePickSave = (
+  suggestedName: string,
+  directory?: string,
+): Promise<string | null> =>
+  invoke<string | null>("file_pick_save", {
+    suggestedName,
+    directory: directory ?? null,
+  });
 
 export const shadowWrite = (id: string, text: string): Promise<void> =>
   invoke<void>("shadow_write", { id, text });

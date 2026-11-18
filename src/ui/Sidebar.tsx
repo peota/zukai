@@ -9,21 +9,19 @@ import { LibraryTree, type PendingTrash } from "./LibraryTree";
 import { Menu, type MenuItem } from "./Menu";
 import { entryBlocked } from "./libraryEntries";
 import { useFolderDrag } from "./useFolderDrag";
+import {
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  clampSidebarWidth as clampWidth,
+} from "../model/session";
 
 export type { InboxItem } from "./Inbox";
 
 export type NewItem = "folder" | "note" | "text" | "canvas";
 
-export const SIDEBAR_MIN_WIDTH = 180;
-export const SIDEBAR_MAX_WIDTH = 480;
+export { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, clampWidth };
 /** Keyboard step of the width handle. */
 const WIDTH_STEP = 16;
-
-export function clampWidth(w: number): number {
-  return Math.round(
-    Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, w)),
-  );
-}
 
 export interface SidebarProps {
   open: boolean;
