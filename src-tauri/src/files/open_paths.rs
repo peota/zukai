@@ -104,8 +104,20 @@ fn queue_or_emit(app: &AppHandle, paths: Vec<PathBuf>) {
     }
 }
 
-/// Files dropped on the window.
+/// Paths dropped on the window. Over a Library folder (the UI reports the
+/// one under the pointer) they are copied into it; anywhere else they open.
 pub fn emit_dropped(app: &AppHandle, paths: Vec<PathBuf>) {
+    let target = app.state::<crate::library::commands::DropTarget>().take();
+    match target {
+        Some(dir) if !paths.is_empty() => {
+            crate::library::commands::copy_dropped(app, dir, paths);
+        }
+        _ => emit_dropped_paths(app, paths),
+    }
+}
+
+/// Files dropped on the window, opened as Tabs.
+pub fn emit_dropped_paths(app: &AppHandle, paths: Vec<PathBuf>) {
     emit_paths(app, paths);
 }
 

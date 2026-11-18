@@ -11,10 +11,12 @@ use super::{ops, root};
 use crate::files::FileError;
 use crate::files::commands::{blocking, path_string};
 use crate::files::grants::{Grants, key, win32_alias};
+use crate::files::watch::{Watcher as FileWatcher, app_sink as file_sink};
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
@@ -192,6 +194,134 @@ pub(crate) fn copy_to(g: &Grants, srcs: &[String], dest_dir: &str) -> Vec<CopyRe
         .collect()
 }
 
+/// A new empty file named `stem.ext` or `stem (2).ext`… in `parent`, for
+/// an Inbox item dropped on a folder (the UI then saves into it).
+pub(crate) fn reserve(
+    g: &Grants,
+    parent: &str,
+    stem: &str,
+    ext: &str,
+) -> Result<String, FileError> {
+    path_string(&ops::reserve_file(&folder(g, parent)?, stem, ext)?)
+}
+
+/// True for the error Windows gives when a folder can't be renamed or moved
+/// because a handle is open inside it (such as a watcher on the folder of an
+/// open File): `ERROR_ACCESS_DENIED` or `ERROR_SHARING_VIOLATION`.
+fn held_open(e: &FileError) -> bool {
+    #[cfg(windows)]
+    if let FileError::Io(io) = e {
+        return matches!(io.raw_os_error(), Some(5 | 32));
+    }
+    let _ = e;
+    false
+}
+
+/// Runs `op`; if it failed because a handle is open (Windows), runs
+/// `release` to close Zukai's own handles and tries once more.
+pub(crate) fn retry_released<T>(
+    mut op: impl FnMut() -> Result<T, FileError>,
+    release: impl FnOnce(),
+) -> Result<T, FileError> {
+    match op() {
+        Err(e) if held_open(&e) => {
+            release();
+            op()
+        }
+        other => other,
+    }
+}
+
+/// `op` (a rename or move), retried once with the File and Library
+/// watchers dropped; they are started again afterwards either way (the UI
+/// then replaces the File set with the paths that moved).
+fn with_watchers_released<T>(
+    app: &AppHandle,
+    g: &Grants,
+    op: impl FnMut() -> Result<T, FileError>,
+) -> Result<T, FileError> {
+    let mut paused: Option<Vec<PathBuf>> = None;
+    let out = retry_released(op, || {
+        app.state::<LibraryWatcher>().pause();
+        paused = Some(app.state::<FileWatcher>().suspend());
+    });
+    if let Some(files) = paused {
+        let _ = app.state::<FileWatcher>().restore(files, file_sink(app));
+        let ticket = app.state::<LibraryWatcher>().ticket();
+        let _ = watch_root(app, ticket, g.root());
+    }
+    out
+}
+
+/// The Library folder an OS drag is over, as the UI last reported it.
+#[derive(Default)]
+pub struct DropTarget(Mutex<Option<String>>);
+
+impl DropTarget {
+    pub fn set(&self, dir: Option<String>) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = dir;
+    }
+
+    /// The target of a drop that just happened (cleared for the next drag).
+    pub fn take(&self) -> Option<String> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+}
+
+pub const LIBRARY_DROPPED_EVENT: &str = "zukai://library-dropped";
+
+/// What a drop onto a Library folder did.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Dropped {
+    pub dir: String,
+    pub copied: usize,
+    /// The names that couldn't be copied.
+    pub failed: Vec<String>,
+}
+
+/// Copies paths dropped from outside into `dir`, a Library folder. The
+/// sources come from the OS drop (never from the webview), so they need no
+/// grant; the destination must be inside the root.
+pub(crate) fn drop_into(g: &Grants, dir: &str, paths: &[PathBuf]) -> Result<Dropped, FileError> {
+    let dest = folder(g, dir)?;
+    let results = ops::copy_into(paths, &dest);
+    let failed = paths
+        .iter()
+        .zip(&results)
+        .filter(|(_, r)| r.is_err())
+        .map(|(p, _)| {
+            p.file_name()
+                .map_or_else(|| p.to_string_lossy(), |n| n.to_string_lossy())
+                .into_owned()
+        })
+        .collect();
+    Ok(Dropped {
+        dir: path_string(&dest)?,
+        copied: results.iter().filter(|r| r.is_ok()).count(),
+        failed,
+    })
+}
+
+/// A drop on the window while the UI reported a Library folder under the
+/// pointer: copy into it (off the event thread) and tell the UI. A target
+/// that is no longer a Library folder opens the files instead.
+pub fn copy_dropped(app: &AppHandle, dir: String, paths: Vec<PathBuf>) {
+    let app = app.clone();
+    std::thread::spawn(
+        move || match drop_into(&app.state::<Grants>(), &dir, &paths) {
+            Ok(done) => {
+                let change = super::watch::LibraryChange {
+                    dirs: vec![done.dir.clone()],
+                };
+                let _ = app.emit(LIBRARY_CHANGED_EVENT, change);
+                let _ = app.emit(LIBRARY_DROPPED_EVENT, done);
+            }
+            Err(_) => crate::files::open_paths::emit_dropped_paths(&app, paths),
+        },
+    );
+}
+
 pub(crate) fn trash(g: &Grants, path: &str) -> Result<(), FileError> {
     ops::trash_entry(&entry(g, path)?)
 }
@@ -285,7 +415,11 @@ pub async fn library_rename(
     path: String,
     new_name: String,
 ) -> Result<String, FileError> {
-    blocking(app, move |g| rename(g, &path, &new_name)).await
+    let handle = app.clone();
+    blocking(app, move |g| {
+        with_watchers_released(&handle, g, || rename(g, &path, &new_name))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -294,7 +428,39 @@ pub async fn library_move(
     path: String,
     dest_dir: String,
 ) -> Result<String, FileError> {
-    blocking(app, move |g| move_to(g, &path, &dest_dir)).await
+    let handle = app.clone();
+    blocking(app, move |g| {
+        with_watchers_released(&handle, g, || move_to(g, &path, &dest_dir))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn library_reserve(
+    app: AppHandle,
+    parent: String,
+    stem: String,
+    ext: String,
+) -> Result<String, FileError> {
+    blocking(app, move |g| reserve(g, &parent, &stem, &ext)).await
+}
+
+/// The folder an OS drag is over (`None`: not over one). A drop then copies
+/// into it instead of opening the files.
+#[tauri::command]
+pub fn library_set_drop_target(app: AppHandle, dir: Option<String>) {
+    app.state::<DropTarget>().set(dir);
+}
+
+/// How old the index may be before a focus re-sync rebuilds it.
+pub const RESYNC_AGE: Duration = Duration::from_secs(30);
+
+/// The window regained focus: rebuild the index if its build is older than
+/// `RESYNC_AGE` (Windows drops watcher events when its buffer overflows).
+/// Returns whether a rebuild started.
+#[tauri::command]
+pub fn library_resync(app: AppHandle) -> bool {
+    app.state::<NameIndex>().rebuild_if_older(RESYNC_AGE)
 }
 
 #[tauri::command]
@@ -550,6 +716,107 @@ mod tests {
         assert_eq!(state.root.as_deref(), Some(s(&gone)));
         assert!(!state.available);
         assert!(!gone.exists());
+    }
+
+    #[test]
+    fn reserve_stays_in_the_root_and_never_replaces() {
+        let (_tmp, g, root, outside) = library();
+        fs::write(root.join("Idea.md"), "keep").unwrap();
+        let p = reserve(&g, s(&root), "Idea", "md").unwrap();
+        assert_eq!(p, s(&root.join("Idea (2).md")));
+        assert_eq!(fs::read(root.join("Idea.md")).unwrap(), b"keep");
+        assert!(matches!(
+            reserve(&g, s(&outside), "Idea", "md"),
+            Err(FileError::NotGranted)
+        ));
+    }
+
+    #[test]
+    fn drop_into_copies_ungranted_sources_into_a_library_folder() {
+        let (_tmp, g, root, outside) = library();
+        let png = outside.join("pic.png");
+        fs::write(&png, "png").unwrap();
+        let dest = root.join("proj");
+        fs::create_dir(&dest).unwrap();
+        let missing = outside.join("gone.png");
+        let done = drop_into(&g, s(&dest), &[png.clone(), missing]).unwrap();
+        assert_eq!(done.dir, s(&dest));
+        assert_eq!(done.copied, 1);
+        assert_eq!(done.failed, ["gone.png"]);
+        assert_eq!(fs::read(dest.join("pic.png")).unwrap(), b"png");
+        // The source stays where it was, and stays ungranted.
+        assert!(png.exists());
+        assert!(g.check(s(&png)).is_err());
+        // Never into a folder outside the root.
+        assert!(matches!(
+            drop_into(&g, s(&outside), std::slice::from_ref(&png)),
+            Err(FileError::NotGranted)
+        ));
+    }
+
+    #[test]
+    fn drop_target_is_taken_once() {
+        let t = DropTarget::default();
+        t.set(Some("x".into()));
+        assert_eq!(t.take().as_deref(), Some("x"));
+        assert_eq!(t.take(), None);
+    }
+
+    /// Windows refuses to rename a folder while a handle is open inside it.
+    /// The File watcher holds one on each open File's folder: dropping it
+    /// and retrying once lets the rename through.
+    #[cfg(windows)]
+    #[test]
+    fn rename_retries_after_dropping_watchers() {
+        use crate::files::watch::Sink as FileSink;
+        let (_tmp, g, root, _outside) = library();
+        let sub = root.join("proj").join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        let file = sub.join("a.md");
+        fs::write(&file, "a").unwrap();
+        let files = FileWatcher::default();
+        let file_sink: FileSink = Arc::new(|_| {});
+        files.set(vec![file.clone()], file_sink).unwrap();
+        let lib = LibraryWatcher::default();
+        let index = NameIndex::default();
+        let lib_sink: Sink = Arc::new(|_| {});
+        lib.set(Some(root.clone()), &index, lib_sink).unwrap();
+
+        let proj = s(&root.join("proj")).to_owned();
+        // The premise: with the watchers running, Windows refuses.
+        let first = rename(&g, &proj, "renamed");
+        assert!(
+            first.as_ref().is_err_and(held_open),
+            "expected a held-open refusal, got {first:?}"
+        );
+
+        let mut released = false;
+        let out = retry_released(
+            || rename(&g, &proj, "renamed"),
+            || {
+                files.suspend();
+                lib.pause();
+                released = true;
+            },
+        );
+        assert!(released);
+        assert_eq!(out.unwrap(), s(&root.join("renamed")));
+        assert!(root.join("renamed").join("sub").join("a.md").is_file());
+    }
+
+    #[test]
+    fn retry_released_only_retries_a_held_open_error() {
+        let mut calls = 0;
+        let mut released = false;
+        let out: Result<(), FileError> = retry_released(
+            || {
+                calls += 1;
+                Err(FileError::Exists)
+            },
+            || released = true,
+        );
+        assert!(matches!(out, Err(FileError::Exists)));
+        assert_eq!((calls, released), (1, false));
     }
 
     #[test]

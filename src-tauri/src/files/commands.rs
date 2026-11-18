@@ -150,12 +150,18 @@ pub async fn file_pick_save(
     app: AppHandle,
     window: WebviewWindow,
     suggested_name: String,
+    directory: Option<String>,
 ) -> Result<Option<String>, FileError> {
-    let dialog = window
+    let mut dialog = window
         .dialog()
         .file()
         .set_parent(&window)
         .set_file_name(suggested_name);
+    // Only where the dialog starts: the user still picks, and the pick is
+    // what gets granted.
+    if let Some(dir) = directory.filter(|d| Path::new(d).is_absolute()) {
+        dialog = dialog.set_directory(dir);
+    }
     blocking(app, move |g| {
         dialog
             .blocking_save_file()
