@@ -5,6 +5,8 @@
 //! The command bodies are plain functions over `&Grants` so the checks are
 //! testable without an app.
 
+use super::index::{NameIndex, SEARCH_LIMIT, SearchResult};
+use super::watch::{LIBRARY_CHANGED_EVENT, LibraryWatcher, Sink};
 use super::{ops, root};
 use crate::files::FileError;
 use crate::files::commands::{blocking, path_string};
@@ -12,7 +14,8 @@ use crate::files::grants::{Grants, key, win32_alias};
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, WebviewWindow};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
@@ -314,6 +317,48 @@ pub async fn library_reveal(app: AppHandle, path: String) -> Result<(), FileErro
     blocking(app, move |g| {
         let target = reveal_target(g, &path)?;
         tauri_plugin_opener::reveal_item_in_dir(&target).map_err(|e| other(&e.to_string()))
+    })
+    .await
+}
+
+/// (Re)starts the Library watcher and the name index for `root` (`None`
+/// stops both). Blocking: setting up a recursive watch walks the tree on
+/// some platforms.
+fn watch_root(app: &AppHandle, ticket: u64, root: Option<PathBuf>) -> Result<(), FileError> {
+    let sink: Sink = {
+        let app = app.clone();
+        Arc::new(move |change| {
+            let _ = app.emit(LIBRARY_CHANGED_EVENT, change);
+        })
+    };
+    app.state::<LibraryWatcher>()
+        .set_ordered(ticket, root, &app.state::<NameIndex>(), sink)
+}
+
+/// Watches and indexes the current root, replacing any earlier watcher and
+/// index. The UI calls it after `library_root`, `library_use_default` and
+/// `library_choose`.
+#[tauri::command]
+pub async fn library_watch(app: AppHandle) -> Result<(), FileError> {
+    let ticket = app.state::<LibraryWatcher>().ticket();
+    let handle = app.clone();
+    blocking(app, move |g| watch_root(&handle, ticket, g.root())).await
+}
+
+/// Files and folders anywhere in the Library whose name contains `query`.
+/// The first search for a root starts the index (and its watcher); until
+/// the walk is done the result is partial, with `ready: false`.
+#[tauri::command]
+pub async fn library_search(app: AppHandle, query: String) -> Result<SearchResult, FileError> {
+    let handle = app.clone();
+    blocking(app, move |g| {
+        let index = handle.state::<NameIndex>();
+        let root = g.root();
+        if root.is_some() && index.root() != root {
+            let ticket = handle.state::<LibraryWatcher>().ticket();
+            watch_root(&handle, ticket, root)?;
+        }
+        Ok(index.search(&query, SEARCH_LIMIT))
     })
     .await
 }
