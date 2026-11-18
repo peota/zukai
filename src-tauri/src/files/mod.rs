@@ -2,6 +2,7 @@
 
 pub mod commands;
 pub mod encoding;
+pub mod exec;
 pub mod fingerprint;
 pub mod grants;
 pub mod io;

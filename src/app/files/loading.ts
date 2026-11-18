@@ -74,7 +74,9 @@ export function useLoading(c: FilesContext) {
 
   const readFileText = useCallback(
     async (id: string, file: FileInfo): Promise<string> => {
-      if (file.held !== null && file.held !== "readonly") {
+      // An Image has no shadow: it always reads its File.
+      const image = tabOf(id)?.kind === "image";
+      if (file.held !== null && file.held !== "readonly" && !image) {
         const kept = await readShadow(id, file);
         if (kept === undefined) {
           // It stays held as it was (that is what the Session keeps), and
@@ -170,7 +172,7 @@ export function useLoading(c: FilesContext) {
       const shadowed = new Set(ids);
       const holdIfShadowed = async (tab: TabState): Promise<TabState> => {
         const file = tab.file;
-        if (!file || !shadowed.has(tab.id)) return tab;
+        if (!file || !shadowed.has(tab.id) || tab.kind === "image") return tab;
         if (file.held !== null && file.held !== "readonly") return tab;
         let gone = false;
         try {

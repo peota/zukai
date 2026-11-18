@@ -7,7 +7,7 @@ import { PlusIcon, SearchIcon } from "./icons";
 import { Inbox, type InboxItem } from "./Inbox";
 import { LibraryTree, type PendingTrash } from "./LibraryTree";
 import { Menu, type MenuItem } from "./Menu";
-import { entryBlocked } from "./libraryEntries";
+import { entryBlocked, revealLabel } from "./libraryEntries";
 import { useFolderDrag } from "./useFolderDrag";
 import {
   SIDEBAR_MAX_WIDTH,
@@ -63,11 +63,6 @@ export interface SidebarProps {
   onLeave(): void;
   /** Decides the Windows-only name rule and the "Show in …" label. */
   platform?: Platform;
-}
-
-function revealLabel(p: Platform): string {
-  if (p === "windows") return "Show in Explorer";
-  return p === "mac" ? "Show in Finder" : "Show in File Manager";
 }
 
 /** Focuses the Library tree (Mod+Shift+E); false when the sidebar is closed. */

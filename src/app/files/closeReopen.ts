@@ -34,7 +34,8 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
     // shadow write below covers what it held); later ones skip closing Tabs.
     (id: string) =>
       lock(id, async () => {
-        const file = tabOf(id)?.file;
+        const tab = tabOf(id);
+        const file = tab?.file;
         if (!file) return;
         loadsRef.current.delete(id);
         if (keptShadows.has(id)) {
@@ -42,7 +43,13 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
           markUnreadable(id, false);
           return;
         }
-        if (file.held === null || file.held === "readonly") {
+        // An Image never has text of its own to keep (and a Missing one
+        // reopens from the disk, not from a lossy decode).
+        if (
+          file.held === null ||
+          file.held === "readonly" ||
+          tab.kind === "image"
+        ) {
           // Its text is on disk: nothing to keep, and the entry never expires.
           if (file.held !== null) patchFile(id, { ...file, held: null });
           return dropShadow(id);
@@ -80,7 +87,10 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
       let text: string | null = null;
       let info = file;
       let disk: string | undefined;
-      if (file.held !== null && file.held !== "readonly") {
+      const image =
+        stateRef.current.closed.find((e) => e.tab.id === id)?.tab.kind ===
+        "image";
+      if (file.held !== null && file.held !== "readonly" && !image) {
         const kept = await readShadow(id, file);
         // Unreadable: the entry stays, with its shadow, for a later try.
         if (kept === undefined) {

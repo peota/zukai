@@ -6,10 +6,11 @@ import {
   blocksBrowserKey,
   isEditorTarget,
 } from "./app/browserGuard";
-import type { LanguageId } from "./model/types";
+import type { ImageInfo, LanguageId } from "./model/types";
+import { isUnder, revealLabel } from "./ui/libraryEntries";
 import { EditorHost } from "./editor/EditorHost";
 import { CanvasHost } from "./canvas/CanvasHost";
-import { ImageHost, type ImageInfo } from "./image/ImageHost";
+import { ImageHost } from "./image/ImageHost";
 import type { FormatResult } from "./editor/jsonFormat";
 import { TabBar } from "./ui/TabBar";
 import { StatusBar } from "./ui/StatusBar";
@@ -30,6 +31,7 @@ const platform = detectPlatform();
 const keyOf = (p: string) => pathKey(p, platform);
 const PLATFORM_ENDING = platform === "windows" ? "crlf" : "lf";
 const REOPEN_HINT = platform === "mac" ? "⇧⌘T" : "Ctrl+Shift+T";
+const REVEAL_LABEL = revealLabel(platform);
 const BEAUTIFY_HINT = platform === "mac" ? "⇧⌥F" : "Shift+Alt+F";
 
 interface Cursor {
@@ -91,15 +93,6 @@ export default function App() {
     () => w.state.tabs.filter((t) => t.kind === "text"),
     [w.state.tabs],
   );
-  /** The Image Tab's size and format, once its image has loaded. */
-  const [imageInfo, setImageInfo] = useState<{
-    id: string;
-    info: ImageInfo;
-  } | null>(null);
-  const onImageInfo = useCallback(
-    (info: ImageInfo) => setImageInfo({ id: activeId, info }),
-    [activeId],
-  );
   /** A reload of the Image Tab from disk (a newer replace) reads it again. */
   const imageReloadSeq = isImage
     ? w.replaceRequests.reduce(
@@ -107,6 +100,27 @@ export default function App() {
         0,
       )
     : 0;
+  /**
+   * The Image Tab's size and format, for the image it shows now: a reload
+   * or another Tab starts with none until its image loads.
+   */
+  const [imageInfo, setImageInfo] = useState<{
+    id: string;
+    seq: number;
+    info: ImageInfo | null;
+  } | null>(null);
+  const onImageInfo = useCallback(
+    (info: ImageInfo | null) =>
+      setImageInfo({ id: activeId, seq: imageReloadSeq, info }),
+    [activeId, imageReloadSeq],
+  );
+  const shownImageInfo =
+    isImage &&
+    active.file?.held !== "missing" &&
+    imageInfo?.id === activeId &&
+    imageInfo.seq === imageReloadSeq
+      ? (imageInfo.info ?? undefined)
+      : undefined;
   // An Image Tab's text is never shown, but loading it records the File's
   // fingerprint and state, so disk changes reach it (and it can go Missing).
   const { loadContent } = w;
@@ -293,6 +307,12 @@ export default function App() {
                 ? () => void openWithDefault(active.file!.path)
                 : undefined
             }
+            onReveal={
+              active.file && lib.root && isUnder(active.file.path, lib.root)
+                ? () => lib.reveal(active.file!.path)
+                : undefined
+            }
+            revealLabel={REVEAL_LABEL}
           />
         )}
         <main className="min-h-0 flex-1 bg-editor">
@@ -345,9 +365,7 @@ export default function App() {
           language={active?.language ?? "plaintext"}
           saveStatus={w.saveStatus}
           kindLabel={isCanvas ? "Canvas" : isImage ? "Image" : undefined}
-          image={
-            isImage && imageInfo?.id === activeId ? imageInfo.info : undefined
-          }
+          image={shownImageInfo}
           onPickLanguage={() => (picking ? closePicker() : setPicking(true))}
           platformLineEnding={PLATFORM_ENDING}
           file={

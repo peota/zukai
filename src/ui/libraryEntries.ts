@@ -1,4 +1,11 @@
+import type { Platform } from "../app/shortcuts";
 import type { Entry } from "../library/api";
+
+/** "Show in Explorer" / "Show in Finder": the OS file manager's name. */
+export function revealLabel(p: Platform): string {
+  if (p === "windows") return "Show in Explorer";
+  return p === "mac" ? "Show in Finder" : "Show in File Manager";
+}
 
 /**
  * Why Zukai can't act on an entry (open, rename, move, delete), or null.

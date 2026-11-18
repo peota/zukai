@@ -7,6 +7,7 @@
 
 use super::FileError;
 use super::encoding::FileFormat;
+use super::exec;
 use super::fingerprint::{self, Fingerprint};
 use super::grants::{self, Grants};
 use super::io::{self, FileRead, WriteOutcome};
@@ -210,31 +211,12 @@ pub async fn file_read_bytes(app: AppHandle, path: String) -> Result<Response, F
     .await
 }
 
-/// Never launched by the opener: they would run or install something. The
-/// same list as `EXEC_EXTS` in `src/model/kinds.ts`, which only hides the
-/// button; this is the check that counts.
-const EXEC_EXTS: [&str; 12] = [
-    "exe", "com", "msi", "bat", "cmd", "ps1", "vbs", "lnk", "app", "desktop", "sh", "command",
-];
-
-/// True if `p`'s extension is in `EXEC_EXTS` (any case). Windows ignores
-/// trailing dots and spaces in a name, so `a.exe.` counts as `a.exe`.
-fn is_exec(p: &Path) -> bool {
-    let Some(name) = p.file_name() else {
-        return false;
-    };
-    let name = name.to_string_lossy();
-    let name = name.trim_end_matches(['.', ' ']);
-    name.rsplit_once('.')
-        .is_some_and(|(_, ext)| EXEC_EXTS.iter().any(|x| x.eq_ignore_ascii_case(ext)))
-}
-
 fn is_link(p: &Path) -> bool {
     std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink())
 }
 
 /// What `open_default` may hand to the OS: the granted regular File `path`
-/// names, or `None` if it would run something. A link (as the path given or
+/// names, or `None` if it would run something (see `exec`). A link (as the path given or
 /// as what it was granted as) is never followed, and a folder never opened.
 pub(crate) fn open_target(g: &Grants, path: &str) -> Result<Option<PathBuf>, FileError> {
     let target = g.check(path)?;
@@ -244,7 +226,7 @@ pub(crate) fn open_target(g: &Grants, path: &str) -> Result<Option<PathBuf>, Fil
     if !std::fs::metadata(&target)?.is_file() {
         return Err(FileError::NotAFile);
     }
-    if is_exec(Path::new(path)) || is_exec(&target) {
+    if exec::exec_name(Path::new(path)) || exec::executable(&target) {
         return Ok(None);
     }
     Ok(Some(target))
@@ -323,6 +305,21 @@ mod tests {
             "j.desktop",
             "k.sh",
             "l.command",
+            // Beyond the spec's floor: what Windows, macOS and Linux also run.
+            "m.scr",
+            "n.PIF",
+            "o.cpl",
+            "p.jar",
+            "q.hta",
+            "r.js",
+            "s.wsf",
+            "t.reg",
+            "u.url",
+            "v.appref-ms",
+            "w.py",
+            "x.pkg",
+            "y.AppImage",
+            "z.run",
         ] {
             let p = root.join(name);
             fs::write(&p, "x").unwrap();
@@ -331,9 +328,17 @@ mod tests {
                 "{name} must be refused"
             );
         }
-        // Windows drops trailing dots and spaces: still the executable.
-        let dotted = format!("{}.", s(&root.join("a.exe")));
-        assert!(!matches!(open_target(&g, &dotted), Ok(Some(_))));
+        // Windows drops trailing dots and spaces: such a spelling is an alias
+        // there (refused by the grants); elsewhere it is still executable.
+        let dotted = format!("{}.", s(&root.join("dot.exe")));
+        fs::write(&dotted, "x").unwrap();
+        #[cfg(windows)]
+        assert!(matches!(
+            open_target(&g, &dotted),
+            Err(FileError::NotGranted)
+        ));
+        #[cfg(unix)]
+        assert!(matches!(open_target(&g, &dotted), Ok(None)));
 
         let pdf = root.join("doc.pdf");
         fs::write(&pdf, "%PDF").unwrap();
@@ -356,14 +361,11 @@ mod tests {
         assert_eq!(open_target(&g, s(&secret)).unwrap(), Some(secret.clone()));
     }
 
-    /// A link as the last part of the path is never opened, even one that
-    /// stays in the Library.
+    /// A folder link as the path is never opened, even one that stays in the
+    /// Library.
     #[test]
-    fn open_default_refuses_links() {
-        let (_tmp, g, root, outside) = library();
-        let target = root.join("real.pdf");
-        fs::write(&target, "x").unwrap();
-        fs::write(outside.join("out.pdf"), "o").unwrap();
+    fn open_default_refuses_folder_links() {
+        let (_tmp, g, root, _outside) = library();
         // A folder link that stays in the Library (a junction on Windows).
         fs::create_dir(root.join("sub")).unwrap();
         let dir_link = root.join("dir-link");
@@ -375,7 +377,20 @@ mod tests {
             open_target(&g, s(&dir_link)),
             Err(FileError::NotGranted)
         ));
+    }
 
+    /// A file link as the last part of the path is never opened, whether it
+    /// stays in the Library or leads out.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "file symlinks need Developer Mode or elevation on Windows"
+    )]
+    fn open_default_refuses_file_links() {
+        let (_tmp, g, root, outside) = library();
+        let target = root.join("real.pdf");
+        fs::write(&target, "x").unwrap();
+        fs::write(outside.join("out.pdf"), "o").unwrap();
         let link = root.join("link.pdf");
         let out_link = root.join("out-link.pdf");
         #[cfg(unix)]
@@ -385,15 +400,39 @@ mod tests {
         }
         #[cfg(windows)]
         {
-            // File symlinks need Developer Mode or elevation on Windows.
-            if std::os::windows::fs::symlink_file(&target, &link).is_err() {
-                eprintln!("skipped: can't create file symlinks here");
-                return;
-            }
+            std::os::windows::fs::symlink_file(&target, &link).unwrap();
             std::os::windows::fs::symlink_file(outside.join("out.pdf"), &out_link).unwrap();
         }
-        assert!(open_target(&g, s(&link)).is_err());
-        assert!(open_target(&g, s(&out_link)).is_err());
+        assert!(matches!(
+            open_target(&g, s(&link)),
+            Err(FileError::NotGranted)
+        ));
+        assert!(matches!(
+            open_target(&g, s(&out_link)),
+            Err(FileError::NotGranted)
+        ));
+    }
+
+    /// On Unix an execute bit means the desktop may run it: refused,
+    /// whatever its name.
+    #[cfg(unix)]
+    #[test]
+    fn open_default_refuses_executable_bit() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_tmp, g, root, _outside) = library();
+        let tool = root.join("tool");
+        fs::write(
+            &tool,
+            "#!/bin/sh
+",
+        )
+        .unwrap();
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(matches!(open_target(&g, s(&tool)), Ok(None)));
+        let notes = root.join("notes.txt");
+        fs::write(&notes, "n").unwrap();
+        fs::set_permissions(&notes, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(open_target(&g, s(&notes)).unwrap(), Some(notes.clone()));
     }
 
     #[test]
