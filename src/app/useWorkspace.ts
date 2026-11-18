@@ -226,8 +226,8 @@ export function useWorkspace(): Workspace {
   const keepTitle = useCallback(
     (id: string, text: string) => {
       const tab = stateRef.current.tabs.find((t) => t.id === id);
-      // A File's Title is its filename.
-      if (!tab || tab.renamed || tab.file) return;
+      // A File's Title is its filename; a Canvas's text is JSON, no Title.
+      if (!tab || tab.renamed || tab.file || tab.kind !== "text") return;
       const title = deriveTitle(text);
       if (title !== tab.title) {
         commit(ws.updateTab(stateRef.current, id, { title }));
@@ -290,9 +290,12 @@ export function useWorkspace(): Workspace {
         await renameFile(id, name);
         return;
       }
-      // An empty name falls back to the automatic Title, which needs the text.
-      const text = await loadContent(id);
-      commit(ws.rename(stateRef.current, id, name, deriveTitle(text)));
+      // An empty name falls back to the automatic Title, which needs the
+      // text (a Canvas has none: it's "Untitled").
+      const tab = stateRef.current.tabs.find((t) => t.id === id);
+      const derived =
+        tab?.kind === "text" ? deriveTitle(await loadContent(id)) : "Untitled";
+      commit(ws.rename(stateRef.current, id, name, derived));
     },
     [commit, loadContent, renameFile],
   );

@@ -15,7 +15,7 @@ export interface FileBarProps {
   onConvertToUtf8(): void;
 }
 
-type Kind = "warn" | "err" | "info";
+export type BarKind = "warn" | "err" | "info";
 
 /** The thin bar between the tab bar and the editor for a held File. */
 export function FileBar(p: FileBarProps) {
@@ -93,18 +93,19 @@ export function FileBar(p: FileBarProps) {
   }
 }
 
-const KIND_CLASS: Record<Kind, string> = {
+const KIND_CLASS: Record<BarKind, string> = {
   warn: "bg-bar-warn-bg text-bar-warn-fg",
   err: "bg-bar-err-bg text-bar-err-fg",
   info: "bg-bar-info-bg text-bar-info-fg",
 };
 
-function Bar({
+/** The thin notice bar above an editor (held Files, invalid canvases). */
+export function Bar({
   kind,
   children,
   actions,
 }: {
-  kind: Kind;
+  kind: BarKind;
   children: ReactNode;
   actions?: ReactNode;
 }) {

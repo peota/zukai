@@ -59,13 +59,21 @@ const EXTENSION_FOR: Partial<Record<LanguageId, string>> = {
   shell: "sh",
 };
 
-/** The name a Save As dialog suggests for a Scratchpad. */
-export function suggestedName(title: string, language: LanguageId): string {
+/**
+ * The name a Save As dialog suggests for a Scratchpad: by its Language, or
+ * with `ext` (".excalidraw" for a Canvas).
+ */
+export function suggestedName(
+  title: string,
+  language: LanguageId,
+  ext?: string,
+): string {
   const safe = [...title.replace(/…$/, "")]
     .map((c) => (c < " " || '\\/:*?"<>|'.includes(c) ? "_" : c))
     .join("");
   const stem = safe.trim().replace(/[. ]+$/, "");
-  return `${stem || "Untitled"}.${EXTENSION_FOR[language] ?? "txt"}`;
+  const name = stem || "Untitled";
+  return ext ? name + ext : `${name}.${EXTENSION_FOR[language] ?? "txt"}`;
 }
 
 /** The stem a rename asks for: a name typed with its own extension keeps it. */

@@ -6,10 +6,32 @@ import {
   type WriteOutcome,
 } from "../../files/api";
 import { baseName, languageOf, stemOf, suggestedName } from "../../files/paths";
+import { CANVAS_EXT, kindOf, type Kind } from "../../model/kinds";
 import * as ws from "../../model/workspace";
 import { deleteScratchpad } from "../../storage/api";
 import { logError } from "../workspaceEffects";
 import { asFileError, type FilesContext } from "./context";
+
+/** A Canvas's save dialog offers only drawings. */
+const CANVAS_FILTER = {
+  name: "Excalidraw drawing",
+  extensions: ["excalidraw"],
+};
+
+/**
+ * Why a Tab of Kind `kind` can't be saved to `target`, or null if it can.
+ * Save As keeps the Kind: a drawing goes only into a .excalidraw file, and
+ * text never into a drawing or an image (it would be unreadable there).
+ */
+function kindRefusal(kind: Kind, target: string): string | null {
+  const into = kindOf(target);
+  if (into === kind) return null;
+  if (kind === "canvas")
+    return "A canvas can only be saved as a .excalidraw file";
+  return into === "canvas"
+    ? "Can't save text as a .excalidraw drawing"
+    : `Can't save text as an image (${baseName(target)})`;
+}
 
 export interface SaveAsOptions {
   /** Where the save dialog starts. */
@@ -39,6 +61,11 @@ export function useSave(c: FilesContext, d: SaveDeps) {
     async (id: string, target: string): Promise<boolean> => {
       const tab = tabOf(id);
       if (!tab || refuseUnreadable(id)) return false;
+      const refused = kindRefusal(tab.kind, target);
+      if (refused) {
+        showNotice(refused);
+        return false;
+      }
       const text = await loadContent(id);
       let saved = false;
       await lock(id, async () => {
@@ -121,16 +148,23 @@ export function useSave(c: FilesContext, d: SaveDeps) {
     async (id: string, opts: SaveAsOptions = {}) => {
       const tab = tabOf(id);
       if (!tab || refuseUnreadable(id)) return;
+      const canvas = tab.kind === "canvas";
       const suggested =
         opts.suggested ??
         (tab.file
           ? baseName(tab.file.path)
-          : suggestedName(tab.title, tab.language));
+          : suggestedName(
+              tab.title,
+              tab.language,
+              canvas ? CANVAS_EXT : undefined,
+            ));
       let path: string | null;
       try {
-        path = await (opts.dir === undefined
-          ? filePickSave(suggested)
-          : filePickSave(suggested, opts.dir));
+        path = await (canvas
+          ? filePickSave(suggested, opts.dir, CANVAS_FILTER)
+          : opts.dir === undefined
+            ? filePickSave(suggested)
+            : filePickSave(suggested, opts.dir));
       } catch (err) {
         return showNotice(`Can't save: ${asFileError(err).message}`);
       }

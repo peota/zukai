@@ -44,6 +44,13 @@ export interface SidebarState {
   expanded: string[];
 }
 
+/** Where a Canvas Tab was looking (Excalidraw's scroll and zoom). */
+export interface Viewport {
+  scrollX: number;
+  scrollY: number;
+  zoom: number;
+}
+
 export interface TabState {
   id: string;
   kind: Kind;
@@ -55,6 +62,8 @@ export interface TabState {
   selection: { anchor: number; head: number };
   scrollTop: number;
   wrap: boolean;
+  /** A Canvas Tab's viewport; remembered in the Session, never in the file. */
+  viewport?: Viewport;
   /** Absent for a Scratchpad. */
   file?: FileInfo;
 }

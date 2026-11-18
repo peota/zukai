@@ -55,6 +55,24 @@ describe("StatusBar", () => {
     expect(screen.getByText("Ln 3, Col 17")).toBeInTheDocument();
   });
 
+  it("a Canvas shows the Kind label only", () => {
+    setup({
+      kindLabel: "Canvas",
+      showFormat: true,
+      notice: "Saved elsewhere",
+      file: { format: fmt(), readonly: false },
+    });
+    expect(screen.getByText("Canvas")).toBeInTheDocument();
+    expect(screen.queryByText("Ln 3, Col 17")).toBeNull();
+    expect(screen.queryByText("JSON")).toBeNull();
+    expect(screen.queryByText("UTF-8")).toBeNull();
+    expect(screen.queryByText("LF")).toBeNull();
+    expect(screen.queryByText("{ } Format")).toBeNull();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    // Status messages still show.
+    expect(screen.getByText("Saved elsewhere")).toBeInTheDocument();
+  });
+
   it("a File shows its encoding and line ending as menu buttons", () => {
     const p = setup({
       file: { format: fmt({ encoding: "windows-1252" }), readonly: false },

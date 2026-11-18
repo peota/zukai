@@ -276,6 +276,32 @@ describe("useWorkspace titles", () => {
     expect(result.current.state.tabs[0].title).toBe("Named");
     expect(result.current.state.tabs[0].renamed).toBe(true);
   });
+
+  it("a Canvas Scratchpad's Title never comes from its JSON", async () => {
+    const { result } = await mount();
+    await act(() => result.current.run({ type: "newCanvas" }));
+    const id = result.current.state.activeId;
+    const canvas = () => result.current.state.tabs.find((t) => t.id === id)!;
+    expect(canvas().kind).toBe("canvas");
+    act(() =>
+      result.current.setContent(
+        id,
+        JSON.stringify({ type: "excalidraw", elements: [] }, null, 2),
+      ),
+    );
+    expect(canvas().title).toBe("Untitled");
+    await act(() => result.current.rename(id, "Flow"));
+    expect(canvas().title).toBe("Flow");
+    await act(() => result.current.rename(id, ""));
+    expect(canvas().title).toBe("Untitled");
+    // It is written as a canvas scratchpad.
+    await act(() => h.flushAll!());
+    expect(m.writeScratchpad).toHaveBeenCalledWith(
+      id,
+      expect.stringContaining("excalidraw"),
+      "excalidraw",
+    );
+  });
 });
 
 describe("useWorkspace find", () => {

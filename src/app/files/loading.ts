@@ -9,6 +9,7 @@ import { baseName } from "../../files/paths";
 import type { FileInfo, TabState, WorkspaceState } from "../../model/types";
 import * as ws from "../../model/workspace";
 import { deriveTitle } from "../../model/title";
+import { parseScene } from "../../canvas/scene";
 import { readScratchpad, writeScratchpad } from "../../storage/api";
 import { logError } from "../workspaceEffects";
 import {
@@ -155,7 +156,7 @@ export function useLoading(c: FilesContext) {
    *   held (a crash before the Session was saved) holds that Tab: a Disk
    *   conflict if the File exists, Missing if not, with the shadow as its text.
    * - One that no Tab or entry refers to (its entry was dropped) is recovered
-   *   as a new Scratchpad, then deleted.
+   *   as a new Scratchpad (a Canvas if it is a drawing), then deleted.
    */
   const afterRestore = useCallback(
     async (state: WorkspaceState): Promise<WorkspaceState> => {
@@ -201,11 +202,16 @@ export function useLoading(c: FilesContext) {
           const text = await shadowRead(orphan);
           if (text === null) continue;
           if (text !== "") {
+            // A shadow doesn't say whose it was: a drawing comes back as a
+            // Canvas, anything else as text.
+            const canvas = text.trim() !== "" && parseScene(text).ok;
             const id = freshId();
-            await writeScratchpad(id, text, "txt");
+            await writeScratchpad(id, text, canvas ? "excalidraw" : "txt");
             contents.set(id, text);
             onDisk.set(id, text);
-            const tab = { ...ws.newTabState(id), title: deriveTitle(text) };
+            const tab = canvas
+              ? ws.newTabState(id, "canvas")
+              : { ...ws.newTabState(id), title: deriveTitle(text) };
             next = { ...next, tabs: [...next.tabs, tab] };
           }
           await shadowDelete(orphan);
