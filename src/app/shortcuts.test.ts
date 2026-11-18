@@ -82,8 +82,21 @@ describe.each(["mac", "other"] as Platform[])("matchShortcut (%s)", (p) => {
       ),
     ).toBeNull();
   });
+  it("sidebar: Mod+B toggles, Mod+Shift+E focuses", () => {
+    expect(matchShortcut(ev("KeyB", m), p)).toEqual({ type: "toggleSidebar" });
+    expect(
+      matchShortcut(ev("KeyE", { ...m, key: "E", shiftKey: true }), p),
+    ).toEqual({ type: "focusSidebar" });
+    expect(matchShortcut(ev("KeyE", m), p)).toBeNull();
+    expect(
+      matchShortcut(ev("KeyB", { ...m, key: "B", shiftKey: true }), p),
+    ).toBeNull();
+  });
+  it("Mod+Shift+N is a new Canvas Scratchpad", () =>
+    expect(
+      matchShortcut(ev("KeyN", { ...m, key: "N", shiftKey: true }), p),
+    ).toEqual({ type: "newCanvas" }));
   it("rejects extra modifiers", () => {
-    expect(matchShortcut(ev("KeyN", { ...m, shiftKey: true }), p)).toBeNull();
     expect(matchShortcut(ev("KeyN", { ...m, altKey: true }), p)).toBeNull();
     expect(matchShortcut(ev("KeyN"), p)).toBeNull();
     expect(matchShortcut(ev("KeyZ", { ...m, altKey: true }), p)).toBeNull();
@@ -163,6 +176,7 @@ describe("keyboard layouts", () => {
       ["KeyE", "€"],
       ["KeyN", "n"],
       ["KeyW", "w"],
+      ["KeyB", "b"],
       ["Digit2", "@"],
       ["Digit1", "1"],
     ]) {
@@ -171,6 +185,31 @@ describe("keyboard layouts", () => {
       ).toBeNull();
     }
   });
+  it("AltGr+Shift letters are left alone on other", () => {
+    for (const code of ["KeyE", "KeyN"]) {
+      expect(
+        matchShortcut(
+          ev(code, { ctrlKey: true, altKey: true, shiftKey: true }),
+          "other",
+        ),
+      ).toBeNull();
+    }
+  });
+  it("Cyrillic Ctrl+B and Ctrl+Shift+E fall back to the physical key", () => {
+    expect(
+      matchShortcut(ev("KeyB", { key: "и", ctrlKey: true }), "other"),
+    ).toEqual({ type: "toggleSidebar" });
+    expect(
+      matchShortcut(
+        ev("KeyE", { key: "У", ctrlKey: true, shiftKey: true }),
+        "other",
+      ),
+    ).toEqual({ type: "focusSidebar" });
+  });
+  it("AZERTY/Dvorak Ctrl+B uses the typed letter", () =>
+    expect(
+      matchShortcut(ev("KeyN", { key: "b", ctrlKey: true }), "other"),
+    ).toEqual({ type: "toggleSidebar" }));
   it("digits match by physical key (AZERTY Ctrl+& is Ctrl+1)", () =>
     expect(
       matchShortcut(ev("Digit1", { key: "&", ctrlKey: true }), "other"),
