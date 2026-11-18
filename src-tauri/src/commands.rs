@@ -76,7 +76,13 @@ pub async fn session_read(app: AppHandle) -> Result<Option<String>> {
     let handle = app.clone();
     blocking(app, move |b| {
         let json = session::read(&b)?;
-        Ok(json.map(|json| grants::grant_session(&handle.state::<Grants>(), json)))
+        let g = handle.state::<Grants>();
+        // The Library root first: Session paths in it are granted only
+        // through the root checks, never by following links.
+        if g.root().is_none() {
+            crate::library::commands::root_state(&g, &b);
+        }
+        Ok(json.map(|json| grants::grant_session(&g, json)))
     })
     .await
 }
