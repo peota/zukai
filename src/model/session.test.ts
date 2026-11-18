@@ -432,6 +432,25 @@ describe("session v3 migration and sidebar", () => {
     expect(Object.isFrozen(DEFAULT_SIDEBAR)).toBe(true);
   });
 
+  it("v3KeepsACanvasViewportAndDropsABadOneAlone", () => {
+    const viewport = { scrollX: -12.5, scrollY: 40, zoom: 1.25 };
+    const w: WorkspaceState = {
+      tabs: [{ ...newTabState("k", "canvas"), viewport }],
+      activeId: "k",
+      closed: [],
+    };
+    const r = parseSessionFile(JSON.stringify(toSessionFile(w)));
+    expect(r?.tabs[0].viewport).toEqual(viewport);
+    const bad = parseSessionFile(
+      JSON.stringify({
+        ...toSessionFile(w),
+        tabs: [{ ...w.tabs[0], viewport: { scrollX: "1", zoom: 2 } }],
+      }),
+    );
+    expect(bad?.tabs.map((t) => t.id)).toEqual(["k"]);
+    expect(bad?.tabs[0]).not.toHaveProperty("viewport");
+  });
+
   it("recoversAnOrphanCanvasScratchpadAsACanvasTab", () => {
     const { state } = restore(
       null,

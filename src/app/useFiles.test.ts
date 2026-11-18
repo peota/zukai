@@ -547,6 +547,53 @@ describe("useFiles save and save as", () => {
     ).toBeUndefined();
   });
 
+  it("Save As of a Canvas Scratchpad offers .excalidraw and keeps the Kind", async () => {
+    const target = "C:\\d\\flow.excalidraw";
+    f.filePickSave.mockResolvedValue(target);
+    const { result } = await mount();
+    await act(() => result.current.run({ type: "newCanvas" }));
+    const id = result.current.state.activeId;
+    const json = '{"type":"excalidraw","elements":[]}';
+    act(() => result.current.setContent(id, json));
+    await act(() => result.current.run({ type: "save" }));
+    expect(f.filePickSave).toHaveBeenCalledWith(
+      "Untitled.excalidraw",
+      undefined,
+      {
+        name: "Excalidraw drawing",
+        extensions: ["excalidraw"],
+      },
+    );
+    expect(f.fileSaveAs).toHaveBeenCalledWith(target, json, expect.anything());
+    const tab = result.current.state.tabs.find((t) => t.id === id)!;
+    expect(tab.kind).toBe("canvas");
+    expect(tab.file?.path).toBe(target);
+    expect(tab.title).toBe("flow.excalidraw");
+  });
+
+  it("Save As never changes a Tab's Kind", async () => {
+    const { result } = await mount();
+    // Text never goes into a drawing or an image file.
+    for (const target of ["C:\\d\\x.excalidraw", "C:\\d\\x.PNG"]) {
+      f.filePickSave.mockResolvedValue(target);
+      await act(() => result.current.saveAs("a"));
+      expect(result.current.notice).toMatch(/^Can't save text as /);
+    }
+    // A drawing only goes into a .excalidraw file.
+    await act(() => result.current.run({ type: "newCanvas" }));
+    const id = result.current.state.activeId;
+    act(() =>
+      result.current.setContent(id, '{"type":"excalidraw","elements":[]}'),
+    );
+    f.filePickSave.mockResolvedValue("C:\\d\\x.txt");
+    await act(() => result.current.saveAs(id));
+    expect(result.current.notice).toBe(
+      "A canvas can only be saved as a .excalidraw file",
+    );
+    expect(f.fileSaveAs).not.toHaveBeenCalled();
+    expect(result.current.state.tabs.every((t) => !t.file)).toBe(true);
+  });
+
   it("Ctrl+S in a File flushes it", async () => {
     const { result } = await mount();
     const id = await openP(result);
@@ -726,6 +773,19 @@ describe("useFiles close, reopen and restore", () => {
     const wrote = s.writeScratchpad.mock.invocationCallOrder[0];
     const deleted = f.shadowDelete.mock.invocationCallOrder[0];
     expect(wrote).toBeLessThan(deleted);
+  });
+
+  it("an orphan shadow of a drawing is recovered as a Canvas", async () => {
+    const json = '{"type":"excalidraw","elements":[{"id":"x","version":1}]}';
+    shadows.lost = json;
+    const { result } = await mount();
+    const tab = result.current.state.tabs.find((t) => t.kind === "canvas");
+    expect(tab).toBeDefined();
+    expect(tab!.title).toBe("Untitled");
+    expect(tab!.file).toBeUndefined();
+    expect(s.writeScratchpad).toHaveBeenCalledWith(tab!.id, json, "excalidraw");
+    expect(await result.current.loadContent(tab!.id)).toBe(json);
+    expect(shadows.lost).toBeUndefined();
   });
 
   it("keeps an orphan shadow when its Scratchpad can't be written", async () => {

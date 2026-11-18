@@ -152,6 +152,19 @@ export function toSessionFile(
   };
 }
 
+const isViewport = (v: unknown): boolean =>
+  isObject(v) && isNum(v.scrollX) && isNum(v.scrollY) && isNum(v.zoom);
+
+/** A malformed viewport is only forgotten: the Tab itself is fine. */
+function withViewport(t: unknown): unknown {
+  if (!isObject(t) || t.viewport === undefined || isViewport(t.viewport)) {
+    return t;
+  }
+  const { viewport: _bad, ...rest } = t;
+  void _bad;
+  return rest;
+}
+
 /** Before v3 a Tab had no Kind: a File's comes from its path. */
 function withKind(t: unknown): unknown {
   if (!isObject(t) || t.kind !== undefined) return t;
@@ -184,12 +197,14 @@ export function parseSessionFile(json: string | null): SessionFile | null {
     return null;
   }
   // A malformed entry is dropped alone; the rest of the session survives.
-  const tabs: unknown[] = migrate ? data.tabs.map(withKind) : data.tabs;
-  const closed: unknown[] = migrate
-    ? data.closed.map((e: unknown) =>
-        isObject(e) ? { ...e, tab: withKind(e.tab) } : e,
-      )
-    : data.closed;
+  const tabs: unknown[] = (migrate ? data.tabs.map(withKind) : data.tabs).map(
+    withViewport,
+  );
+  const closed: unknown[] = data.closed.map((e: unknown) =>
+    isObject(e)
+      ? { ...e, tab: withViewport(migrate ? withKind(e.tab) : e.tab) }
+      : e,
+  );
   return {
     version: SESSION_VERSION,
     tabs: tabs.filter(isTabState),

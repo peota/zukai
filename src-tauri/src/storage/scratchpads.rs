@@ -53,15 +53,30 @@ fn pad_path(base: &Path, folder: &str, id: &str, ext: ScratchExt) -> Result<Path
     Ok(base.join(folder).join(format!("{id}.{}", ext.as_str())))
 }
 
-/// The existing file for `id` in `folder`, whichever extension it has.
+/// The modified time of `path`, or None if it doesn't exist.
+fn modified(path: &Path) -> Result<Option<SystemTime>> {
+    match fs::metadata(path) {
+        Ok(m) => Ok(Some(m.modified().unwrap_or(UNIX_EPOCH))),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The file for `id` in `folder`, whichever extension it has. One id is one
+/// scratch file: `write` removes the other extension, and if both are there
+/// anyway (a crash in between), the newer one is the id's file everywhere
+/// (read, list, close); a tie goes to `.txt`.
 fn find_pad(base: &Path, folder: &str, id: &str) -> Result<Option<(PathBuf, ScratchExt)>> {
+    let mut best: Option<(PathBuf, ScratchExt, SystemTime)> = None;
     for ext in ScratchExt::ALL {
         let p = pad_path(base, folder, id, ext)?;
-        if p.exists() {
-            return Ok(Some((p, ext)));
+        if let Some(t) = modified(&p)?
+            && best.as_ref().is_none_or(|(_, _, b)| t > *b)
+        {
+            best = Some((p, ext, t));
         }
     }
-    Ok(None)
+    Ok(best.map(|(p, ext, _)| (p, ext)))
 }
 
 pub fn read(base: &Path, id: &str) -> Result<String> {
@@ -76,10 +91,12 @@ pub fn read(base: &Path, id: &str) -> Result<String> {
 }
 
 pub fn write(base: &Path, id: &str, content: &str, ext: ScratchExt) -> Result<()> {
-    Ok(atomic_write(
-        &pad_path(base, "scratchpads", id, ext)?,
-        content.as_bytes(),
-    )?)
+    atomic_write(&pad_path(base, "scratchpads", id, ext)?, content.as_bytes())?;
+    // One id, one file: a file of the other extension is never read again.
+    for other in ScratchExt::ALL.into_iter().filter(|e| *e != ext) {
+        remove_if_exists(&pad_path(base, "scratchpads", id, other)?)?;
+    }
+    Ok(())
 }
 
 fn remove_if_exists(path: &Path) -> Result<()> {
@@ -114,20 +131,29 @@ fn aside_id(base: &Path, folder: &str, id: &str) -> Result<String> {
 }
 
 /// Move `<from>/<id>.<ext>` to `<to>/<id>.<ext>`, whichever extension it has.
-/// A file already at the destination is never replaced: it is first renamed
-/// to a fresh id in the same folder, so its text stays reachable (orphan Tab
-/// or Recently Closed).
+/// A file already at the destination under that id (either extension) is
+/// never replaced: it is first renamed to a fresh id in the same folder, so
+/// its text stays reachable (orphan Tab or Recently Closed). A stale file of
+/// the other extension left under the id in `from` goes along under a fresh
+/// id too, so nothing is left behind that would shadow the id later.
 fn move_pad(base: &Path, from: &str, to: &str, id: &str) -> Result<()> {
     let Some((src, ext)) = find_pad(base, from, id)? else {
         return Err(std::io::Error::new(ErrorKind::NotFound, "scratchpad file not found").into());
     };
-    let dst = pad_path(base, to, id, ext)?;
     fs::create_dir_all(base.join(to))?;
-    if dst.exists() {
-        let aside = pad_path(base, to, &aside_id(base, to, id)?, ext)?;
-        fs::rename(&dst, aside)?;
+    for e in ScratchExt::ALL {
+        let taken = pad_path(base, to, id, e)?;
+        if taken.exists() {
+            fs::rename(&taken, pad_path(base, to, &aside_id(base, to, id)?, e)?)?;
+        }
     }
-    Ok(fs::rename(src, dst)?)
+    for e in ScratchExt::ALL.into_iter().filter(|e| *e != ext) {
+        let stale = pad_path(base, from, id, e)?;
+        if stale.exists() {
+            fs::rename(&stale, pad_path(base, to, &aside_id(base, to, id)?, e)?)?;
+        }
+    }
+    Ok(fs::rename(src, pad_path(base, to, id, ext)?)?)
 }
 
 pub fn close(base: &Path, id: &str) -> Result<()> {
@@ -138,54 +164,51 @@ pub fn reopen(base: &Path, id: &str) -> Result<()> {
     move_pad(base, "closed", "scratchpads", id)
 }
 
-pub fn list(base: &Path) -> Result<Vec<ScratchEntry>> {
-    let entries = match fs::read_dir(base.join("scratchpads")) {
+/// The ids with a scratch file in `folder`, each once, with its file.
+fn ids_in(base: &Path, folder: &str) -> Result<Vec<(String, PathBuf, ScratchExt)>> {
+    let entries = match fs::read_dir(base.join(folder)) {
         Ok(e) => e,
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e.into()),
     };
-    let mut out = Vec::new();
+    let mut ids = std::collections::BTreeSet::new();
     for entry in entries {
         let path = entry?.path();
-        if let Some(ext) = ScratchExt::from_os(path.extension())
+        if ScratchExt::from_os(path.extension()).is_some()
             && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+            && validate_id(stem).is_ok()
         {
-            out.push(ScratchEntry {
-                id: stem.to_string(),
-                ext,
-            });
+            ids.insert(stem.to_string());
+        }
+    }
+    let mut out = Vec::new();
+    for id in ids {
+        if let Some((path, ext)) = find_pad(base, folder, &id)? {
+            out.push((id, path, ext));
         }
     }
     Ok(out)
 }
 
+pub fn list(base: &Path) -> Result<Vec<ScratchEntry>> {
+    Ok(ids_in(base, "scratchpads")?
+        .into_iter()
+        .map(|(id, _, ext)| ScratchEntry { id, ext })
+        .collect())
+}
+
 pub fn list_closed(base: &Path) -> Result<Vec<ClosedFile>> {
-    let entries = match fs::read_dir(base.join("closed")) {
-        Ok(e) => e,
-        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e.into()),
-    };
     let mut out = Vec::new();
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-        if let Some(ext) = ScratchExt::from_os(path.extension())
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-            && validate_id(stem).is_ok()
-        {
-            let modified_ms = entry
-                .metadata()?
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            out.push(ClosedFile {
-                id: stem.to_string(),
-                ext,
-                modified_ms,
-            });
-        }
+    for (id, path, ext) in ids_in(base, "closed")? {
+        let modified_ms = modified(&path)?
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        out.push(ClosedFile {
+            id,
+            ext,
+            modified_ms,
+        });
     }
     Ok(out)
 }
@@ -366,6 +389,93 @@ mod tests {
         close(d.path(), "c").unwrap();
         purge_closed(d.path(), &["c".to_string()]).unwrap();
         assert!(list_closed(d.path()).unwrap().is_empty());
+    }
+
+    /// Make `path` look `secs_ago` seconds old.
+    fn age(path: &Path, secs_ago: u64) {
+        let t = SystemTime::now() - std::time::Duration::from_secs(secs_ago);
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(t)
+            .unwrap();
+    }
+
+    #[test]
+    fn one_id_is_one_scratch_file() {
+        let d = base();
+        let pads = d.path().join("scratchpads");
+        fs::write(pads.join("a.txt"), "old text").unwrap();
+        fs::write(pads.join("a.excalidraw"), "{\"new\":1}").unwrap();
+        age(&pads.join("a.txt"), 60);
+        // List, read and the Kind agree on the newer file, once.
+        let got = list(d.path()).unwrap();
+        assert_eq!(
+            got,
+            vec![ScratchEntry {
+                id: "a".into(),
+                ext: ScratchExt::Excalidraw
+            }]
+        );
+        assert_eq!(read(d.path(), "a").unwrap(), "{\"new\":1}");
+        // A write leaves exactly one file for the id.
+        write(d.path(), "a", "text", ScratchExt::Txt).unwrap();
+        assert!(pads.join("a.txt").exists());
+        assert!(!pads.join("a.excalidraw").exists());
+        assert_eq!(list(d.path()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn list_closed_never_repeats_an_id() {
+        let d = base();
+        let closed = d.path().join("closed");
+        fs::write(closed.join("a.txt"), "x").unwrap();
+        fs::write(closed.join("a.excalidraw"), "{}").unwrap();
+        age(&closed.join("a.excalidraw"), 60);
+        let got = list_closed(d.path()).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!((got[0].id.as_str(), got[0].ext), ("a", ScratchExt::Txt));
+    }
+
+    #[test]
+    fn close_and_reopen_set_aside_files_of_either_extension() {
+        let d = base();
+        // A closed canvas with the same id as an open text scratchpad.
+        write(d.path(), "a", "{}", ScratchExt::Excalidraw).unwrap();
+        close(d.path(), "a").unwrap();
+        put(d.path(), "a", "text");
+        close(d.path(), "a").unwrap();
+        assert_eq!(read_closed(d.path(), "a"), "text");
+        let closed = list_closed(d.path()).unwrap();
+        assert_eq!(closed.len(), 2, "{closed:?}");
+        assert_eq!(closed_contents(d.path()), vec!["text", "{}"]);
+        // And back: an open canvas with that id is set aside, not shadowed.
+        write(d.path(), "a", "{\"open\":1}", ScratchExt::Excalidraw).unwrap();
+        reopen(d.path(), "a").unwrap();
+        assert_eq!(read(d.path(), "a").unwrap(), "text");
+        let open = list(d.path()).unwrap();
+        assert_eq!(open.len(), 2, "{open:?}");
+        assert!(!d.path().join("scratchpads/a.excalidraw").exists());
+    }
+
+    #[test]
+    fn close_takes_a_stale_duplicate_along() {
+        let d = base();
+        let pads = d.path().join("scratchpads");
+        fs::write(pads.join("a.txt"), "new").unwrap();
+        fs::write(pads.join("a.excalidraw"), "{}").unwrap();
+        age(&pads.join("a.excalidraw"), 60);
+        close(d.path(), "a").unwrap();
+        // Nothing is left behind under the id, and nothing is lost.
+        assert!(list(d.path()).unwrap().is_empty());
+        assert_eq!(read_closed(d.path(), "a"), "new");
+        assert_eq!(closed_contents(d.path()), vec!["new", "{}"]);
+    }
+
+    fn read_closed(base: &Path, id: &str) -> String {
+        let (p, _) = find_pad(base, "closed", id).unwrap().unwrap();
+        fs::read_to_string(p).unwrap()
     }
 
     #[test]

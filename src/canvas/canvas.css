@@ -1,0 +1,17 @@
+/*
+ * Excalidraw inside Zukai: no way out to its online services. Loaded with
+ * Excalidraw itself (never in a text-only session). The selectors are
+ * Excalidraw's own, for the pinned version in package.json.
+ */
+
+/* The online library: "Browse libraries" and "Publish" (whose menu item
+   carries the "remove" test id in this version). */
+.z-canvas .library-menu-browse-button,
+.z-canvas [data-testid="lib-dropdown--remove"] {
+  display: none;
+}
+
+/* The Help dialog's links to the docs, the Excalidraw+ blog and GitHub. */
+.z-canvas .HelpDialog__header {
+  display: none;
+}

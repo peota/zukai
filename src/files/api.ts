@@ -83,14 +83,26 @@ export const fileFingerprintQuick = (
 export const filePickOpen = (): Promise<string[]> =>
   invoke<string[]>("file_pick_open");
 
-/** `directory`: where the dialog starts (the Library root for Move to Library…). */
+/** A save dialog's file type: its name and extensions (no dots). */
+export interface SaveFilter {
+  name: string;
+  extensions: string[];
+}
+
+/**
+ * `directory`: where the dialog starts (the Library root for Move to
+ * Library…). `filter`: the only file type offered (the dialog adds its
+ * extension to a name typed without one).
+ */
 export const filePickSave = (
   suggestedName: string,
   directory?: string,
+  filter?: SaveFilter,
 ): Promise<string | null> =>
   invoke<string | null>("file_pick_save", {
     suggestedName,
     directory: directory ?? null,
+    filter: filter ?? null,
   });
 
 export const shadowWrite = (id: string, text: string): Promise<void> =>

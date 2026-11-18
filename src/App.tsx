@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "./app/useWorkspace";
-import { detectPlatform, matchShortcut } from "./app/shortcuts";
+import { detectPlatform, matchShortcut, type Command } from "./app/shortcuts";
 import {
   allowsContextMenu,
   blocksBrowserKey,
@@ -8,6 +8,7 @@ import {
 } from "./app/browserGuard";
 import type { LanguageId } from "./model/types";
 import { EditorHost } from "./editor/EditorHost";
+import { CanvasHost } from "./canvas/CanvasHost";
 import type { FormatResult } from "./editor/jsonFormat";
 import { TabBar } from "./ui/TabBar";
 import { StatusBar } from "./ui/StatusBar";
@@ -20,6 +21,7 @@ import { convertPatch } from "./ui/encodings";
 import { folderHints } from "./ui/tabFolders";
 import { pathKey } from "./files/api";
 import { Sidebar } from "./ui/Sidebar";
+import { useColorScheme } from "./ui/useColorScheme";
 
 const platform = detectPlatform();
 const keyOf = (p: string) => pathKey(p, platform);
@@ -78,6 +80,13 @@ export default function App() {
   }, [run]);
 
   const active = w.state.tabs.find((t) => t.id === activeId);
+  const isCanvas = active?.kind === "canvas";
+  const theme = useColorScheme();
+  /** The text editor never sees a Canvas Tab (its text is JSON). */
+  const editorTabs = useMemo(
+    () => w.state.tabs.filter((t) => t.kind !== "canvas"),
+    [w.state.tabs],
+  );
   const here =
     active && cursor?.id === active.id ? cursor : { line: 1, col: 1 };
   const unreadable = !!active && w.shadowUnreadable.has(active.id);
@@ -148,6 +157,17 @@ export default function App() {
     },
     [closeEncPicker, encPicker, w],
   );
+
+  const { isClosing, shadowUnreadable } = w;
+  const tabs = w.state.tabs;
+  const isReadOnly = useCallback(
+    (id: string) =>
+      isClosing(id) ||
+      shadowUnreadable.has(id) ||
+      tabs.find((t) => t.id === id)?.file?.held === "readonly",
+    [isClosing, shadowUnreadable, tabs],
+  );
+  const onShortcut = useCallback((cmd: Command) => void run(cmd), [run]);
 
   const lib = w.library;
 
@@ -229,21 +249,36 @@ export default function App() {
         )}
         <main className="min-h-0 flex-1 bg-editor">
           {w.ready && (
-            <EditorHost
+            <div className={isCanvas ? "hidden" : "size-full"}>
+              <EditorHost
+                tabs={editorTabs}
+                activeId={isCanvas ? "" : activeId}
+                loadContent={w.loadContent}
+                onChange={w.setContent}
+                onTabPatch={updateTab}
+                onCursor={onCursor}
+                isClosing={w.isClosing}
+                focusSignal={focusSignal}
+                findRequest={w.findRequest}
+                formatRequest={w.formatRequest}
+                convertRequest={w.convertRequest}
+                replaceRequests={w.replaceRequests}
+                shadowUnreadable={w.shadowUnreadable}
+                onFormatResult={onFormatResult}
+              />
+            </div>
+          )}
+          {w.ready && (
+            <CanvasHost
               tabs={w.state.tabs}
               activeId={activeId}
               loadContent={w.loadContent}
               onChange={w.setContent}
               onTabPatch={updateTab}
-              onCursor={onCursor}
-              isClosing={w.isClosing}
-              focusSignal={focusSignal}
-              findRequest={w.findRequest}
-              formatRequest={w.formatRequest}
-              convertRequest={w.convertRequest}
               replaceRequests={w.replaceRequests}
-              shadowUnreadable={w.shadowUnreadable}
-              onFormatResult={onFormatResult}
+              isReadOnly={isReadOnly}
+              theme={theme}
+              onShortcut={onShortcut}
             />
           )}
         </main>
@@ -252,6 +287,7 @@ export default function App() {
           col={here.col}
           language={active?.language ?? "plaintext"}
           saveStatus={w.saveStatus}
+          kindLabel={isCanvas ? "Canvas" : undefined}
           onPickLanguage={() => (picking ? closePicker() : setPicking(true))}
           platformLineEnding={PLATFORM_ENDING}
           file={

@@ -31,6 +31,11 @@ export interface StatusBarProps {
   notice?: string;
   /** Shown next to Beautify. */
   beautifyHint?: string;
+  /**
+   * A Tab that isn't text (a Canvas) shows only this label: no position,
+   * Language, encoding, line ending or Format.
+   */
+  kindLabel?: string;
 }
 
 export const LANGUAGE_LABELS: Record<LanguageId, string> = {
@@ -67,6 +72,7 @@ export function StatusBar({
   onFormatClose,
   notice,
   beautifyHint,
+  kindLabel,
 }: StatusBarProps) {
   const [formatAt, setFormatAt] = useState<DOMRect | null>(null);
   const closeFormat = useCallback(() => {
@@ -77,7 +83,11 @@ export function StatusBar({
 
   return (
     <div className="flex h-6 shrink-0 select-none items-center gap-3 bg-chrome px-3 text-[11px] text-faint">
-      <span>{file?.readonly ? "Read-only" : `Ln ${line}, Col ${col}`}</span>
+      {kindLabel === undefined ? (
+        <span>{file?.readonly ? "Read-only" : `Ln ${line}, Col ${col}`}</span>
+      ) : (
+        file?.readonly && <span>Read-only</span>
+      )}
       {saveStatus === "error" && (
         <span role="status" className="text-danger">
           Not saved
@@ -88,50 +98,54 @@ export function StatusBar({
           {notice}
         </span>
       )}
-      <div className="ml-auto flex items-center gap-1.5">
-        {showFormat && (
-          <Chip
-            anchor="format"
-            expanded={formatAt !== null}
-            onClick={(r) => (formatAt ? closeFormat() : setFormatAt(r))}
+      {kindLabel !== undefined ? (
+        <span className="ml-auto px-1.5 py-0.5">{kindLabel}</span>
+      ) : (
+        <div className="ml-auto flex items-center gap-1.5">
+          {showFormat && (
+            <Chip
+              anchor="format"
+              expanded={formatAt !== null}
+              onClick={(r) => (formatAt ? closeFormat() : setFormatAt(r))}
+            >
+              {"{ } Format"}
+            </Chip>
+          )}
+          <button
+            type="button"
+            tabIndex={-1}
+            data-language-button
+            onClick={onPickLanguage}
+            className={CHIP}
           >
-            {"{ } Format"}
-          </Chip>
-        )}
-        <button
-          type="button"
-          tabIndex={-1}
-          data-language-button
-          onClick={onPickLanguage}
-          className={CHIP}
-        >
-          {LANGUAGE_LABELS[language]}
-        </button>
-        {file ? (
-          <>
-            <Chip
-              anchor="encoding"
-              expanded={openMenu === "encoding"}
-              onClick={onEncodingMenu}
-            >
-              {encodingLabel(file.format)}
-            </Chip>
-            <Chip
-              anchor="lineEnding"
-              expanded={openMenu === "lineEnding"}
-              onClick={onLineEndingMenu}
-            >
-              {lineEndingLabel(file.format)}
-            </Chip>
-          </>
-        ) : (
-          <>
-            <span className="px-1.5 py-0.5">UTF-8</span>
-            <span className="px-1.5 py-0.5">{scratchEnding}</span>
-          </>
-        )}
-      </div>
-      {formatAt && (
+            {LANGUAGE_LABELS[language]}
+          </button>
+          {file ? (
+            <>
+              <Chip
+                anchor="encoding"
+                expanded={openMenu === "encoding"}
+                onClick={onEncodingMenu}
+              >
+                {encodingLabel(file.format)}
+              </Chip>
+              <Chip
+                anchor="lineEnding"
+                expanded={openMenu === "lineEnding"}
+                onClick={onLineEndingMenu}
+              >
+                {lineEndingLabel(file.format)}
+              </Chip>
+            </>
+          ) : (
+            <>
+              <span className="px-1.5 py-0.5">UTF-8</span>
+              <span className="px-1.5 py-0.5">{scratchEnding}</span>
+            </>
+          )}
+        </div>
+      )}
+      {formatAt && kindLabel === undefined && (
         <Menu
           label="Format"
           x={formatAt.right}

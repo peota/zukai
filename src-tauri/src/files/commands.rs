@@ -143,6 +143,23 @@ pub async fn file_pick_open(
     .await
 }
 
+/// The one file type a save dialog offers (a Canvas: `.excalidraw`).
+#[derive(Debug, serde::Deserialize)]
+pub struct SaveFilter {
+    name: String,
+    extensions: Vec<String>,
+}
+
+/// Plain extensions only (letters and digits), so the filter can't be abused
+/// to smuggle a pattern into the dialog.
+fn plain_extensions(f: &SaveFilter) -> Vec<&str> {
+    f.extensions
+        .iter()
+        .map(String::as_str)
+        .filter(|e| !e.is_empty() && e.chars().all(|c| c.is_ascii_alphanumeric()))
+        .collect()
+}
+
 /// The OS save dialog (which confirms any overwrite). Grants and returns the
 /// chosen path, or `None` if cancelled.
 #[tauri::command]
@@ -151,12 +168,19 @@ pub async fn file_pick_save(
     window: WebviewWindow,
     suggested_name: String,
     directory: Option<String>,
+    filter: Option<SaveFilter>,
 ) -> Result<Option<String>, FileError> {
     let mut dialog = window
         .dialog()
         .file()
         .set_parent(&window)
         .set_file_name(suggested_name);
+    if let Some(f) = &filter {
+        let exts = plain_extensions(f);
+        if !exts.is_empty() {
+            dialog = dialog.add_filter(&f.name, &exts);
+        }
+    }
     // Only where the dialog starts: the user still picks, and the pick is
     // what gets granted.
     if let Some(dir) = directory.filter(|d| Path::new(d).is_absolute()) {
@@ -177,4 +201,24 @@ pub async fn file_pick_save(
 #[tauri::command]
 pub async fn grants_filter(app: AppHandle, paths: Vec<String>) -> Result<Vec<String>, FileError> {
     blocking(app, move |g| Ok(grants::filter_exact(g, paths))).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_filter_keeps_plain_extensions_only() {
+        let f = SaveFilter {
+            name: "Drawing".into(),
+            extensions: vec![
+                "excalidraw".into(),
+                "*".into(),
+                "".into(),
+                "a.b".into(),
+                "png2".into(),
+            ],
+        };
+        assert_eq!(plain_extensions(&f), vec!["excalidraw", "png2"]);
+    }
 }
