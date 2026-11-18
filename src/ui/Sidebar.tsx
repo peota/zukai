@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 import type { Entry } from "../library/api";
 import type { Row, TreeState } from "../library/tree";
-import { detectPlatform } from "../app/shortcuts";
+import { detectPlatform, type Platform } from "../app/shortcuts";
 import { PlusIcon, SearchIcon } from "./icons";
 import { Inbox, type InboxItem } from "./Inbox";
 import { LibraryTree, type PendingTrash } from "./LibraryTree";
@@ -63,10 +63,11 @@ export interface SidebarProps {
   onInboxMove(id: string, destDir: string | null): void;
   /** Esc: give the keyboard back to the editor. */
   onLeave(): void;
+  /** Decides the Windows-only name rule and the "Show in …" label. */
+  platform?: Platform;
 }
 
-function revealLabel(): string {
-  const p = detectPlatform();
+function revealLabel(p: Platform): string {
   if (p === "windows") return "Show in Explorer";
   return p === "mac" ? "Show in Finder" : "Show in File Manager";
 }
@@ -89,6 +90,12 @@ interface OpenMenu {
   y: number;
   items: MenuItem[];
   ignore?: string;
+}
+
+/** The keyboard cursor; `index` finds a neighbour when its row goes away. */
+interface Cursor {
+  path: string;
+  index: number;
 }
 
 /** The Library sidebar, layout A (spec 5.2). */
@@ -123,19 +130,80 @@ function SidebarPanel({
   onInboxActivate,
   onInboxMove,
   onLeave,
+  platform: platformProp,
 }: SidebarProps) {
+  const platform = platformProp ?? detectPlatform();
+  const windows = platform === "windows";
+  const blockedReason = (e: Entry) => entryBlocked(e, windows);
   const treeRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [pendingTrash, setPendingTrash] = useState<PendingTrash | null>(null);
+  const [cursorState, setCursorState] = useState<Cursor | null>(null);
+  // `rows` is the listing the edit started on (null: a created item, waiting
+  // for the next listing); an item not in it gets one more listing to show.
+  const [editingState, setEditingState] = useState<{
+    path: string;
+    rows: Row[] | null;
+  } | null>(null);
+  const [pendingState, setPendingTrash] = useState<PendingTrash | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
-  const closeMenu = useCallback(() => setMenu(null), []);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+    const el = returnFocus.current;
+    returnFocus.current = null;
+    el?.focus({ preventScroll: true });
+  }, []);
+
+  const indexOf = (path: string) =>
+    rows.findIndex((r) => r.entry.path === path);
+
+  // A new listing drops a delete question or a rename whose row is gone (a
+  // created item gets this one listing to appear), so they never come back
+  // if the path does later.
+  const [seenRows, setSeenRows] = useState(rows);
+  if (rows !== seenRows) {
+    setSeenRows(rows);
+    if (pendingState && indexOf(pendingState.path) < 0) setPendingTrash(null);
+    if (
+      editingState &&
+      editingState.rows !== rows &&
+      indexOf(editingState.path) < 0
+    ) {
+      setEditingState(null);
+    }
+  }
+
+  // Also derived each render, so rows that went away (renamed, moved,
+  // trashed) never show stale state, even for the render above.
+  let cursorIndex = cursorState ? indexOf(cursorState.path) : -1;
+  if (cursorState && cursorIndex < 0 && cursorState.index >= 0) {
+    cursorIndex = Math.min(cursorState.index, rows.length - 1);
+  }
+  const cursor = cursorIndex >= 0 ? rows[cursorIndex].entry.path : null;
+  const setCursor = (path: string | null) =>
+    setCursorState(path === null ? null : { path, index: indexOf(path) });
+  const editing =
+    editingState &&
+    (editingState.rows === null ||
+      editingState.rows === rows ||
+      indexOf(editingState.path) >= 0)
+      ? editingState.path
+      : null;
+  const setEditing = (path: string | null) =>
+    setEditingState(path === null ? null : { path, rows });
+  const pendingTrash =
+    pendingState && indexOf(pendingState.path) >= 0 ? pendingState : null;
+
+  const openMenu = (m: OpenMenu, from: HTMLElement | null) => {
+    returnFocus.current = from;
+    setMenu(m);
+  };
 
   const drag = useFolderDrag({
     treeRef,
     rows,
     root: available ? root : null,
+    blocked: (e) => blockedReason(e) !== null,
     onDrop: (source, dest) => {
       if (source.kind === "entry") onMove(source.entry.path, dest);
       else onInboxMove(source.id, dest);
@@ -145,20 +213,21 @@ function SidebarPanel({
   const create = async (parent: string, what: NewItem) => {
     const made = await onCreate(parent, what);
     if (made) {
-      setCursor(made);
-      setEditing(made);
+      setCursorState({ path: made, index: -1 });
+      setEditingState({ path: made, rows: null });
     }
   };
 
   const requestTrash = (e: Entry) => {
-    if (entryBlocked(e)) return;
+    if (blockedReason(e)) return;
     if (!e.isDir) return onTrash(e.path);
+    // Always ask for a folder: listings hide dotfiles, so one that looks
+    // empty may still hold `.git` or `.obsidian`.
     const kids = tree.children[e.path];
-    if (Array.isArray(kids) && kids.length === 0) return onTrash(e.path);
     setPendingTrash({
       path: e.path,
       name: e.name,
-      count: Array.isArray(kids) ? kids.length : null,
+      count: Array.isArray(kids) && kids.length > 0 ? kids.length : null,
     });
   };
 
@@ -171,12 +240,16 @@ function SidebarPanel({
 
   const rootItems = (r: string): MenuItem[] => [
     ...newItems(r),
-    { label: revealLabel(), separated: true, onSelect: () => onReveal(r) },
+    {
+      label: revealLabel(platform),
+      separated: true,
+      onSelect: () => onReveal(r),
+    },
     { label: "Choose Library folder…", onSelect: onChooseRoot },
   ];
 
   const entryItems = (e: Entry): MenuItem[] => {
-    const blocked = entryBlocked(e);
+    const blocked = blockedReason(e);
     const off = blocked !== null;
     const rename: MenuItem = {
       label: "Rename",
@@ -190,7 +263,7 @@ function SidebarPanel({
     };
     const tail: MenuItem[] = [
       {
-        label: revealLabel(),
+        label: revealLabel(platform),
         separated: true,
         onSelect: () => onReveal(e.path),
       },
@@ -215,8 +288,12 @@ function SidebarPanel({
   };
 
   const showTreeMenu = (entry: Entry | null, x: number, y: number) => {
-    if (entry) setMenu({ label: entry.name, x, y, items: entryItems(entry) });
-    else if (root) setMenu({ label: "Library", x, y, items: rootItems(root) });
+    const from = treeRef.current;
+    if (entry) {
+      openMenu({ label: entry.name, x, y, items: entryItems(entry) }, from);
+    } else if (root) {
+      openMenu({ label: "Library", x, y, items: rootItems(root) }, from);
+    }
   };
 
   const togglePlusMenu = () => {
@@ -226,29 +303,37 @@ function SidebarPanel({
       root && available
         ? rootItems(root)
         : [{ label: "Choose Library folder…", onSelect: onChooseRoot }];
-    setMenu({
-      label: "Library",
-      x: b?.left ?? 0,
-      y: (b?.bottom ?? 0) + 4,
-      items,
-      ignore: "[data-z-library-plus]",
-    });
+    openMenu(
+      {
+        label: "Library",
+        x: b?.left ?? 0,
+        y: (b?.bottom ?? 0) + 4,
+        items,
+        ignore: "[data-z-library-plus]",
+      },
+      plusRef.current,
+    );
   };
 
-  const showInboxMenu = (id: string, x: number, y: number) =>
-    setMenu({
-      label: "Scratchpad",
-      x,
-      y,
-      items: [
-        {
-          label: "Move to Library…",
-          disabled: !available,
-          reason: available ? undefined : "The Library folder isn't available.",
-          onSelect: () => onInboxMove(id, null),
-        },
-      ],
-    });
+  const showInboxMenu = (id: string, x: number, y: number, from: HTMLElement) =>
+    openMenu(
+      {
+        label: "Scratchpad",
+        x,
+        y,
+        items: [
+          {
+            label: "Move to Library…",
+            disabled: !available,
+            reason: available
+              ? undefined
+              : "The Library folder isn't available.",
+            onSelect: () => onInboxMove(id, null),
+          },
+        ],
+      },
+      from,
+    );
 
   const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
     e.stopPropagation(); // keep app shortcuts out of the field
@@ -318,15 +403,17 @@ function SidebarPanel({
             searching={searching}
             isOpen={(p) => tree.expanded.has(p)}
             activePath={activePath}
+            blocked={blockedReason}
             cursor={cursor}
             onCursor={setCursor}
             editing={editing}
             onEditing={setEditing}
             pendingTrash={pendingTrash}
             onConfirmTrash={() => {
-              if (!pendingTrash) return;
               setPendingTrash(null);
-              onTrash(pendingTrash.path, pendingTrash.count ?? undefined);
+              if (!pendingTrash) return;
+              if (pendingTrash.count === null) onTrash(pendingTrash.path);
+              else onTrash(pendingTrash.path, pendingTrash.count);
             }}
             onCancelTrash={() => setPendingTrash(null)}
             dropTarget={drag.dropTarget}
@@ -443,7 +530,7 @@ function WidthHandle({
       aria-valuemin={SIDEBAR_MIN_WIDTH}
       aria-valuemax={SIDEBAR_MAX_WIDTH}
       aria-valuenow={width}
-      tabIndex={-1}
+      tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={end}
@@ -459,7 +546,7 @@ function WidthHandle({
         e.preventDefault();
         onWidth(clampWidth(width + step));
       }}
-      className="absolute top-0 -right-[3px] bottom-0 z-10 w-[6px] cursor-col-resize"
+      className="absolute top-0 -right-[3px] bottom-0 z-10 w-[6px] cursor-col-resize outline-none focus-visible:bg-accent-soft"
     />
   );
 }

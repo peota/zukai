@@ -2,15 +2,16 @@ import type { Entry } from "../library/api";
 
 /**
  * Why Zukai can't act on an entry (open, rename, move, delete), or null.
- * Rust refuses links that resolve outside the Library, and Windows can't
- * address names ending in a dot or a space.
+ * Rust refuses links that resolve outside the Library and, on Windows only,
+ * names ending in a dot or a space (Win32 drops those, so they alias another
+ * item); elsewhere such names are ordinary.
  */
-export function entryBlocked(e: Entry): string | null {
+export function entryBlocked(e: Entry, windows: boolean): string | null {
   if (e.link === "outside") {
     return "This link points outside the Library, so Zukai can't open it.";
   }
-  if (/[. ]$/.test(e.name)) {
-    return "Names that end in a dot or space can't be opened on Windows.";
+  if (windows && /[. ]$/.test(e.name)) {
+    return "Windows can't use names that end in a dot or a space, so Zukai can't open it.";
   }
   return null;
 }

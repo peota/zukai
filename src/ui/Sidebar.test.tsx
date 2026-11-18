@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Entry } from "../library/api";
 import { filterRows, visibleRows, type TreeState } from "../library/tree";
 import { Sidebar, type SidebarProps } from "./Sidebar";
@@ -74,6 +74,7 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     onInboxActivate: vi.fn(),
     onInboxMove: vi.fn(),
     onLeave: vi.fn(),
+    platform: "windows",
     ...over,
   };
 }
@@ -90,25 +91,20 @@ const iconOf = (el: HTMLElement) =>
   el.querySelector("[data-icon]")?.getAttribute("data-icon");
 const key = (el: Element, k: string) => fireEvent.keyDown(el, { key: k });
 
-/** jsdom has no layout: rows are 26px tall, stacked from y=0, 240px wide. */
+afterEach(() => {
+  delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+});
+
+/**
+ * jsdom has no layout: hit-testing puts rows 26px tall, stacked from y=0,
+ * in a 600px-tall tree; below that is outside the tree.
+ */
 function layOut() {
-  const box = (top: number, height: number) =>
-    ({
-      left: 0,
-      right: 240,
-      width: 240,
-      top,
-      bottom: top + height,
-      height,
-      x: 0,
-      y: top,
-      toJSON: () => ({}),
-    }) as DOMRect;
-  const items = screen.getAllByRole("treeitem");
-  items.forEach((el, i) => {
-    el.getBoundingClientRect = () => box(i * 26, 26);
-  });
-  tree().getBoundingClientRect = () => box(0, 600);
+  document.elementFromPoint = (_x: number, y: number) => {
+    if (y < 0 || y >= 600) return document.body;
+    const items = screen.queryAllByRole("treeitem");
+    return items[Math.floor(y / 26)] ?? tree();
+  };
 }
 const yOf = (name: string) =>
   screen.getAllByRole("treeitem").findIndex((el) => el === row(name)) * 26 + 13;
@@ -156,7 +152,7 @@ describe("Sidebar", () => {
     expect(row("elsewhere").getAttribute("title")).toMatch(/outside/i);
     expect(iconOf(row("elsewhere"))).toBe("link");
     expect(row("bad.")).toHaveAttribute("aria-disabled", "true");
-    expect(row("bad.").getAttribute("title")).toMatch(/dot or space/i);
+    expect(row("bad.").getAttribute("title")).toMatch(/dot or a space/i);
     fireEvent.click(row("bad."));
     fireEvent.click(row("elsewhere"));
     expect(p.onOpen).not.toHaveBeenCalled();
@@ -251,7 +247,9 @@ describe("Sidebar", () => {
     const { p } = setup();
     const t = tree();
     act(() => t.focus());
-    key(t, "ArrowDown");
+    // First focus starts on the active File.
+    expect(row("flow.excalidraw")).toHaveAttribute("aria-selected", "true");
+    key(t, "Home");
     expect(row("Empty")).toHaveAttribute("aria-selected", "true");
     key(t, "ArrowDown");
     key(t, "ArrowDown");
@@ -362,9 +360,13 @@ describe("Sidebar", () => {
     key(t, "Delete");
     expect(p.onTrash).toHaveBeenCalledWith(TODO.path);
 
-    // An empty folder goes without asking.
+    // A folder that looks empty may hold dotfiles: still ask.
     fireEvent.click(row("Empty"));
     key(t, "Delete");
+    expect(
+      screen.getByText('Move "Empty" and everything in it to the Trash?'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Move to Trash" }));
     expect(p.onTrash).toHaveBeenLastCalledWith(EMPTY.path);
 
     fireEvent.click(row("Ideas"));
@@ -632,6 +634,200 @@ describe("Sidebar", () => {
     expect(p.onWidth).toHaveBeenLastCalledWith(256);
     expect(handle).toHaveAttribute("aria-valuemin", "180");
     expect(handle).toHaveAttribute("aria-valuemax", "480");
+    // Reachable with Tab.
+    expect(handle).toHaveAttribute("tabindex", "0");
+  });
+
+  it("trailing dot or space names are ordinary off Windows", () => {
+    for (const platform of ["mac", "other"] as const) {
+      const { p, unmount } = setup({ platform });
+      expect(row("bad.")).not.toHaveAttribute("aria-disabled");
+      expect(row("bad.").getAttribute("title")).not.toMatch(/dot/);
+      fireEvent.click(row("bad."));
+      expect(p.onOpen).toHaveBeenCalledWith(BAD);
+      key(tree(), "F2");
+      expect(screen.getByRole("textbox", { name: "Rename" })).toHaveValue(
+        "bad",
+      );
+      unmount();
+    }
+  });
+
+  it("Delete on a disabled row does nothing", () => {
+    const { p } = setup();
+    fireEvent.click(row("bad."));
+    key(tree(), "Delete");
+    fireEvent.click(row("elsewhere"));
+    key(tree(), "Delete");
+    expect(p.onTrash).not.toHaveBeenCalled();
+    expect(screen.queryByRole("group", { name: "Confirm delete" })).toBeNull();
+  });
+
+  it("a click on a 5,000-row tree measures nothing", () => {
+    const many = Array.from({ length: 5000 }, (_, i) =>
+      file(p(`f${String(i).padStart(4, "0")}.md`)),
+    );
+    const t = makeTree({ children: { [ROOT]: many }, expanded: new Set() });
+    const { p: pr } = setup({ tree: t, rows: visibleRows(t) });
+    const hit = vi.fn(() => document.body);
+    document.elementFromPoint = hit;
+    const measure = vi.spyOn(Element.prototype, "getBoundingClientRect");
+    const target = row("f2500.md");
+    fireEvent.pointerDown(target, { button: 0, pointerId: 1, clientY: 10 });
+    fireEvent.pointerMove(target, { pointerId: 1, buttons: 1, clientY: 11 });
+    fireEvent.pointerUp(target, { pointerId: 1, clientY: 11 });
+    fireEvent.click(target);
+    expect(measure.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(hit).not.toHaveBeenCalled();
+    expect(pr.onOpen).toHaveBeenCalledWith(many[2500]);
+    measure.mockRestore();
+  });
+
+  it("a folder can't be dropped into its own nested folder", () => {
+    const a = dir(p("A"));
+    const b = dir(p("A", "B"));
+    const c = dir(p("A", "B", "C"));
+    const t = makeTree({
+      children: { [ROOT]: [a], [a.path]: [b], [b.path]: [c], [c.path]: [] },
+      expanded: new Set([a.path, b.path]),
+    });
+    const { p: pr } = setup({ tree: t, rows: visibleRows(t) });
+    layOut();
+    const drag = (from: string, to: string, id: number) => {
+      const el = row(from);
+      fireEvent.pointerDown(el, {
+        button: 0,
+        pointerId: id,
+        clientY: yOf(from),
+      });
+      fireEvent.pointerMove(el, {
+        pointerId: id,
+        buttons: 1,
+        clientY: yOf(to),
+      });
+      fireEvent.pointerUp(el, { pointerId: id, clientY: yOf(to) });
+    };
+    drag("A", "C", 1);
+    drag("B", "C", 2);
+    expect(pr.onMove).not.toHaveBeenCalled();
+    drag("C", "A", 3);
+    expect(pr.onMove).toHaveBeenCalledWith(c.path, a.path);
+  });
+
+  it("a disabled folder is not a drop target", () => {
+    const { p } = setup();
+    layOut();
+    const src = row("todo.txt");
+    fireEvent.pointerDown(src, {
+      button: 0,
+      pointerId: 1,
+      clientY: yOf("todo.txt"),
+    });
+    fireEvent.pointerMove(src, {
+      pointerId: 1,
+      buttons: 1,
+      clientY: yOf("elsewhere"),
+    });
+    expect(row("elsewhere")).not.toHaveAttribute("data-drop-target");
+    fireEvent.pointerUp(src, { pointerId: 1, clientY: yOf("elsewhere") });
+    expect(p.onMove).not.toHaveBeenCalled();
+  });
+
+  it("the keyboard comes back to the tree when its menu closes", () => {
+    const { p } = setup();
+    fireEvent.contextMenu(row("todo.txt"));
+    expect(document.activeElement).toBe(screen.getByRole("menu"));
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(document.activeElement).toBe(tree());
+
+    fireEvent.contextMenu(row("Ideas"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }));
+    expect(p.onCopyPath).toHaveBeenCalledWith(IDEAS.path);
+    expect(document.activeElement).toBe(tree());
+  });
+
+  it("Inbox items work from the keyboard", () => {
+    const { p } = setup();
+    const items = within(
+      screen.getByRole("list", { name: "Inbox" }),
+    ).getAllByRole("listitem");
+    expect(items[0]).toHaveAttribute("tabindex", "0");
+    expect(items[1]).toHaveAttribute("tabindex", "-1");
+    act(() => items[0].focus());
+    key(items[0], "ArrowDown");
+    expect(document.activeElement).toBe(items[1]);
+    key(items[1], "Enter");
+    expect(p.onInboxActivate).toHaveBeenCalledWith("s2");
+
+    // The context-menu key (no pointer position) opens the item's menu.
+    fireEvent.contextMenu(items[1]);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(document.activeElement).toBe(items[1]);
+    fireEvent.contextMenu(items[1]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move to Library…" }));
+    expect(p.onInboxMove).toHaveBeenCalledWith("s2", null);
+  });
+
+  it("the cursor moves to a neighbour when its row goes away", () => {
+    const { p, rerender } = setup();
+    act(() => tree().focus());
+    fireEvent.click(row("Roadmap"));
+    expect(row("Roadmap")).toHaveAttribute("aria-selected", "true");
+    const t = makeTree({
+      children: {
+        ...makeTree().children,
+        [ROOT]: [EMPTY, IDEAS, OUTSIDE, BAD, TODO],
+      },
+    });
+    rerender(<Sidebar {...props({ ...p, tree: t, rows: visibleRows(t) })} />);
+    expect(row("elsewhere")).toHaveAttribute("aria-selected", "true");
+    key(tree(), "ArrowDown");
+    expect(row("bad.")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("first focus without a visible active File starts at the top", () => {
+    setup({ activePath: null });
+    act(() => tree().focus());
+    expect(row("Empty")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("a delete question goes away with its row and stays gone", () => {
+    const { p, rerender } = setup();
+    fireEvent.click(row("Ideas"));
+    key(tree(), "Delete");
+    expect(screen.getByText(/Move "Ideas"/)).toBeInTheDocument();
+    const gone = makeTree({
+      children: { [ROOT]: [EMPTY, ROADMAP, TODO] },
+    });
+    rerender(
+      <Sidebar {...props({ ...p, tree: gone, rows: visibleRows(gone) })} />,
+    );
+    expect(screen.queryByText(/Move "Ideas"/)).toBeNull();
+    rerender(<Sidebar {...props(p)} />);
+    expect(screen.queryByText(/Move "Ideas"/)).toBeNull();
+  });
+
+  it("a created item that misses the next listing opens no rename later", async () => {
+    const created = p("Untitled.md");
+    const onCreate = vi.fn(async () => created);
+    const { p: pr, rerender } = setup({ onCreate });
+    fireEvent.click(screen.getByRole("button", { name: "New in Library" }));
+    await act(async () =>
+      fireEvent.click(screen.getByRole("menuitem", { name: "New note" })),
+    );
+    // The next listing doesn't have it...
+    const t1 = makeTree();
+    rerender(
+      <Sidebar {...props({ ...pr, tree: t1, rows: visibleRows(t1) })} />,
+    );
+    // ...so when it shows up later, no rename field opens.
+    const t2 = makeTree({
+      children: { ...makeTree().children, [ROOT]: [TODO, file(created)] },
+    });
+    rerender(
+      <Sidebar {...props({ ...pr, tree: t2, rows: visibleRows(t2) })} />,
+    );
+    expect(screen.queryByRole("textbox", { name: "Rename" })).toBeNull();
   });
 
   it("renders nothing when closed", () => {

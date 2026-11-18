@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent, RefObject } from "react";
 import type { Entry } from "../library/api";
 import type { Row } from "../library/tree";
-import { entryBlocked, isUnder, parentOf, sameDir } from "./libraryEntries";
+import { isUnder, parentOf, sameDir } from "./libraryEntries";
 
 /** What is being dragged onto a Library folder. */
 export type DragSource =
@@ -18,34 +18,32 @@ export interface PointerHandlers {
 /** Pointer travel (px) before a press becomes a drag; less is a click. */
 const DRAG_THRESHOLD = 4;
 
-interface Slot {
-  top: number;
-  bottom: number;
-  dest: string | null;
-}
-
+/**
+ * A press is just its start point: nothing is measured or walked until it
+ * crosses the threshold, so a plain click costs nothing.
+ */
 interface Press {
   source: DragSource;
   pointerId: number;
   startX: number;
   startY: number;
-  /** Row boxes and where a drop on each lands, measured at the press. */
-  slots: Slot[];
-  area: DOMRect | null;
-  /** Where a drop on the empty part of the tree lands. */
-  below: string | null;
   moving: boolean;
   dest: string | null;
 }
 
-/** The folder a drop on row `i` lands in: the folder itself, or a File's folder. */
-function destOf(rows: Row[], i: number, root: string | null): string | null {
-  const r = rows[i];
-  if (r.entry.isDir) return entryBlocked(r.entry) ? null : r.entry.path;
-  for (let j = i - 1; j >= 0; j--) {
-    if (rows[j].depth < r.depth) return rows[j].entry.path;
+/** Each row's parent row index (-1 for the top level), in one pass. */
+export function parentIndex(rows: Row[]): Int32Array {
+  const parents = new Int32Array(rows.length);
+  const stack: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const d = rows[i].depth;
+    while (stack.length > 0 && rows[stack[stack.length - 1]].depth >= d) {
+      stack.pop();
+    }
+    parents[i] = stack.length > 0 ? stack[stack.length - 1] : -1;
+    stack.push(i);
   }
-  return root;
+  return parents;
 }
 
 /** A drop that would do nothing or can't be done lands nowhere. */
@@ -59,32 +57,36 @@ function allowed(source: DragSource, dest: string | null): string | null {
 /**
  * Pointer-event drag of tree rows and Inbox items onto Library folders, the
  * same way the tab bar drags Tabs: a threshold, Esc to cancel, the click
- * after a drag swallowed, and a window-level release guard.
+ * after a drag swallowed, and a window-level release guard. The target is
+ * the one row under the pointer, hit-tested.
  */
 export function useFolderDrag({
   treeRef,
   rows,
   root,
+  blocked,
   onDrop,
 }: {
   treeRef: RefObject<HTMLElement | null>;
   rows: Row[];
   root: string | null;
+  /** Entries Zukai can't act on: never dragged, never a target. */
+  blocked(e: Entry): boolean;
   onDrop(source: DragSource, destDir: string): void;
 }) {
   const press = useRef<Press | null>(null);
-  const [view, setView] = useState<{
-    moving: boolean;
-    dest: string | null;
-  } | null>(null);
+  const [view, setView] = useState<{ dest: string | null } | null>(null);
   const swallow = useRef(false);
+  // The parent index of the rows being dragged over, built when a drag starts.
+  const parents = useRef<{ rows: Row[]; index: Int32Array } | null>(null);
 
   const clear = useCallback(() => {
     press.current = null;
+    parents.current = null;
     setView(null);
   }, []);
 
-  const moving = view?.moving ?? false;
+  const moving = view !== null;
   useEffect(() => {
     if (!moving) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -126,43 +128,39 @@ export function useFolderDrag({
     swallow.current = false;
     if (e.button !== 0) return;
     if ((e.target as Element).closest("button, input")) return;
-    if (source.kind === "entry" && entryBlocked(source.entry)) return;
-    const tree = treeRef.current;
-    const els = tree?.querySelectorAll<HTMLElement>("[data-row]") ?? [];
-    const slots: Slot[] = [];
-    els.forEach((el) => {
-      const i = Number(el.dataset.row);
-      if (!rows[i]) return;
-      const r = el.getBoundingClientRect();
-      slots.push({
-        top: r.top,
-        bottom: r.bottom,
-        dest: allowed(source, destOf(rows, i, root)),
-      });
-    });
+    if (source.kind === "entry" && blocked(source.entry)) return;
     press.current = {
       source,
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
-      slots,
-      area: tree?.getBoundingClientRect() ?? null,
-      below: allowed(source, root),
       moving: false,
       dest: null,
     };
     watchRelease(e.pointerId);
   };
 
-  const destAt = (d: Press, x: number, y: number): string | null => {
-    const a = d.area;
-    if (!a || x < a.left || x > a.right || y < a.top || y > a.bottom) {
-      return null;
+  /** Where a drop at (x, y) lands: the row under the pointer, or the root. */
+  const destAt = (source: DragSource, x: number, y: number): string | null => {
+    const tree = treeRef.current;
+    const hit = document.elementFromPoint?.(x, y) ?? null;
+    if (!tree || !hit || !tree.contains(hit)) return null;
+    const rowEl = hit.closest<HTMLElement>("[data-row]");
+    if (!rowEl) {
+      // The tree's own empty part (not an inline card) is the root.
+      return hit === tree ? allowed(source, root) : null;
     }
-    const slot = d.slots.find((s) => y >= s.top && y < s.bottom);
-    if (slot) return slot.dest;
-    const last = d.slots.reduce((m, s) => Math.max(m, s.bottom), a.top);
-    return y >= last ? d.below : null;
+    const i = Number(rowEl.dataset.row);
+    const r = rows[i];
+    if (!r) return null;
+    if (r.entry.isDir) {
+      return blocked(r.entry) ? null : allowed(source, r.entry.path);
+    }
+    if (parents.current?.rows !== rows) {
+      parents.current = { rows, index: parentIndex(rows) };
+    }
+    const p = parents.current.index[i];
+    return allowed(source, p >= 0 ? rows[p].entry.path : root);
   };
 
   const move = (e: PointerEvent<HTMLElement>) => {
@@ -173,20 +171,18 @@ export function useFolderDrag({
       clear();
       return;
     }
-    const dist = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
-    if (!d.moving && dist < DRAG_THRESHOLD) return;
     if (!d.moving) {
+      const dist = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
+      if (dist < DRAG_THRESHOLD) return;
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {
         // No capture (e.g. the pointer is gone): the drag still works.
       }
     }
-    const next = { ...d, moving: true, dest: destAt(d, e.clientX, e.clientY) };
-    press.current = next;
-    if (next.dest !== view?.dest || !view?.moving) {
-      setView({ moving: true, dest: next.dest });
-    }
+    const dest = destAt(d.source, e.clientX, e.clientY);
+    press.current = { ...d, moving: true, dest };
+    if (!d.moving || dest !== d.dest) setView({ dest });
   };
 
   const end = (e: PointerEvent<HTMLElement>, drop: boolean) => {
@@ -201,10 +197,10 @@ export function useFolderDrag({
 
   /** Pointer handlers for one draggable element. */
   const handlers = (source: DragSource): PointerHandlers => ({
-    onPointerDown: (e: PointerEvent<HTMLElement>) => begin(e, source),
+    onPointerDown: (e) => begin(e, source),
     onPointerMove: move,
-    onPointerUp: (e: PointerEvent<HTMLElement>) => end(e, true),
-    onPointerCancel: (e: PointerEvent<HTMLElement>) => end(e, false),
+    onPointerUp: (e) => end(e, true),
+    onPointerCancel: (e) => end(e, false),
   });
 
   /** True (once) when the click that follows a drag should be ignored. */
@@ -215,7 +211,7 @@ export function useFolderDrag({
   };
 
   return {
-    dropTarget: view?.moving ? view.dest : null,
+    dropTarget: view?.dest ?? null,
     dragging: moving,
     handlers,
     swallowClick,

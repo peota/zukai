@@ -7,7 +7,7 @@ import type {
 import type { Entry } from "../library/api";
 import type { Row } from "../library/tree";
 import { Chevron, fileIcon, Icon } from "./icons";
-import { entryBlocked, splitName } from "./libraryEntries";
+import { splitName } from "./libraryEntries";
 import type { PointerHandlers } from "./useFolderDrag";
 
 /** A folder delete waiting for the inline confirmation. */
@@ -25,6 +25,8 @@ export interface LibraryTreeProps {
   searching: boolean;
   isOpen(path: string): boolean;
   activePath: string | null;
+  /** Why an entry can't be acted on, or null. */
+  blocked(e: Entry): string | null;
   /** The keyboard cursor. */
   cursor: string | null;
   onCursor(path: string | null): void;
@@ -53,6 +55,7 @@ export function LibraryTree({
   searching,
   isOpen,
   activePath,
+  blocked: blockedOf,
   cursor,
   onCursor,
   editing,
@@ -84,7 +87,7 @@ export function LibraryTree({
 
   /** Enter or a click: open a File, or open/close a folder. */
   const activate = (e: Entry) => {
-    if (entryBlocked(e)) return;
+    if (blockedOf(e)) return;
     if (!e.isDir) onOpen(e);
     else if (!searching) onToggle(e.path);
   };
@@ -93,7 +96,7 @@ export function LibraryTree({
     if (e.target !== e.currentTarget) return; // the rename field or a button
     const r = index >= 0 ? rows[index] : undefined;
     const entry = r?.entry;
-    const blocked = entry ? entryBlocked(entry) !== null : true;
+    const blocked = entry ? blockedOf(entry) !== null : true;
     switch (e.key) {
       case "ArrowDown":
         moveTo(index < 0 ? 0 : index + 1);
@@ -172,12 +175,20 @@ export function LibraryTree({
       data-z-library-tree=""
       aria-activedescendant={index >= 0 ? `z-lib-row-${index}` : undefined}
       onKeyDown={onKeyDown}
+      onFocus={(e) => {
+        // First focus: start on the active File if it shows, else the top.
+        if (e.target !== e.currentTarget || index >= 0 || rows.length === 0) {
+          return;
+        }
+        const a = rows.findIndex((r) => r.entry.path === activePath);
+        onCursor(rows[a >= 0 ? a : 0].entry.path);
+      }}
       onContextMenu={(e) => openMenu(e, null)}
       className="group/tree min-h-0 flex-1 overflow-y-auto pb-2 outline-none"
     >
       {rows.map((r, i) => {
         const e = r.entry;
-        const blocked = entryBlocked(e);
+        const blocked = blockedOf(e);
         const open = e.isDir && (searching || isOpen(e.path));
         const active = e.path === activePath;
         const isCursor = i === index;
