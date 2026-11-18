@@ -58,3 +58,28 @@ describe("names", () => {
     );
   });
 });
+
+describe("long names", () => {
+  it("capsStemAndSuggestedName", () => {
+    const stem = sanitizeFileName("x".repeat(1000));
+    expect(stem.length).toBeLessThanOrEqual(200);
+    const t = tab({ title: "y ".repeat(500), language: "typescript" });
+    expect(suggestedFileName(t).length).toBeLessThanOrEqual(255);
+  });
+
+  it("neverSplitsSurrogatePair", () => {
+    for (const pad of [197, 198, 199, 200]) {
+      const s = sanitizeFileName("a".repeat(pad) + "😀".repeat(5));
+      expect(s.length).toBeLessThanOrEqual(200);
+      expect(s).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
+      expect(s).not.toMatch(/(?<![\ud800-\udbff])[\udc00-\udfff]/);
+    }
+  });
+
+  it("retrimsAfterCut", () => {
+    const s = sanitizeFileName("a".repeat(150) + " . . " + "b".repeat(100));
+    expect(s.length).toBeLessThanOrEqual(200);
+    expect(s).toMatch(/[^ .]$/);
+    expect(sanitizeFileName("CON" + " ".repeat(300) + "z")).toBe("CON_");
+  });
+});
