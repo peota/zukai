@@ -127,9 +127,13 @@ impl LibraryWatcher {
 
     /// Stops watching (closing the handle on the root) and keeps the index;
     /// `set_ordered` with a fresh ticket starts again.
-    pub fn pause(&self) {
+    /// Returns whether a watcher was running.
+    pub fn pause(&self) -> bool {
         let _applied = self.gate.lock().unwrap_or_else(|e| e.into_inner());
-        drop(self.active.lock().unwrap_or_else(|e| e.into_inner()).take());
+        let was = self.active.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let running = was.is_some();
+        drop(was);
+        running
     }
 }
 

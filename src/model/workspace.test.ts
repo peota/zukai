@@ -12,6 +12,7 @@ import {
   newTab,
   newTabState,
   rename,
+  movedPath,
   reopenClosed,
   rewritePaths,
   updateTab,
@@ -246,40 +247,57 @@ describe("rewritePaths", () => {
       held: "missing",
     },
   });
-  const lower = (p: string) => p.toLowerCase();
 
-  it("moves Files at or under the prefix and keeps held state", () => {
+  it("moves only the paths Rust confirmed and keeps held state", () => {
     const s: WorkspaceState = {
       tabs: [
         fileTab("a", "C:/L/proj/a.md"),
-        fileTab("b", "C:/L/proj2/b.md"),
+        fileTab("b", "C:/L/proj/b.md"),
         newTabState("s"),
       ],
       activeId: "a",
       closed: [
-        { tab: fileTab("c", "C:/L/Proj/sub/c.md"), index: 0, closedAt: 1 },
+        { tab: fileTab("c", "C:/L/proj/sub/c.md"), index: 0, closedAt: 1 },
       ],
     };
-    const next = rewritePaths(s, "C:/L/proj", "C:/L/work", lower);
+    const next = rewritePaths(
+      s,
+      new Map([
+        ["C:/L/proj/a.md", "C:/L/work/a.md"],
+        ["C:/L/proj/sub/c.md", "C:/L/work/sub/c.md"],
+      ]),
+    );
     expect(next.tabs[0].file).toMatchObject({
       path: "C:/L/work/a.md",
       held: "missing",
     });
     expect(next.tabs[0].title).toBe("a.md");
-    // A sibling whose name merely starts the same is not inside.
+    // Not confirmed: left as it was.
     expect(next.tabs[1]).toBe(s.tabs[1]);
     expect(next.tabs[2]).toBe(s.tabs[2]);
     expect(next.closed[0].tab.file?.path).toBe("C:/L/work/sub/c.md");
   });
 
-  it("retitles the File renamed itself, and changes nothing otherwise", () => {
+  it("retitles a renamed File, and changes nothing otherwise", () => {
     const s: WorkspaceState = {
       tabs: [fileTab("a", "C:/L/a.md")],
       activeId: "a",
       closed: [],
     };
-    const next = rewritePaths(s, "C:/L/a.md", "C:/L/b.md", lower);
+    const next = rewritePaths(s, new Map([["C:/L/a.md", "C:/L/b.md"]]));
     expect(next.tabs[0].title).toBe("b.md");
-    expect(rewritePaths(s, "C:/X", "C:/Y", lower)).toBe(s);
+    expect(rewritePaths(s, new Map())).toBe(s);
+  });
+});
+
+describe("movedPath", () => {
+  const lower = (p: string) => p.toLowerCase();
+  it("matches the prefix by key, never a sibling", () => {
+    expect(movedPath("C:/L/Proj/a.md", "C:/L/proj", "C:/L/w", lower)).toBe(
+      "C:/L/w/a.md",
+    );
+    expect(movedPath("C:/L/proj2/a.md", "C:/L/proj", "C:/L/w", lower)).toBe(
+      null,
+    );
   });
 });
