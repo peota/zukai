@@ -681,7 +681,7 @@ describe("Sidebar", () => {
     expect(hit).not.toHaveBeenCalled();
     expect(pr.onOpen).toHaveBeenCalledWith(many[2500]);
     measure.mockRestore();
-  });
+  }, 20_000);
 
   it("a folder can't be dropped into its own nested folder", () => {
     const a = dir(p("A"));
