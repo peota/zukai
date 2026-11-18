@@ -68,6 +68,30 @@ function loadExcalidraw(): Promise<ExcalidrawModule> {
   return loading;
 }
 
+/** Commands for the text editor: on a canvas they're Excalidraw's keys. */
+const TEXT_ONLY: ReadonlySet<Command["type"]> = new Set([
+  "find",
+  "replace",
+  "toggleWrap",
+  "format",
+]);
+
+/**
+ * The appState a `.excalidraw` file keeps (background, grid…), by
+ * Excalidraw's own export filter rather than a list of our own.
+ */
+function savedAppState(
+  mod: ExcalidrawModule,
+  appState: Partial<AppState>,
+): Record<string, unknown> {
+  const out: unknown = JSON.parse(
+    mod.serializeAsJSON([], appState, {}, "local"),
+  ).appState;
+  return typeof out === "object" && out !== null
+    ? (out as Record<string, unknown>)
+    : {};
+}
+
 const newestReplace = (p: CanvasHostProps, id: string) =>
   (p.replaceRequests ?? []).reduce(
     (n, r) => (r.id === id && r.seq > n ? r.seq : n),
@@ -115,7 +139,7 @@ export function CanvasHost(props: CanvasHostProps) {
         return;
       }
       const cmd = matchShortcut(e, platform);
-      if (!cmd) return;
+      if (!cmd || TEXT_ONLY.has(cmd.type)) return;
       e.preventDefault();
       e.stopPropagation();
       latest.current.onShortcut(cmd);
@@ -255,7 +279,12 @@ function CanvasTab({
     };
     return {
       initialData,
-      signature: sceneSignature(elements, doc.scene.files),
+      signature: sceneSignature(
+        elements,
+        doc.scene.files,
+        // As Excalidraw will hold it: the file's, with defaults filled in.
+        savedAppState(mod, mod.restoreAppState(doc.scene.appState, null)),
+      ),
     };
   }, [mod, doc, startView]);
 
@@ -279,13 +308,21 @@ function CanvasTab({
         });
         const files = Object.values(next.scene.files) as BinaryFileData[];
         if (files.length > 0) a.addFiles(files);
+        const appState = mod.restoreAppState(
+          next.scene.appState,
+          a.getAppState(),
+        );
         a.updateScene({
           elements,
-          appState: mod.restoreAppState(next.scene.appState, a.getAppState()),
+          appState,
           captureUpdate: mod.CaptureUpdateAction.NEVER,
         });
         a.history.clear();
-        baseline.current = sceneSignature(elements, next.scene.files);
+        baseline.current = sceneSignature(
+          elements,
+          next.scene.files,
+          savedAppState(mod, appState),
+        );
       } else {
         // Not showing a drawing yet (or any more): start over from the text.
         api.current = null;
@@ -319,7 +356,11 @@ function CanvasTab({
       }, VIEWPORT_DELAY);
     }
     if (!mod || host.current.isReadOnly(id)) return;
-    const signature = sceneSignature(elements, files);
+    const signature = sceneSignature(
+      elements,
+      files,
+      savedAppState(mod, appState),
+    );
     if (signature === baseline.current) return;
     baseline.current = signature;
     host.current.onChange(

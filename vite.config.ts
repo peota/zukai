@@ -30,10 +30,13 @@ function excalidrawAssets(): Plugin {
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split("?")[0] ?? "";
         if (!url.startsWith(prefix)) return next();
-        const file = resolve(
-          excalidrawFonts,
-          decodeURIComponent(url.slice(prefix.length)),
-        );
+        let name: string;
+        try {
+          name = decodeURIComponent(url.slice(prefix.length));
+        } catch {
+          return next(); // A malformed %-escape (URIError).
+        }
+        const file = resolve(excalidrawFonts, name);
         const rel = relative(excalidrawFonts, file);
         if (rel.startsWith("..") || isAbsolute(rel)) return next();
         try {

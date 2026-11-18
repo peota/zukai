@@ -61,15 +61,21 @@ export function parseScene(
 
 /**
  * What a save would change: the ids and versions of the drawn (non-deleted)
- * elements and the ids of the embedded files. Equal signatures need no save,
- * so scrolling, zooming and selecting never write.
+ * elements, the ids of the embedded files, and `appState`, the part of the
+ * appState the file keeps (what Excalidraw's own export keeps: background,
+ * grid). Equal signatures need no save, so scrolling, zooming and selecting
+ * never write.
  */
 export function sceneSignature(
   elements: readonly SceneElement[],
   files: Readonly<Record<string, unknown>>,
+  appState: Readonly<Record<string, unknown>> = {},
 ): string {
   const drawn = elements
     .filter((e) => !e.isDeleted)
     .map((e) => [e.id, e.version]);
-  return JSON.stringify([drawn, Object.keys(files).sort()]);
+  const kept = Object.keys(appState)
+    .sort()
+    .map((k) => [k, appState[k]]);
+  return JSON.stringify([drawn, Object.keys(files).sort(), kept]);
 }
