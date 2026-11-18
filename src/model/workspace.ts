@@ -162,3 +162,59 @@ export function updateTab(
     tabs: s.tabs.map((t) => (t.id === id ? { ...t, ...patch } : t)),
   };
 }
+
+/**
+ * `path` with `from` (or any path under it) moved to `to`, or null when it
+ * isn't at or under `from`. Compared by `keyOf`, so another spelling of the
+ * same prefix matches; the rest of the path is kept as it was.
+ */
+export function movedPath(
+  path: string,
+  from: string,
+  to: string,
+  keyOf: (p: string) => string,
+): string | null {
+  const p = keyOf(path);
+  const f = keyOf(from);
+  if (p === f) return to;
+  const c = path[from.length];
+  if (p.startsWith(f) && (c === "/" || c === "\\")) {
+    return to + path.slice(from.length);
+  }
+  return null;
+}
+
+/**
+ * After a Library rename or move of `from` to `to`: every open Tab and
+ * Recently Closed entry whose File is `from` or under it gets the new path.
+ * The File renamed itself is retitled; held state (shadows are keyed by Tab
+ * id) is kept.
+ */
+export function rewritePaths(
+  s: WorkspaceState,
+  from: string,
+  to: string,
+  keyOf: (p: string) => string,
+): WorkspaceState {
+  const fix = (t: TabState): TabState => {
+    if (!t.file) return t;
+    const path = movedPath(t.file.path, from, to, keyOf);
+    if (path === null || path === t.file.path) return t;
+    const title =
+      path === to
+        ? path.slice(
+            Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1,
+          )
+        : t.title;
+    return { ...t, title, file: { ...t.file, path } };
+  };
+  const tabs = s.tabs.map(fix);
+  const closed = s.closed.map((e) => {
+    const tab = fix(e.tab);
+    return tab === e.tab ? e : { ...e, tab };
+  });
+  const same =
+    tabs.every((t, i) => t === s.tabs[i]) &&
+    closed.every((e, i) => e === s.closed[i]);
+  return same ? s : { ...s, tabs, closed };
+}

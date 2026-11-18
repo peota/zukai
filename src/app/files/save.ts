@@ -11,6 +11,13 @@ import { deleteScratchpad } from "../../storage/api";
 import { logError } from "../workspaceEffects";
 import { asFileError, type FilesContext } from "./context";
 
+export interface SaveAsOptions {
+  /** Where the save dialog starts. */
+  dir?: string;
+  /** The file name it offers. */
+  suggested?: string;
+}
+
 interface SaveDeps {
   refuseUnreadable(id: string): boolean;
   loadContent(id: string): Promise<string>;
@@ -23,22 +30,17 @@ export function useSave(c: FilesContext, d: SaveDeps) {
   const { tabOf, showNotice, keepAside, dropShadow } = c;
   const { refuseUnreadable, loadContent } = d;
 
-  const saveAs = useCallback(
-    async (id: string) => {
+  /**
+   * Writes Tab `id` to `target` (a path Rust granted: picked in the save
+   * dialog, or reserved in the Library) and makes it the Tab's File.
+   * Resolves to whether it was saved.
+   */
+  const saveTo = useCallback(
+    async (id: string, target: string): Promise<boolean> => {
       const tab = tabOf(id);
-      if (!tab || refuseUnreadable(id)) return;
+      if (!tab || refuseUnreadable(id)) return false;
       const text = await loadContent(id);
-      const suggested = tab.file
-        ? baseName(tab.file.path)
-        : suggestedName(tab.title, tab.language);
-      let path: string | null;
-      try {
-        path = await filePickSave(suggested);
-      } catch (err) {
-        return showNotice(`Can't save: ${asFileError(err).message}`);
-      }
-      if (path === null) return;
-      const target = path;
+      let saved = false;
       await lock(id, async () => {
         const cur = tabOf(id);
         if (!cur) return;
@@ -89,7 +91,9 @@ export function useSave(c: FilesContext, d: SaveDeps) {
           await dropShadow(id);
         }
         if (contents.get(id) !== latest) keepAside(id);
+        saved = true;
       });
+      return saved;
     },
     [
       refuseUnreadable,
@@ -107,6 +111,33 @@ export function useSave(c: FilesContext, d: SaveDeps) {
       stateRef,
       tabOf,
     ],
+  );
+
+  /**
+   * The save dialog, then `saveTo`. `opts.dir` is where the dialog starts
+   * and `opts.suggested` the name it offers (Move to Library…).
+   */
+  const saveAs = useCallback(
+    async (id: string, opts: SaveAsOptions = {}) => {
+      const tab = tabOf(id);
+      if (!tab || refuseUnreadable(id)) return;
+      const suggested =
+        opts.suggested ??
+        (tab.file
+          ? baseName(tab.file.path)
+          : suggestedName(tab.title, tab.language));
+      let path: string | null;
+      try {
+        path = await (opts.dir === undefined
+          ? filePickSave(suggested)
+          : filePickSave(suggested, opts.dir));
+      } catch (err) {
+        return showNotice(`Can't save: ${asFileError(err).message}`);
+      }
+      if (path === null) return;
+      await saveTo(id, path);
+    },
+    [refuseUnreadable, saveTo, showNotice, tabOf],
   );
 
   const save = useCallback(
@@ -168,5 +199,5 @@ export function useSave(c: FilesContext, d: SaveDeps) {
     ],
   );
 
-  return { save, saveAs, renameFile };
+  return { save, saveAs, saveTo, renameFile };
 }

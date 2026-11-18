@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WorkspaceState } from "./types";
+import type { TabState, WorkspaceState } from "./types";
 import {
   activate,
   activateIndex,
@@ -13,6 +13,7 @@ import {
   newTabState,
   rename,
   reopenClosed,
+  rewritePaths,
   updateTab,
 } from "./workspace";
 
@@ -231,5 +232,54 @@ describe("file tabs", () => {
     expect(ids(r.state)).toEqual(["a", "y"]);
     expect(r.state.closed.map((e) => e.tab.id)).toEqual(["x"]);
     expect(reopenClosed(s, 7).reopened).toBeNull();
+  });
+});
+
+describe("rewritePaths", () => {
+  const fileTab = (id: string, path: string): TabState => ({
+    ...newTabState(id),
+    title: path.split("/").pop()!,
+    file: {
+      path,
+      format: { encoding: "utf-8", bom: false, lineEnding: "lf", mixed: false },
+      fingerprint: null,
+      held: "missing",
+    },
+  });
+  const lower = (p: string) => p.toLowerCase();
+
+  it("moves Files at or under the prefix and keeps held state", () => {
+    const s: WorkspaceState = {
+      tabs: [
+        fileTab("a", "C:/L/proj/a.md"),
+        fileTab("b", "C:/L/proj2/b.md"),
+        newTabState("s"),
+      ],
+      activeId: "a",
+      closed: [
+        { tab: fileTab("c", "C:/L/Proj/sub/c.md"), index: 0, closedAt: 1 },
+      ],
+    };
+    const next = rewritePaths(s, "C:/L/proj", "C:/L/work", lower);
+    expect(next.tabs[0].file).toMatchObject({
+      path: "C:/L/work/a.md",
+      held: "missing",
+    });
+    expect(next.tabs[0].title).toBe("a.md");
+    // A sibling whose name merely starts the same is not inside.
+    expect(next.tabs[1]).toBe(s.tabs[1]);
+    expect(next.tabs[2]).toBe(s.tabs[2]);
+    expect(next.closed[0].tab.file?.path).toBe("C:/L/work/sub/c.md");
+  });
+
+  it("retitles the File renamed itself, and changes nothing otherwise", () => {
+    const s: WorkspaceState = {
+      tabs: [fileTab("a", "C:/L/a.md")],
+      activeId: "a",
+      closed: [],
+    };
+    const next = rewritePaths(s, "C:/L/a.md", "C:/L/b.md", lower);
+    expect(next.tabs[0].title).toBe("b.md");
+    expect(rewritePaths(s, "C:/X", "C:/Y", lower)).toBe(s);
   });
 });

@@ -23,11 +23,22 @@ import {
   useFlushOnBlur,
   useWindowTitle,
 } from "./workspaceEffects";
-import type { FileFormat, TabState, WorkspaceState } from "../model/types";
+import type {
+  FileFormat,
+  SidebarState,
+  TabState,
+  WorkspaceState,
+} from "../model/types";
 import type { FindRequest } from "../find/findExtension";
 import * as ws from "../model/workspace";
 import { deriveTitle } from "../model/title";
-import { toSessionFile } from "../model/session";
+import {
+  clampSidebarWidth,
+  defaultSidebar,
+  toSessionFile,
+} from "../model/session";
+import { focusSidebar as focusSidebarElement } from "../ui/Sidebar";
+import { useLibrary, type LibraryApi } from "./useLibrary";
 import {
   closeScratchpad,
   deleteScratchpad,
@@ -65,6 +76,12 @@ function heldChanged(a: WorkspaceState, b: WorkspaceState): boolean {
 }
 const freshId = (): string => crypto.randomUUID();
 
+const sameSidebar = (a: SidebarState, b: SidebarState) =>
+  a.open === b.open &&
+  a.width === b.width &&
+  a.expanded.length === b.expanded.length &&
+  a.expanded.every((p, i) => p === b.expanded[i]);
+
 const platform = detectPlatform();
 const keyOf = (p: string) => pathKey(p, platform);
 /** New Files: UTF-8, no BOM, the platform Line ending. */
@@ -93,6 +110,16 @@ export interface Workspace extends FilesApi {
   findRequest: FindRequest | null;
   saveStatus: SaveStatus;
   ready: boolean;
+  /** The Library sidebar's contents and operations. */
+  library: LibraryApi;
+  /** Open, width and expanded folders; saved in the Session. */
+  sidebar: SidebarState;
+  setSidebarWidth(w: number): void;
+  toggleSidebar(): void;
+  /** Opens the sidebar if needed and puts the keyboard in its tree. */
+  focusSidebar(): void;
+  /** A new Canvas Scratchpad (Mod+Shift+N). */
+  newCanvas(): void;
 }
 
 export function useWorkspace(): Workspace {
@@ -100,6 +127,8 @@ export function useWorkspace(): Workspace {
   const [ready, setReady] = useState(false);
   const [findRequest, setFindRequest] = useState<FindRequest | null>(null);
   const [grantsUnchecked, setGrantsUnchecked] = useState(false);
+  const [sidebar, setSidebar] = useState<SidebarState>(defaultSidebar);
+  const sidebarRef = useRef(sidebar);
   // Contents live in a map: async commands need the latest, and typing must
   // not re-render the App.
   const stateRef = useRef(state);
@@ -122,7 +151,7 @@ export function useWorkspace(): Workspace {
   const scheduleSession = useCallback(() => {
     if (sessionSuspended.current) return;
     sessionSaver.schedule(SESSION_ID, () =>
-      JSON.stringify(toSessionFile(stateRef.current)),
+      JSON.stringify(toSessionFile(stateRef.current, sidebarRef.current)),
     );
   }, []);
 
@@ -227,6 +256,7 @@ export function useWorkspace(): Workspace {
   });
   const { internal, ...filesApi } = files;
   const { loadContent, updateTab, afterRestore, closeFile } = internal;
+  const { saveTo, rewriteTabPaths } = internal;
   const { refuseEdit } = internal;
   const { renameFile, reopenEntry, pickAndOpen, save, saveAs } = files;
   const { requestFormat, showNotice } = files;
@@ -272,6 +302,73 @@ export function useWorkspace(): Workspace {
     contents.set(id, "");
     commit(ws.newTab(stateRef.current, id));
   }, [commit, contents]);
+
+  const newCanvas = useCallback(() => {
+    const id = freshId();
+    contents.set(id, "");
+    commit(ws.newTab(stateRef.current, id, "canvas"));
+  }, [commit, contents]);
+
+  // --- The Library sidebar -------------------------------------------------
+
+  const patchSidebar = useCallback((patch: Partial<SidebarState>) => {
+    const next = { ...sidebarRef.current, ...patch };
+    if (sameSidebar(sidebarRef.current, next)) return;
+    sidebarRef.current = next;
+    setSidebar(next);
+  }, []);
+
+  const setSidebarWidth = useCallback(
+    (w: number) => patchSidebar({ width: clampSidebarWidth(w) }),
+    [patchSidebar],
+  );
+
+  const toggleSidebar = useCallback(
+    () => patchSidebar({ open: !sidebarRef.current.open }),
+    [patchSidebar],
+  );
+
+  const focusSidebar = useCallback(() => {
+    patchSidebar({ open: true });
+    // After the (possibly just opened) sidebar has rendered.
+    requestAnimationFrame(() => focusSidebarElement());
+  }, [patchSidebar]);
+
+  const flushTabs = useCallback(
+    async (ids: string[]) => {
+      await Promise.all(ids.map((id) => saver.flush(id)));
+    },
+    [saver],
+  );
+
+  /** Every lock in one order (sorted), so two callers never deadlock. */
+  const withTabsLocked = useCallback(
+    <T>(ids: string[], work: () => Promise<T>): Promise<T> =>
+      [...ids]
+        .sort()
+        .reduceRight<() => Promise<T>>(
+          (inner, id) => () => lock(id, inner),
+          work,
+        )(),
+    [lock],
+  );
+
+  const library = useLibrary({
+    ready,
+    state,
+    stateRef,
+    sidebar,
+    sidebarRef,
+    patchSidebar,
+    keyOf,
+    openPaths: files.openPaths,
+    flushTabs,
+    withTabsLocked,
+    rewriteTabPaths,
+    saveAs,
+    saveTo,
+    showNotice,
+  });
 
   const setClosing = useCallback((id: string, on: boolean) => {
     if (on) closing.current.add(id);
@@ -393,21 +490,25 @@ export function useWorkspace(): Workspace {
         case "format":
           return requestFormat();
         case "toggleSidebar":
+          return toggleSidebar();
         case "focusSidebar":
+          return focusSidebar();
         case "newCanvas":
-          // Wired with the Library in useLibrary (Task 7).
-          return;
+          return newCanvas();
       }
     },
     [
       closeTab,
       commit,
+      focusSidebar,
+      newCanvas,
       newTab,
       pickAndOpen,
       reopenEntry,
       requestFormat,
       save,
       saveAs,
+      toggleSidebar,
     ],
   );
 
@@ -422,6 +523,10 @@ export function useWorkspace(): Workspace {
             onGrantsUnchecked: () => {
               sessionSuspended.current = true;
               setGrantsUnchecked(true);
+            },
+            onSidebar: (restored) => {
+              sidebarRef.current = restored;
+              setSidebar(restored);
             },
           }),
         );
@@ -501,7 +606,7 @@ export function useWorkspace(): Workspace {
   // Persist the Session on every state change (debounced by the saver).
   useEffect(() => {
     if (ready) scheduleSession();
-  }, [ready, state, scheduleSession]);
+  }, [ready, state, sidebar, scheduleSession]);
 
   // The active Tab's text is read lazily when it is first shown.
   useEffect(() => {
@@ -528,5 +633,11 @@ export function useWorkspace(): Workspace {
     findRequest,
     saveStatus,
     ready,
+    library,
+    sidebar,
+    setSidebarWidth,
+    toggleSidebar,
+    focusSidebar,
+    newCanvas,
   };
 }

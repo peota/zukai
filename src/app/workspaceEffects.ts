@@ -5,12 +5,13 @@ import { detectPlatform } from "./shortcuts";
 import { grantsFilter, pathKey, shadowDelete } from "../files/api";
 import type { SaveStatus, Saver } from "../storage/autosave";
 import {
+  defaultSidebar,
   parseSessionFile,
   restoreWorkspace,
   type ScratchFile,
   type SessionFile,
 } from "../model/session";
-import type { WorkspaceState } from "../model/types";
+import type { SidebarState, WorkspaceState } from "../model/types";
 import {
   backupSession,
   listClosedScratchpads,
@@ -47,6 +48,8 @@ export interface RestoreOptions {
    * was kept, and Session writes must wait until a later check succeeds.
    */
   onGrantsUnchecked?(): void;
+  /** The sidebar state the Session holds (the default when there is none). */
+  onSidebar?(sidebar: SidebarState): void;
 }
 
 export async function restoreSession(
@@ -66,6 +69,7 @@ export async function restoreSession(
   const file = parseSessionFile(
     json.status === "fulfilled" ? json.value : null,
   );
+  opts.onSidebar?.(file?.sidebar ?? defaultSidebar());
   const broken =
     json.status === "rejected" || (json.value !== null && file === null);
   if (broken) await backupSession().catch(logError("back up session"));

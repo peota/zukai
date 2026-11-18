@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
+import * as ws from "../../model/workspace";
 import type { FileFormat, TabState, WorkspaceState } from "../../model/types";
 import { useBarActions } from "./barActions";
 import { useCloseReopen } from "./closeReopen";
@@ -17,7 +18,7 @@ import {
 } from "./diskChanges";
 import { useLoading } from "./loading";
 import { useLaunchPaths, useOpening } from "./opening";
-import { useSave } from "./save";
+import { useSave, type SaveAsOptions } from "./save";
 
 export {
   NOTICE_MS,
@@ -33,7 +34,8 @@ export interface FilesApi {
   pickAndOpen(): Promise<void>;
   /** Scratchpad: Save As. File: write now. */
   save(id: string): Promise<void>;
-  saveAs(id: string): Promise<void>;
+  /** The save dialog (starting in `opts.dir`, offering `opts.suggested`). */
+  saveAs(id: string, opts?: SaveAsOptions): Promise<void>;
   keepMine(id: string): Promise<void>;
   loadDiskVersion(id: string): Promise<void>;
   saveToOriginal(id: string): Promise<void>;
@@ -76,6 +78,14 @@ export interface FilesInternalApi {
   closeFile(id: string): Promise<void>;
   /** True (with a notice) if the Tab's text can't be changed now. */
   refuseEdit(id: string): boolean;
+  /** Writes the Tab to a granted `target`; resolves to whether it did. */
+  saveTo(id: string, target: string): Promise<boolean>;
+  /**
+   * After a Library rename or move of `from` to `to` (Rust's exact
+   * strings): open Tabs and Recently Closed entries follow, and the Session
+   * is saved with the new paths.
+   */
+  rewriteTabPaths(from: string, to: string): Promise<void>;
 }
 
 export function useFiles(
@@ -96,7 +106,7 @@ export function useFiles(
     refuseUnreadable,
   );
   const bar = useBarActions(c, { refuseUnreadable, loadContent, reloadLocked });
-  const { save, saveAs, renameFile } = useSave(c, {
+  const { save, saveAs, saveTo, renameFile } = useSave(c, {
     refuseUnreadable,
     loadContent,
   });
@@ -104,6 +114,17 @@ export function useFiles(
     markUnreadable,
     readShadow,
   });
+
+  const { stateRef, commit, keyOf, saveSessionNow } = c;
+  const rewriteTabPaths = useCallback(
+    async (from: string, to: string) => {
+      const next = ws.rewritePaths(stateRef.current, from, to, keyOf);
+      if (next === stateRef.current) return;
+      commit(next);
+      await saveSessionNow();
+    },
+    [commit, keyOf, saveSessionNow, stateRef],
+  );
 
   // --- Effects -------------------------------------------------------------
 
@@ -151,6 +172,8 @@ export function useFiles(
       afterRestore,
       closeFile,
       refuseEdit: refuseUnreadable,
+      saveTo,
+      rewriteTabPaths,
     },
   };
 }

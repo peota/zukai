@@ -410,6 +410,28 @@ describe("session v3 migration and sidebar", () => {
     expect(r?.sidebar).toEqual(DEFAULT_SIDEBAR);
   });
 
+  it("sidebarWidthClampedOnRead", () => {
+    const read = (width: number) =>
+      parseSessionFile(
+        JSON.stringify({
+          ...toSessionFile(ws),
+          sidebar: { open: true, width, expanded: [] },
+        }),
+      )?.sidebar.width;
+    expect(read(20)).toBe(180);
+    expect(read(9000)).toBe(480);
+    expect(read(300.4)).toBe(300);
+  });
+
+  it("defaultSidebarIsNeverShared", () => {
+    const a = parseSessionFile(JSON.stringify(toSessionFile(ws)))!.sidebar;
+    const b = toSessionFile(ws).sidebar;
+    a.expanded.push("x");
+    expect(b.expanded).toEqual([]);
+    expect(DEFAULT_SIDEBAR.expanded).toEqual([]);
+    expect(Object.isFrozen(DEFAULT_SIDEBAR)).toBe(true);
+  });
+
   it("recoversAnOrphanCanvasScratchpadAsACanvasTab", () => {
     const { state } = restore(
       null,

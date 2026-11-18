@@ -63,6 +63,25 @@ async function activeView(container: HTMLElement, text: string) {
 }
 
 describe("EditorHost", () => {
+  it("showing a Tab leaves the keyboard in a sidebar text field", async () => {
+    const side = document.createElement("div");
+    side.setAttribute("data-z-sidebar", "");
+    const input = document.createElement("input");
+    side.append(input);
+    document.body.append(side);
+    try {
+      const { container, rerender } = setup();
+      const a = await activeView(container, "text of a");
+      expect(a.hasFocus).toBe(true);
+      input.focus();
+      rerender({ activeId: "b" });
+      await activeView(container, "text of b");
+      expect(document.activeElement).toBe(input);
+    } finally {
+      side.remove();
+    }
+  });
+
   it("creates the active view from loaded text and restores selection", async () => {
     const { container } = setup({
       tabs: [tab("a", { selection: { anchor: 2, head: 4 } }), tab("b")],

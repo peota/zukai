@@ -240,6 +240,7 @@ pub fn run() {
             library::commands::library_reserve,
             library::commands::library_set_drop_target,
             library::commands::library_resync,
+            library::commands::library_recreate,
             app_exit_after_flush,
             exit_flush_failed,
             app_startup_mark,

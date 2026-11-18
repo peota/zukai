@@ -122,6 +122,14 @@ interface Entry {
   scrollTop: number;
 }
 
+/** True while a text field in the Library sidebar has the keyboard. */
+function sidebarFieldFocused(): boolean {
+  const a = document.activeElement;
+  return (
+    a instanceof HTMLInputElement && a.closest("[data-z-sidebar]") !== null
+  );
+}
+
 const wrapExt = (on: boolean): Extension => (on ? EditorView.lineWrapping : []);
 const readOnlyExt = (on: boolean): Extension => [EditorState.readOnly.of(on)];
 
@@ -512,7 +520,8 @@ export function EditorHost(props: EditorHostProps) {
         requestAnimationFrame(() => {
           if (e.view.dom.isConnected) e.view.scrollDOM.scrollTop = top;
         });
-        e.view.focus();
+        // Not while typing in the sidebar (a new item's name, the search).
+        if (!sidebarFieldFocused()) e.view.focus();
         reportCursor(e.view);
       }
     }

@@ -19,6 +19,7 @@ import { EncodingPicker } from "./ui/EncodingPicker";
 import { convertPatch } from "./ui/encodings";
 import { folderHints } from "./ui/tabFolders";
 import { pathKey } from "./files/api";
+import { Sidebar } from "./ui/Sidebar";
 
 const platform = detectPlatform();
 const keyOf = (p: string) => pathKey(p, platform);
@@ -148,101 +149,137 @@ export default function App() {
     [closeEncPicker, encPicker, w],
   );
 
+  const lib = w.library;
+
   return (
-    <div className="relative flex h-full flex-col bg-chrome text-text">
-      <TabBar
-        tabs={w.state.tabs.map((t) => ({
-          id: t.id,
-          title: t.title,
-          active: t.id === activeId,
-          file: t.file
-            ? { missing: t.file.held === "missing", path: t.file.path }
-            : undefined,
-          locked: w.shadowUnreadable.has(t.id),
-          folder: folders.get(t.id),
-        }))}
-        onActivate={w.activate}
-        onClose={(id) => void w.closeTab(id)}
-        onNew={() => void run({ type: "newTab" })}
-        onMove={w.moveTab}
-        onRename={(id, name) => {
-          // A File renames on disk and may report why it couldn't.
-          if (w.state.tabs.find((t) => t.id === id)?.file) {
-            return w.renameFile(id, name);
-          }
-          void w.rename(id, name);
+    <div className="relative flex h-full bg-chrome text-text">
+      <Sidebar
+        open={w.sidebar.open}
+        width={w.sidebar.width}
+        onWidth={w.setSidebarWidth}
+        root={lib.root}
+        available={lib.available}
+        tree={lib.tree}
+        rows={lib.rows}
+        searching={lib.searching}
+        search={lib.search}
+        onSearch={lib.setQuery}
+        inbox={lib.inbox}
+        activePath={lib.activePath}
+        activeId={activeId}
+        onOpen={(entry) => void lib.open(entry).then(refocus)}
+        onToggle={lib.toggle}
+        onCreate={lib.create}
+        onRename={lib.rename}
+        onMove={(path, dest) => void lib.move(path, dest)}
+        onTrash={(path) => void lib.trash(path)}
+        onReveal={lib.reveal}
+        onCopyPath={lib.copyPath}
+        onChooseRoot={() => void lib.chooseRoot()}
+        onRecreateRoot={() => void lib.recreateRoot()}
+        onInboxActivate={(id) => {
+          w.activate(id);
+          refocus();
         }}
-        onContextMenu={(tabId, x, y) => setTabMenu({ tabId, x, y })}
+        onInboxMove={(id, dest) => void lib.inboxMove(id, dest)}
+        onLeave={refocus}
+        platform={platform}
       />
-      {active && (
-        <FileBar
-          key={active.id}
-          tab={active}
-          unreadable={unreadable}
-          onKeepMine={() => void w.keepMine(active.id)}
-          onLoadDisk={() => void w.loadDiskVersion(active.id)}
-          onSaveAs={() => void w.saveAs(active.id)}
-          onSaveToOriginal={() => void w.saveToOriginal(active.id)}
-          onReopenWithEncoding={() =>
-            setEncPicker({ mode: "reopen", id: active.id })
-          }
-          onConvertToUtf8={() =>
-            w.convert(active.id, { encoding: "utf-8", bom: false })
-          }
+      <div className="flex h-full min-w-0 flex-1 flex-col" data-z-workspace="">
+        <TabBar
+          tabs={w.state.tabs.map((t) => ({
+            id: t.id,
+            title: t.title,
+            active: t.id === activeId,
+            file: t.file
+              ? { missing: t.file.held === "missing", path: t.file.path }
+              : undefined,
+            locked: w.shadowUnreadable.has(t.id),
+            folder: folders.get(t.id),
+          }))}
+          onActivate={w.activate}
+          onClose={(id) => void w.closeTab(id)}
+          onNew={() => void run({ type: "newTab" })}
+          onMove={w.moveTab}
+          onRename={(id, name) => {
+            // A File renames on disk and may report why it couldn't.
+            if (w.state.tabs.find((t) => t.id === id)?.file) {
+              return w.renameFile(id, name);
+            }
+            void w.rename(id, name);
+          }}
+          onContextMenu={(tabId, x, y) => setTabMenu({ tabId, x, y })}
         />
-      )}
-      <main className="min-h-0 flex-1 bg-editor">
-        {w.ready && (
-          <EditorHost
-            tabs={w.state.tabs}
-            activeId={activeId}
-            loadContent={w.loadContent}
-            onChange={w.setContent}
-            onTabPatch={updateTab}
-            onCursor={onCursor}
-            isClosing={w.isClosing}
-            focusSignal={focusSignal}
-            findRequest={w.findRequest}
-            formatRequest={w.formatRequest}
-            convertRequest={w.convertRequest}
-            replaceRequests={w.replaceRequests}
-            shadowUnreadable={w.shadowUnreadable}
-            onFormatResult={onFormatResult}
+        {active && (
+          <FileBar
+            key={active.id}
+            tab={active}
+            unreadable={unreadable}
+            onKeepMine={() => void w.keepMine(active.id)}
+            onLoadDisk={() => void w.loadDiskVersion(active.id)}
+            onSaveAs={() => void w.saveAs(active.id)}
+            onSaveToOriginal={() => void w.saveToOriginal(active.id)}
+            onReopenWithEncoding={() =>
+              setEncPicker({ mode: "reopen", id: active.id })
+            }
+            onConvertToUtf8={() =>
+              w.convert(active.id, { encoding: "utf-8", bom: false })
+            }
           />
         )}
-      </main>
-      <StatusBar
-        line={here.line}
-        col={here.col}
-        language={active?.language ?? "plaintext"}
-        saveStatus={w.saveStatus}
-        onPickLanguage={() => (picking ? closePicker() : setPicking(true))}
-        platformLineEnding={PLATFORM_ENDING}
-        file={
-          active?.file
-            ? {
-                format: active.file.format,
-                readonly: active.file.held === "readonly" || unreadable,
-              }
-            : undefined
-        }
-        openMenu={formatMenu?.kind ?? null}
-        onEncodingMenu={(anchor) =>
-          formatMenu?.kind === "encoding"
-            ? closeFormatMenu()
-            : setFormatMenu({ kind: "encoding", anchor })
-        }
-        onLineEndingMenu={(anchor) =>
-          formatMenu?.kind === "lineEnding"
-            ? closeFormatMenu()
-            : setFormatMenu({ kind: "lineEnding", anchor })
-        }
-        showFormat={active?.language === "json"}
-        onFormat={w.requestFormat}
-        onFormatClose={refocus}
-        beautifyHint={BEAUTIFY_HINT}
-        notice={w.notice ?? undefined}
-      />
+        <main className="min-h-0 flex-1 bg-editor">
+          {w.ready && (
+            <EditorHost
+              tabs={w.state.tabs}
+              activeId={activeId}
+              loadContent={w.loadContent}
+              onChange={w.setContent}
+              onTabPatch={updateTab}
+              onCursor={onCursor}
+              isClosing={w.isClosing}
+              focusSignal={focusSignal}
+              findRequest={w.findRequest}
+              formatRequest={w.formatRequest}
+              convertRequest={w.convertRequest}
+              replaceRequests={w.replaceRequests}
+              shadowUnreadable={w.shadowUnreadable}
+              onFormatResult={onFormatResult}
+            />
+          )}
+        </main>
+        <StatusBar
+          line={here.line}
+          col={here.col}
+          language={active?.language ?? "plaintext"}
+          saveStatus={w.saveStatus}
+          onPickLanguage={() => (picking ? closePicker() : setPicking(true))}
+          platformLineEnding={PLATFORM_ENDING}
+          file={
+            active?.file
+              ? {
+                  format: active.file.format,
+                  readonly: active.file.held === "readonly" || unreadable,
+                }
+              : undefined
+          }
+          openMenu={formatMenu?.kind ?? null}
+          onEncodingMenu={(anchor) =>
+            formatMenu?.kind === "encoding"
+              ? closeFormatMenu()
+              : setFormatMenu({ kind: "encoding", anchor })
+          }
+          onLineEndingMenu={(anchor) =>
+            formatMenu?.kind === "lineEnding"
+              ? closeFormatMenu()
+              : setFormatMenu({ kind: "lineEnding", anchor })
+          }
+          showFormat={active?.language === "json"}
+          onFormat={w.requestFormat}
+          onFormatClose={refocus}
+          beautifyHint={BEAUTIFY_HINT}
+          notice={w.notice ?? undefined}
+        />
+      </div>
       <LanguagePicker
         open={picking}
         current={active?.language ?? "plaintext"}
