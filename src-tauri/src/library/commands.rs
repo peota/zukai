@@ -61,10 +61,14 @@ pub(crate) fn root_state(g: &Grants, data: &Path) -> RootState {
             root: Some(root),
             available: true,
         },
-        Err(_) => RootState {
-            root: stored.to_str().map(str::to_owned),
-            available: false,
-        },
+        Err(_) => {
+            // Unavailable: its paths still count as Library paths.
+            g.set_root_hint(&stored);
+            RootState {
+                root: stored.to_str().map(str::to_owned),
+                available: false,
+            }
+        }
     }
 }
 
@@ -973,6 +977,90 @@ mod tests {
         let y = root.join("sub").join("y.txt");
         assert_eq!(g.grant(&y).unwrap(), y);
         assert_eq!(g.check(s(&y)).unwrap(), y);
+    }
+
+    /// A Session naming a Missing File under the Library, whose missing
+    /// folder is later replaced by one holding a link out: the next launch
+    /// (a fresh `Grants`) must not grant through the link.
+    #[test]
+    fn session_grants_never_follow_a_link_out_after_a_relaunch() {
+        let (_tmp, g, root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root).unwrap();
+        let p = root.join("p");
+        let x = p.join("sub").join("lnk").join("x.txt");
+        let stale = root.join("sub").join("lnk").join("x.txt");
+        let granted = follow(&g, s(&p), s(&root), &[s(&x).to_owned()]);
+        assert_eq!(granted, [Some(s(&stale).to_owned())]);
+        let json = serde_json::json!({
+            "version": 3,
+            "tabs": [{ "id": "t", "file": { "path": s(&stale) } }],
+            "closed": [],
+        })
+        .to_string();
+        crate::files::grants::check_session(&g, &json).unwrap();
+
+        // A normal folder holding a link out is renamed into place.
+        let d = root.join("d");
+        fs::create_dir(&d).unwrap();
+        link_dir(&d.join("lnk"), &outside);
+        rename(&g, s(&d), "sub").unwrap();
+
+        // Relaunch: the root is loaded before the Session is granted.
+        let next = Grants::default();
+        root_state(&next, data.path());
+        let out = crate::files::grants::grant_session(&next, json.clone());
+        assert_eq!(out, json, "the Session isn't rewritten to the outside path");
+        assert!(next.check(s(&stale)).is_err());
+        assert!(next.check(s(&outside.join("x.txt"))).is_err());
+        assert!(crate::files::grants::check_session(&next, &json).is_err());
+        assert!(!outside.join("x.txt").exists());
+
+        // The same with the root not loaded yet: only its stored path known.
+        let early = Grants::default();
+        early.set_root_hint(&root);
+        let _ = crate::files::grants::grant_session(&early, json.clone());
+        assert!(early.check(s(&outside.join("x.txt"))).is_err());
+        assert!(early.check(s(&stale)).is_err(), "unusable until checked");
+        root_state(&early, data.path());
+        assert!(early.check(s(&stale)).is_err());
+    }
+
+    /// A Library that is briefly unavailable (renamed away and back, a
+    /// drive offline) keeps its grants: refused meanwhile, fine after.
+    #[test]
+    fn grants_survive_the_root_going_away_and_back() {
+        let (tmp, g, root, _outside) = library();
+        let p = root.join("p");
+        let missing = root.join("m").join("x.txt");
+        let granted = follow(
+            &g,
+            s(&p),
+            s(&root),
+            &[s(&p.join("m").join("x.txt")).to_owned()],
+        );
+        assert_eq!(granted, [Some(s(&missing).to_owned())]);
+        let away = tmp.path().join("away");
+        fs::rename(&root, &away).unwrap();
+        assert!(g.check(s(&missing)).is_err());
+        assert!(g.check_exact(s(&missing)).is_err());
+        fs::rename(&away, &root).unwrap();
+        assert_eq!(g.check(s(&missing)).unwrap(), missing);
+        assert_eq!(g.check_exact(s(&missing)).unwrap(), missing);
+    }
+
+    /// The root compared by key: another case of its spelling is still the
+    /// Library, so it can't skip the re-check.
+    #[cfg(windows)]
+    #[test]
+    fn library_paths_are_recognised_in_any_case() {
+        let (_tmp, g, root, outside) = library();
+        link_dir(&root.join("out"), &outside);
+        let upper = PathBuf::from(s(&root).to_uppercase())
+            .join("out")
+            .join("x.txt");
+        assert!(matches!(g.grant(&upper), Err(FileError::NotGranted)));
+        assert!(g.check(s(&outside.join("x.txt"))).is_err());
     }
 
     /// Grants outside the root (Files opened from a dialog) are untouched.

@@ -17,6 +17,33 @@ pub struct Grants {
     /// The canonical Library root, set only by Rust (`library.json` or the
     /// folder dialog).
     root: Mutex<Option<PathBuf>>,
+    /// Where the Library is, even while its folder is unavailable (the
+    /// stored root of an unplugged drive): paths under it are only ever
+    /// granted, and used, through the root checks.
+    root_hint: Mutex<Option<PathBuf>>,
+}
+
+/// Where a path under the Library really leads.
+enum Located {
+    /// Provably inside the root, as this canonical path.
+    Inside(PathBuf),
+    /// The root isn't there right now: nothing can be decided.
+    Offline,
+    /// It leaves the root (a link out, a dangling link) or isn't a plain
+    /// name.
+    Escapes,
+}
+
+/// True if `p` is `base` or under it, comparing each part by `key` (so
+/// another case of the same folder matches where the file system ignores
+/// case).
+fn under_by_key(p: &Path, base: &Path) -> bool {
+    let mut parts = p.components();
+    base.components().all(|b| {
+        parts
+            .next()
+            .is_some_and(|c| key(Path::new(c.as_os_str())) == key(Path::new(b.as_os_str())))
+    })
 }
 
 /// The real path of `p`, without `\\?\` verbatim prefixes on Windows. A path
@@ -93,7 +120,44 @@ impl Grants {
             return Err(FileError::Io(io::Error::other("not a folder")));
         }
         *self.root.lock().unwrap_or_else(|e| e.into_inner()) = Some(canon.clone());
+        *self.root_hint.lock().unwrap_or_else(|e| e.into_inner()) = Some(canon.clone());
         Ok(canon)
+    }
+
+    /// The stored root while its folder is unavailable (it can't be granted
+    /// yet): paths under it are treated as Library paths, never followed.
+    pub fn set_root_hint(&self, stored: &Path) {
+        *self.root_hint.lock().unwrap_or_else(|e| e.into_inner()) = Some(stored.to_path_buf());
+    }
+
+    /// True if `p` is (lexically) in the Library: under the granted root or
+    /// the stored one.
+    fn in_library(&self, p: &Path) -> bool {
+        let hint = self
+            .root_hint
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        [self.root(), hint]
+            .iter()
+            .flatten()
+            .any(|base| under_by_key(p, base))
+    }
+
+    /// Where `p`, a path in the Library, really leads.
+    fn locate(&self, p: &Path) -> Located {
+        let Some(root) = self.root() else {
+            return Located::Offline;
+        };
+        if std::fs::symlink_metadata(&root).is_err() {
+            return Located::Offline;
+        }
+        match self.resolve_in_root(p) {
+            Ok(path) => Located::Inside(path),
+            // The root went away during the check.
+            Err(_) if std::fs::symlink_metadata(&root).is_err() => Located::Offline,
+            Err(_) => Located::Escapes,
+        }
     }
 
     /// The canonical form of `p` if it is the Library root or inside it,
@@ -162,31 +226,53 @@ impl Grants {
         self.within_root(path)
     }
 
-    /// A stored grant, re-checked on every use when it lies (lexically) in
-    /// the Library root: the folders on its way may have changed since it
-    /// was granted (a link to an outside folder renamed into the place of a
-    /// missing one), and a write must never follow them out. One that no
-    /// longer resolves inside the root is dropped. Grants elsewhere (Files
-    /// the user opened) are returned as they are.
+    /// A stored grant, re-checked on every use when it lies in the Library:
+    /// the folders on its way may have changed since it was granted (a link
+    /// to an outside folder renamed into the place of a missing one), and a
+    /// write must never follow them out. One that now leads out is dropped;
+    /// while the root itself is unavailable (renamed away, a drive offline)
+    /// it is refused but kept, so it works again when the root is back.
+    /// Grants elsewhere (Files the user opened) are returned as they are.
     fn still_granted(&self, granted: PathBuf) -> Result<PathBuf, FileError> {
-        let in_library = self.root().is_some_and(|r| granted.starts_with(r));
-        if in_library && self.resolve_in_root(&granted).is_err() {
-            let mut map = self.map();
-            if map.get(&key(&granted)) == Some(&granted) {
-                map.remove(&key(&granted));
-            }
-            return Err(FileError::NotGranted);
+        if !self.in_library(&granted) {
+            return Ok(granted);
         }
-        Ok(granted)
+        match self.locate(&granted) {
+            Located::Inside(_) => Ok(granted),
+            Located::Offline => Err(FileError::NotGranted),
+            Located::Escapes => {
+                let mut map = self.map();
+                if map.get(&key(&granted)) == Some(&granted) {
+                    map.remove(&key(&granted));
+                }
+                Err(FileError::NotGranted)
+            }
+        }
     }
 
     /// Allows the webview to use `p` from now on, returning its canonical
     /// form. `p` must be absolute and not a folder. A File whose folder is
     /// gone (a Session entry) is granted as given if it is a plain absolute
     /// path, so the Session can still be saved with it.
+    ///
+    /// A path in the Library is never followed out of it: it is granted only
+    /// as `grant_in_root` would, or, while the root is unavailable, as given
+    /// (every use re-checks it against the root, see `still_granted`).
     pub fn grant(&self, p: &Path) -> Result<PathBuf, FileError> {
         if !p.is_absolute() {
             return Err(FileError::NotGranted);
+        }
+        if self.in_library(p) {
+            let path = match self.locate(p) {
+                Located::Inside(path) => path,
+                Located::Offline if plain_absolute(p) && !win32_alias(p) => p.to_path_buf(),
+                _ => return Err(FileError::NotGranted),
+            };
+            if path.is_dir() {
+                return Err(FileError::NotAFile);
+            }
+            self.map().insert(key(&path), path.clone());
+            return Ok(path);
         }
         let path = match canonical(p) {
             Ok(path) => path,
