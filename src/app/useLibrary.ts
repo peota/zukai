@@ -9,6 +9,7 @@ import {
   libraryRecreate,
   libraryRename,
   libraryReserve,
+  libraryResolve,
   libraryResync,
   libraryReveal,
   libraryRoot,
@@ -446,9 +447,22 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   const openEntry = useCallback(
     async (entry: Entry) => {
       if (entry.isDir) return toggle(entry.path);
-      await openPaths([entry.path]);
+      // A link that stays inside the Library opens as its target (spec
+      // §5.8.3): the Tab, its Session entry and its watcher name the one
+      // path Rust grants, and an open Tab for the target is reused. The
+      // link stays the tree row for rename, trash and reveal.
+      let path = entry.path;
+      if (entry.link === "inside") {
+        try {
+          path = await libraryResolve(entry.path);
+        } catch (err) {
+          const e = asFileError(err);
+          return showNotice(`Can't open ${entry.name}: ${e.message}`);
+        }
+      }
+      await openPaths([path]);
     },
-    [openPaths, toggle],
+    [openPaths, showNotice, toggle],
   );
 
   /** Lists `dir` and makes sure it's expanded, so its new item shows. */
