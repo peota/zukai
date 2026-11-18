@@ -13,7 +13,7 @@ import {
 import { createDocumentWriter } from "../files/documentWriter";
 import { BEFORE_EXIT_EVENT } from "./exit";
 import { createKeyedLock } from "./keyedLock";
-import { useFiles, type FilesApi } from "./useFiles";
+import { useFiles, type FilesApi } from "./files";
 import {
   filePathsOf,
   logError,
