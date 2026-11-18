@@ -220,7 +220,7 @@ const RESERVED_NAMES: [&str; 22] = [
 
 /// A stem must be a valid file name on every OS Zukai runs on, so a file
 /// renamed on Linux still opens on Windows.
-fn validate_stem(stem: &str) -> Result<(), FileError> {
+pub(crate) fn validate_stem(stem: &str) -> Result<(), FileError> {
     let bad_char = |c: char| c.is_control() || r#"/\:*?"<>|"#.contains(c);
     let device = stem.split('.').next().unwrap_or("").trim_end();
     let ok = !stem.trim().is_empty()
@@ -254,14 +254,21 @@ pub fn rename_no_replace(from: &Path, new_stem: &str) -> Result<PathBuf, FileErr
         return Ok(from.to_path_buf());
     }
     let to = from.with_file_name(&new_name);
-    sys::rename_no_replace(from, &to).map_err(|e| {
+    rename_path_no_replace(from, &to)?;
+    Ok(to)
+}
+
+/// Moves `from` (a file or a folder) to exactly `to`, failing with `Exists`
+/// instead of replacing anything already there (atomically, not
+/// check-then-rename).
+pub(crate) fn rename_path_no_replace(from: &Path, to: &Path) -> Result<(), FileError> {
+    sys::rename_no_replace(from, to).map_err(|e| {
         if e.kind() == io::ErrorKind::AlreadyExists {
             FileError::Exists
         } else {
             FileError::Io(e)
         }
-    })?;
-    Ok(to)
+    })
 }
 
 #[cfg(windows)]
