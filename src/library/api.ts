@@ -73,6 +73,15 @@ export const libraryReveal = (path: string): Promise<void> =>
 export const librarySearch = (query: string): Promise<SearchResult> =>
   invoke("library_search", { query });
 export const libraryWatch = (): Promise<void> => invoke("library_watch");
+/**
+ * After `from` became `to`: where each of `paths` (Files the UI holds) is
+ * now, granted exactly as returned; null for one Rust didn't confirm.
+ */
+export const libraryFollow = (
+  from: string,
+  to: string,
+  paths: string[],
+): Promise<(string | null)[]> => invoke("library_follow", { from, to, paths });
 /** A new empty `stem.ext` (or `stem (2).ext`…) in `parent`, to save into. */
 export const libraryReserve = (
   parent: string,

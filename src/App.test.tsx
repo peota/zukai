@@ -60,6 +60,7 @@ vi.mock("./library/api", () => ({
   librarySearch: vi.fn(),
   libraryWatch: vi.fn(),
   libraryReserve: vi.fn(),
+  libraryFollow: vi.fn(),
   librarySetDropTarget: vi.fn(),
   libraryResync: vi.fn(),
   onLibraryChanged: vi.fn(),

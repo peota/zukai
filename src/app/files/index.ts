@@ -19,6 +19,7 @@ import {
 import { useLoading } from "./loading";
 import { useLaunchPaths, useOpening } from "./opening";
 import { useSave, type SaveAsOptions } from "./save";
+import { logError } from "../workspaceEffects";
 
 export {
   NOTICE_MS,
@@ -81,11 +82,13 @@ export interface FilesInternalApi {
   /** Writes the Tab to a granted `target`; resolves to whether it did. */
   saveTo(id: string, target: string): Promise<boolean>;
   /**
-   * After a Library rename or move of `from` to `to` (Rust's exact
-   * strings): open Tabs and Recently Closed entries follow, and the Session
-   * is saved with the new paths.
+   * After a Library rename or move: open Tabs and Recently Closed entries
+   * whose path is a key of `moved` take its value (Rust's granted string),
+   * and the Session is saved with the new paths.
    */
-  rewriteTabPaths(from: string, to: string): Promise<void>;
+  rewriteTabPaths(moved: ReadonlyMap<string, string>): Promise<void>;
+  /** Compares each File Tab with the disk now (after a Library trash). */
+  recheckTabs(ids: string[]): Promise<void>;
 }
 
 export function useFiles(
@@ -115,15 +118,25 @@ export function useFiles(
     readShadow,
   });
 
-  const { stateRef, commit, keyOf, saveSessionNow } = c;
+  const { stateRef, commit, saveSessionNow, lock } = c;
   const rewriteTabPaths = useCallback(
-    async (from: string, to: string) => {
-      const next = ws.rewritePaths(stateRef.current, from, to, keyOf);
+    async (moved: ReadonlyMap<string, string>) => {
+      const next = ws.rewritePaths(stateRef.current, moved);
       if (next === stateRef.current) return;
       commit(next);
       await saveSessionNow();
     },
-    [commit, keyOf, saveSessionNow, stateRef],
+    [commit, saveSessionNow, stateRef],
+  );
+  const recheckTabs = useCallback(
+    async (ids: string[]) => {
+      await Promise.all(
+        ids.map((id) =>
+          lock(id, () => recheck(id)).catch(logError("check file")),
+        ),
+      );
+    },
+    [lock, recheck],
   );
 
   // --- Effects -------------------------------------------------------------
@@ -174,6 +187,7 @@ export function useFiles(
       refuseEdit: refuseUnreadable,
       saveTo,
       rewriteTabPaths,
+      recheckTabs,
     },
   };
 }

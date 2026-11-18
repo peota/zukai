@@ -388,10 +388,37 @@ fn copy_file_new(src: &Path, to: &Path) -> Result<(), FileError> {
 
 /// Moves `path` to the OS trash. If the trash refuses, so do we: the item
 /// stays where it is (`TrashUnavailable`).
+///
+/// A refusal because a handle is open inside (Windows) comes back as that
+/// OS error, so the caller can close Zukai's own handles and retry.
 pub fn trash_entry(path: &Path) -> Result<(), FileError> {
-    trash_with(path, recycle_bin_available, |p| {
-        trash::delete(p).map_err(|e| e.to_string())
-    })
+    let mut held = None;
+    let out = trash_with(path, recycle_bin_available, |p| {
+        trash::delete(p).map_err(|e| {
+            held = held_open_code(&e);
+            e.to_string()
+        })
+    });
+    match (out, held) {
+        (Err(_), Some(code)) => Err(FileError::Io(io::Error::from_raw_os_error(code))),
+        (out, _) => out,
+    }
+}
+
+/// The Win32 error (`ERROR_ACCESS_DENIED` 5 or `ERROR_SHARING_VIOLATION`
+/// 32) behind a shell copy-engine refusal caused by an open handle.
+fn held_open_code(e: &trash::Error) -> Option<i32> {
+    #[cfg(windows)]
+    if let trash::Error::Os { code, .. } = e {
+        // HRESULTs as the shell reports them (signed 32-bit).
+        return match *code as u32 {
+            0x8027_0021 | 0x8007_0005 => Some(5),
+            0x8027_0023 | 0x8007_0020 => Some(32),
+            _ => None,
+        };
+    }
+    let _ = e;
+    None
 }
 
 /// `trash_entry` with the recycle-bin check and the trash call injected, so

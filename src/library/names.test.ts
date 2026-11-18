@@ -76,6 +76,24 @@ describe("long names", () => {
     }
   });
 
+  it("capsNonAsciiTitlesByUtf8Bytes", () => {
+    const bytes = (v: string) => new TextEncoder().encode(v).length;
+    for (const title of [
+      "字".repeat(300),
+      "😀".repeat(150),
+      "é".repeat(300),
+      "a" + "字😀".repeat(100),
+    ]) {
+      const s = sanitizeFileName(title);
+      // Rust's validate_name refuses a new name over 223 bytes.
+      expect(bytes(s)).toBeLessThanOrEqual(200);
+      expect(s.length).toBeGreaterThan(0);
+      expect(s).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
+      expect(title.startsWith(s)).toBe(true);
+    }
+    expect(bytes(sanitizeFileName("字".repeat(300)))).toBe(198);
+  });
+
   it("retrimsAfterCut", () => {
     const s = sanitizeFileName("a".repeat(150) + " . . " + "b".repeat(100));
     expect(s.length).toBeLessThanOrEqual(200);

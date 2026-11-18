@@ -86,19 +86,44 @@ impl Watcher {
         Ok(())
     }
 
-    /// Stops watching (closing every folder handle) and returns the Files
-    /// that were watched, for `restore`. Windows refuses to rename a folder
-    /// while a handle is open inside it.
-    pub fn suspend(&self) -> Vec<PathBuf> {
-        let _applied = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+    /// Stops watching (closing every folder handle) and returns what was
+    /// watched, for `restore`. Windows refuses to rename a folder while a
+    /// handle is open inside it.
+    pub fn suspend(&self) -> Suspended {
+        let applied = self.gate.lock().unwrap_or_else(|e| e.into_inner());
         drop(self.active.lock().unwrap_or_else(|e| e.into_inner()).take());
-        std::mem::take(&mut *self.files.lock().unwrap_or_else(|e| e.into_inner()))
+        Suspended {
+            files: self.files.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            ticket: *applied,
+        }
     }
 
-    /// Watches `files` again after `suspend`, unless a newer set arrives.
-    pub fn restore(&self, files: Vec<PathBuf>, sink: Sink) -> Result<(), FileError> {
-        self.set_ordered(self.ticket(), files, sink)
+    /// Watches the suspended set again, unless the UI asked for a newer set
+    /// meanwhile: that one is already applied and watching, and wins.
+    pub fn restore(&self, s: Suspended, sink: Sink) -> Result<(), FileError> {
+        let applied = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        if *applied != s.ticket {
+            return Ok(());
+        }
+        let new = if s.files.is_empty() {
+            None
+        } else {
+            Some(start(s.files, sink)?)
+        };
+        let old = std::mem::replace(
+            &mut *self.active.lock().unwrap_or_else(|e| e.into_inner()),
+            new,
+        );
+        drop(applied);
+        drop(old);
+        Ok(())
     }
+}
+
+/// What `suspend` stopped: the Files, and the set's ticket.
+pub struct Suspended {
+    pub files: Vec<PathBuf>,
+    ticket: u64,
 }
 
 /// Sends changes to the UI.
@@ -314,14 +339,34 @@ mod tests {
     #[test]
     fn suspend_stops_and_restore_resumes() {
         let (_dir, file, w, rx) = setup("a.txt");
-        assert_eq!(w.suspend(), vec![file.clone()]);
+        let s = w.suspend();
+        assert_eq!(s.files, vec![file.clone()]);
         std::fs::write(&file, "while suspended").unwrap();
         assert!(rx.recv_timeout(Duration::from_millis(600)).is_err());
         let (sink, rx2) = sink_pair();
-        w.restore(vec![file.clone()], sink).unwrap();
+        w.restore(s, sink).unwrap();
         drain(&rx2);
         std::fs::write(&file, "after").unwrap();
         assert_eq!(next(&rx2).kind, Kind::Changed);
+    }
+
+    #[test]
+    fn restore_keeps_a_set_requested_while_suspended() {
+        let (dir, file, w, _rx) = setup("a.txt");
+        let other = dir.path().join("b.txt");
+        std::fs::write(&other, "b").unwrap();
+        let other = grants::canonical(&other).unwrap();
+        let s = w.suspend();
+        // The UI opened a Tab meanwhile and asked for a new set.
+        let (ui_sink, rx_ui) = sink_pair();
+        w.set_ordered(w.ticket(), vec![file.clone(), other.clone()], ui_sink)
+            .unwrap();
+        let (old_sink, rx_old) = sink_pair();
+        w.restore(s, old_sink).unwrap();
+        drain(&rx_ui);
+        std::fs::write(&other, "changed").unwrap();
+        assert_eq!(next(&rx_ui).path, other.to_str().unwrap());
+        assert!(rx_old.try_recv().is_err());
     }
 
     #[test]

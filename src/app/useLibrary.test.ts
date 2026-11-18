@@ -78,6 +78,7 @@ vi.mock("../library/api", () => ({
   librarySearch: vi.fn(),
   libraryWatch: vi.fn(),
   libraryReserve: vi.fn(),
+  libraryFollow: vi.fn(),
   librarySetDropTarget: vi.fn(),
   libraryResync: vi.fn(),
   onLibraryChanged: vi.fn(),
@@ -239,6 +240,14 @@ beforeEach(() => {
     return entries;
   });
   l.librarySearch.mockResolvedValue({ entries: [], ready: true });
+  // Rust: each path under `from` now lives under `to` (granted as is).
+  l.libraryFollow.mockImplementation(async (from, to, paths) =>
+    paths.map((p) =>
+      p === from || p.startsWith(`${from}\\`)
+        ? to + p.slice(from.length)
+        : null,
+    ),
+  );
   l.onLibraryChanged.mockImplementation(async (cb) => {
     h.libraryChanged = cb;
     return () => {};
@@ -400,6 +409,77 @@ describe("useLibrary", () => {
     expect(saved.tabs[0].file?.path).toBe(`${work}\\a.md`);
     expect(saved.closed[0].tab.file?.path).toBe(`${work}\\b.md`);
     expect(saved.sidebar.expanded).toEqual([work]);
+  });
+
+  it("Missing and closed Files whose folder is gone follow a parent rename", async () => {
+    const work = `${R}\\work`;
+    const gone = `${PROJ}\\old\\x.md`;
+    const elsewhere = `${PROJ}\\odd\\y.md`;
+    l.libraryRename.mockResolvedValue(work);
+    // Rust confirms (and grants) every path but one.
+    l.libraryFollow.mockImplementation(async (from, to, paths) =>
+      paths.map((p) => (p === elsewhere ? null : to + p.slice(from.length))),
+    );
+    const missing: TabState = {
+      ...fileTab("fm", gone),
+      file: { ...fileTab("fm", gone).file!, held: "missing" },
+    };
+    const closed: ClosedEntry[] = [
+      {
+        tab: fileTab("fc", `${PROJ}\\old\\z.md`),
+        index: 1,
+        closedAt: Date.now(),
+      },
+      { tab: fileTab("fe", elsewhere), index: 1, closedAt: Date.now() - 1 },
+    ];
+    const { result } = await mount([missing], closed);
+    await act(async () => {
+      await result.current.library.rename(PROJ, "work");
+    });
+    expect(l.libraryFollow).toHaveBeenCalledWith(PROJ, work, [
+      gone,
+      `${PROJ}\\old\\z.md`,
+      elsewhere,
+    ]);
+    const tab = result.current.state.tabs[0];
+    expect(tab.file).toMatchObject({
+      path: `${work}\\old\\x.md`,
+      held: "missing",
+    });
+    expect(result.current.state.closed.map((e) => e.tab.file?.path)).toEqual([
+      `${work}\\old\\z.md`,
+      elsewhere,
+    ]);
+    await settle();
+    const saved = lastSession();
+    expect(saved.tabs[0].file?.path).toBe(`${work}\\old\\x.md`);
+    expect(saved.closed.map((e) => e.tab.file?.path)).toEqual([
+      `${work}\\old\\z.md`,
+      elsewhere,
+    ]);
+  });
+
+  it("trashFolderWithOpenFileMarksMissingAtOnce", async () => {
+    l.libraryTrash.mockImplementation(async () => {
+      delete disk[A];
+      delete disk[B];
+    });
+    const { result } = await mount([fileTab("fa", A)]);
+    expect(await result.current.loadContent("fa")).toBe("a");
+    act(() => result.current.setContent("fa", "edited"));
+    await act(() => result.current.library.trash(PROJ));
+    // Flushed first, then checked at once: no watcher event needed.
+    expect(order(f.fileWrite)).toBeLessThan(order(l.libraryTrash));
+    const tab = result.current.state.tabs.find((t) => t.id === "fa")!;
+    expect(tab.file?.held).toBe("missing");
+    expect(tab.file?.path).toBe(A);
+    expect(await result.current.loadContent("fa")).toBe("edited");
+    await settle();
+    expect(f.shadowWrite).toHaveBeenCalledWith("fa", "edited");
+    // The flushed write cleared an old shadow; nothing deletes the new one.
+    for (const n of f.shadowDelete.mock.invocationCallOrder) {
+      expect(n).toBeLessThan(order(l.libraryTrash));
+    }
   });
 
   it("renaming an open File keeps its extension and retitles the Tab", async () => {

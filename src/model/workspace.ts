@@ -184,28 +184,26 @@ export function movedPath(
   return null;
 }
 
+const lastName = (p: string) =>
+  p.slice(Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")) + 1);
+
 /**
- * After a Library rename or move of `from` to `to`: every open Tab and
- * Recently Closed entry whose File is `from` or under it gets the new path.
- * The File renamed itself is retitled; held state (shadows are keyed by Tab
- * id) is kept.
+ * After a Library rename or move: every open Tab and Recently Closed entry
+ * whose File path is a key of `moved` (old path → new path, exactly as Rust
+ * granted it) gets the new path; any other path is left alone. A File
+ * whose name changed is retitled; held state (shadows are keyed by Tab id)
+ * is kept.
  */
 export function rewritePaths(
   s: WorkspaceState,
-  from: string,
-  to: string,
-  keyOf: (p: string) => string,
+  moved: ReadonlyMap<string, string>,
 ): WorkspaceState {
   const fix = (t: TabState): TabState => {
     if (!t.file) return t;
-    const path = movedPath(t.file.path, from, to, keyOf);
-    if (path === null || path === t.file.path) return t;
-    const title =
-      path === to
-        ? path.slice(
-            Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1,
-          )
-        : t.title;
+    const path = moved.get(t.file.path);
+    if (path === undefined || path === t.file.path) return t;
+    const name = lastName(path);
+    const title = name !== lastName(t.file.path) ? name : t.title;
     return { ...t, title, file: { ...t.file, path } };
   };
   const tabs = s.tabs.map(fix);

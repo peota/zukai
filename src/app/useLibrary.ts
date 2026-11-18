@@ -3,6 +3,7 @@ import {
   libraryChoose,
   libraryCreateFile,
   libraryCreateFolder,
+  libraryFollow,
   libraryList,
   libraryMove,
   libraryRecreate,
@@ -71,7 +72,9 @@ export interface LibraryDeps {
   flushTabs(ids: string[]): Promise<void>;
   /** Runs `work` holding every Tab's lock (no write lands meanwhile). */
   withTabsLocked<T>(ids: string[], work: () => Promise<T>): Promise<T>;
-  rewriteTabPaths(from: string, to: string): Promise<void>;
+  rewriteTabPaths(moved: ReadonlyMap<string, string>): Promise<void>;
+  /** Compares the Tabs' Files with the disk now (taking their locks). */
+  recheckTabs(ids: string[]): Promise<void>;
   saveAs(id: string, opts?: SaveAsOptions): Promise<void>;
   saveTo(id: string, target: string): Promise<boolean>;
   showNotice(text: string): void;
@@ -162,6 +165,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   const { ready, state, stateRef, sidebar, sidebarRef, patchSidebar } = d;
   const { keyOf } = d;
   const { openPaths, flushTabs, withTabsLocked, rewriteTabPaths } = d;
+  const { recheckTabs } = d;
   const { saveAs, saveTo, showNotice } = d;
 
   const [rootState, setRootStateRaw] = useState<RootState | null>(null);
@@ -484,6 +488,20 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     [openPaths, showIn, showNotice],
   );
 
+  /** File paths of open Tabs and Recently Closed entries at or under `path`. */
+  const heldPaths = useCallback(
+    (path: string) => {
+      const s = stateRef.current;
+      const all = [...s.tabs, ...s.closed.map((e) => e.tab)].flatMap((t) =>
+        t.file ? [t.file.path] : [],
+      );
+      return [
+        ...new Set(all.filter((p) => movedPath(p, path, path, keyOf) !== null)),
+      ];
+    },
+    [keyOf, stateRef],
+  );
+
   /** Open Tabs whose File is `path` or inside it. */
   const affectedTabs = useCallback(
     (path: string) =>
@@ -519,17 +537,34 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     [affectedTabs, flushTabs, showNotice, withTabsLocked],
   );
 
-  /** After `from` became `to`: Tabs, closed entries and the tree follow. */
+  /**
+   * After `from` became `to`: Tabs, closed entries and the tree follow.
+   * Rust grants each moved File path and returns it; only those change.
+   */
   const relocated = useCallback(
     async (from: string, to: string) => {
       if (to !== from) {
-        await rewriteTabPaths(from, to);
+        const paths = heldPaths(from);
+        if (paths.length > 0) {
+          let now: (string | null)[] = [];
+          try {
+            now = await libraryFollow(from, to, paths);
+          } catch (err) {
+            logError("follow moved files")(err);
+          }
+          const moved = new Map<string, string>();
+          paths.forEach((p, i) => {
+            const n = now[i];
+            if (typeof n === "string") moved.set(p, n);
+          });
+          await rewriteTabPaths(moved);
+        }
         setTree((t) => rewritePrefix(t, from, to));
       }
       const dirs = new Set([parentOf(from), parentOf(to)]);
       await Promise.all([...dirs].map((dir) => reloadIfListed(dir)));
     },
-    [reloadIfListed, rewriteTabPaths, setTree],
+    [heldPaths, reloadIfListed, rewriteTabPaths, setTree],
   );
 
   const entryOf = useCallback((path: string): Entry | undefined => {
@@ -581,7 +616,8 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
 
   const trash = useCallback(
     async (path: string) => {
-      await withFlushed(path, "delete", async () => {
+      const ids = affectedTabs(path);
+      const failed = await withFlushed(path, "delete", async () => {
         try {
           await libraryTrash(path);
         } catch (err) {
@@ -601,8 +637,18 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
         await reloadIfListed(parentOf(path));
         return null;
       });
+      // Watchers don't report the Files of a folder moved away: check them
+      // now, so they become Missing at once (their text kept in shadows).
+      if (failed === null) await recheckTabs(ids);
     },
-    [reloadIfListed, setTree, showNotice, withFlushed],
+    [
+      affectedTabs,
+      recheckTabs,
+      reloadIfListed,
+      setTree,
+      showNotice,
+      withFlushed,
+    ],
   );
 
   const reveal = useCallback(

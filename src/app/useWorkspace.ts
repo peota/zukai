@@ -256,7 +256,7 @@ export function useWorkspace(): Workspace {
   });
   const { internal, ...filesApi } = files;
   const { loadContent, updateTab, afterRestore, closeFile } = internal;
-  const { saveTo, rewriteTabPaths } = internal;
+  const { saveTo, rewriteTabPaths, recheckTabs } = internal;
   const { refuseEdit } = internal;
   const { renameFile, reopenEntry, pickAndOpen, save, saveAs } = files;
   const { requestFormat, showNotice } = files;
@@ -365,6 +365,7 @@ export function useWorkspace(): Workspace {
     flushTabs,
     withTabsLocked,
     rewriteTabPaths,
+    recheckTabs,
     saveAs,
     saveTo,
     showNotice,

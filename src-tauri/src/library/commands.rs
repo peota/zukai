@@ -248,17 +248,63 @@ fn with_watchers_released<T>(
     g: &Grants,
     op: impl FnMut() -> Result<T, FileError>,
 ) -> Result<T, FileError> {
-    let mut paused: Option<Vec<PathBuf>> = None;
+    let mut paused = None;
     let out = retry_released(op, || {
-        app.state::<LibraryWatcher>().pause();
-        paused = Some(app.state::<FileWatcher>().suspend());
+        let library_was_running = app.state::<LibraryWatcher>().pause();
+        paused = Some((app.state::<FileWatcher>().suspend(), library_was_running));
     });
-    if let Some(files) = paused {
+    if let Some((files, library_was_running)) = paused {
         let _ = app.state::<FileWatcher>().restore(files, file_sink(app));
-        let ticket = app.state::<LibraryWatcher>().ticket();
-        let _ = watch_root(app, ticket, g.root());
+        if library_was_running {
+            let ticket = app.state::<LibraryWatcher>().ticket();
+            let _ = watch_root(app, ticket, g.root());
+        }
     }
     out
+}
+
+/// After `from` became `to` (a rename or move inside the Library): where
+/// each of `paths` (Files the UI holds, open or Recently Closed) is now, or
+/// `None` for one that isn't under `from` or can't be granted. Each new path
+/// is granted exactly as returned, including Files whose folder is gone
+/// (Missing), so the next `session_write` accepts the Session naming them.
+pub(crate) fn follow(g: &Grants, from: &str, to: &str, paths: &[String]) -> Vec<Option<String>> {
+    let (from, to) = (Path::new(from), Path::new(to));
+    if g.in_root(to).is_err() {
+        return paths.iter().map(|_| None).collect();
+    }
+    paths
+        .iter()
+        .map(|p| {
+            let rest = suffix_under(Path::new(p), from)?;
+            let new = to.join(rest);
+            // An existing File must still resolve inside the root.
+            if dunce::canonicalize(&new).is_ok() && g.in_root(&new).is_err() {
+                return None;
+            }
+            path_string(&g.grant(&new).ok()?).ok()
+        })
+        .collect()
+}
+
+/// The plain names after `base` in `path` (compared by key, so another case
+/// of the same prefix matches), or `None` if `path` isn't at or under it.
+fn suffix_under(path: &Path, base: &Path) -> Option<PathBuf> {
+    let mut parts = path.components();
+    for b in base.components() {
+        let p = parts.next()?;
+        if key(Path::new(p.as_os_str())) != key(Path::new(b.as_os_str())) {
+            return None;
+        }
+    }
+    let mut rest = PathBuf::new();
+    for c in parts {
+        match c {
+            std::path::Component::Normal(name) => rest.push(name),
+            _ => return None,
+        }
+    }
+    Some(rest)
 }
 
 /// The Library folder an OS drag is over, as the UI last reported it.
@@ -449,6 +495,17 @@ pub async fn library_move(
     .await
 }
 
+/// See `follow`.
+#[tauri::command]
+pub async fn library_follow(
+    app: AppHandle,
+    from: String,
+    to: String,
+    paths: Vec<String>,
+) -> Result<Vec<Option<String>>, FileError> {
+    blocking(app, move |g| Ok(follow(g, &from, &to, &paths))).await
+}
+
 #[tauri::command]
 pub async fn library_reserve(
     app: AppHandle,
@@ -488,7 +545,11 @@ pub async fn library_copy_into(
 
 #[tauri::command]
 pub async fn library_trash(app: AppHandle, path: String) -> Result<(), FileError> {
-    blocking(app, move |g| trash(g, &path)).await
+    let handle = app.clone();
+    blocking(app, move |g| {
+        with_watchers_released(&handle, g, || trash(g, &path))
+    })
+    .await
 }
 
 /// Reveals from Rust: the webview has no `opener:*` permission.
@@ -816,6 +877,84 @@ mod tests {
         assert!(released);
         assert_eq!(out.unwrap(), s(&root.join("renamed")));
         assert!(root.join("renamed").join("sub").join("a.md").is_file());
+    }
+
+    #[test]
+    fn follow_grants_moved_paths_even_when_their_folder_is_gone() {
+        let (_tmp, g, root, outside) = library();
+        let proj = root.join("proj");
+        fs::create_dir(&proj).unwrap();
+        fs::write(proj.join("a.md"), "a").unwrap();
+        // A Missing File (its folder was deleted) and a Recently Closed one.
+        let gone = proj.join("old").join("x.md");
+        let a = proj.join("a.md");
+        let work = rename(&g, s(&proj), "work").unwrap();
+        assert_eq!(work, s(&root.join("work")));
+        let moved = follow(
+            &g,
+            s(&proj),
+            &work,
+            &[
+                s(&a).to_owned(),
+                s(&gone).to_owned(),
+                s(&outside.join("y.md")).to_owned(),
+                s(&root.join("proj2").join("z.md")).to_owned(),
+            ],
+        );
+        let new_a = s(&root.join("work").join("a.md")).to_owned();
+        let new_gone = s(&root.join("work").join("old").join("x.md")).to_owned();
+        assert_eq!(
+            moved,
+            [Some(new_a.clone()), Some(new_gone.clone()), None, None]
+        );
+        // The Session naming them is accepted byte for byte.
+        let json = serde_json::json!({
+            "version": 3,
+            "tabs": [{ "id": "t", "file": { "path": new_gone } }],
+            "closed": [{ "tab": { "id": "c", "file": { "path": new_a } } }],
+        })
+        .to_string();
+        crate::files::grants::check_session(&g, &json).unwrap();
+        // Never anywhere outside the root.
+        assert_eq!(
+            follow(&g, s(&root), s(&outside), &[s(&a).to_owned()]),
+            [None]
+        );
+    }
+
+    /// Trashing a folder is a rename into the Recycle Bin: Windows refuses
+    /// it while a watcher handle is open inside, like a rename.
+    #[cfg(windows)]
+    #[test]
+    fn trash_retries_after_dropping_watchers() {
+        use crate::files::watch::Sink as FileSink;
+        let (_tmp, g, root, _outside) = library();
+        let sub = root.join("proj").join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        let file = sub.join("a.md");
+        fs::write(&file, "a").unwrap();
+        let files = FileWatcher::default();
+        let file_sink: FileSink = Arc::new(|_| {});
+        files.set(vec![file.clone()], file_sink).unwrap();
+        let proj = s(&root.join("proj")).to_owned();
+
+        let first = trash(&g, &proj);
+        assert!(
+            first.as_ref().is_err_and(held_open),
+            "expected a held-open refusal, got {first:?}"
+        );
+        assert!(root.join("proj").exists(), "a refused trash moves nothing");
+        let mut released = false;
+        retry_released(
+            || trash(&g, &proj),
+            || {
+                files.suspend();
+                released = true;
+            },
+        )
+        .unwrap();
+        assert!(released);
+        assert!(!root.join("proj").exists());
     }
 
     #[test]
