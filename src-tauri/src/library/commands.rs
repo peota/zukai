@@ -8,7 +8,7 @@
 use super::{ops, root};
 use crate::files::FileError;
 use crate::files::commands::{blocking, path_string};
-use crate::files::grants::Grants;
+use crate::files::grants::{Grants, key, win32_alias};
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -94,18 +94,35 @@ fn folder(g: &Grants, p: &str) -> Result<PathBuf, FileError> {
 /// is resolved, but a link in the last place is the link, not its target, so
 /// renaming, moving or trashing a link never touches what it points at. A
 /// non-link is canonical (so its case matches the disk).
+///
+/// The resolved item must be exactly the one named: in the checked folder,
+/// under the requested name (up to case where the file system ignores it).
+/// That refuses every alias the OS would resolve elsewhere, above all one
+/// for the root itself (`<root>\...` on Windows).
 fn entry(g: &Grants, p: &str) -> Result<PathBuf, FileError> {
     let p = Path::new(p);
     let (Some(parent), Some(name)) = (p.parent(), p.file_name()) else {
         return Err(FileError::NotGranted);
     };
-    let path = g.in_root(parent)?.join(name);
-    let meta = fs::symlink_metadata(&path)?;
-    if meta.file_type().is_symlink() {
-        Ok(path)
-    } else {
-        Ok(dunce::canonicalize(&path)?)
+    if name == "." || name == ".." || win32_alias(Path::new(name)) {
+        return Err(FileError::NotGranted);
     }
+    let parent = g.in_root(parent)?;
+    let path = parent.join(name);
+    let meta = fs::symlink_metadata(&path)?;
+    let item = if meta.file_type().is_symlink() {
+        path
+    } else {
+        dunce::canonicalize(&path)?
+    };
+    let root = g.root().ok_or(FileError::NotGranted)?;
+    let same_name = item
+        .file_name()
+        .is_some_and(|n| key(Path::new(n)) == key(Path::new(name)));
+    if item == root || item.parent() != Some(parent.as_path()) || !same_name {
+        return Err(FileError::NotGranted);
+    }
+    Ok(item)
 }
 
 pub(crate) fn list(g: &Grants, dir: &str) -> Result<Vec<ops::Entry>, FileError> {
@@ -151,10 +168,7 @@ pub(crate) fn copy_to(g: &Grants, srcs: &[String], dest_dir: &str) -> Vec<CopyRe
     let dest = match folder(g, dest_dir) {
         Ok(dest) => dest,
         Err(e) => {
-            return srcs
-                .iter()
-                .map(|_| fail(FileError::Io(std::io::Error::other(e.to_string()))))
-                .collect();
+            return srcs.iter().map(|_| fail(e.clone())).collect();
         }
     };
     srcs.iter()
@@ -179,10 +193,25 @@ pub(crate) fn trash(g: &Grants, path: &str) -> Result<(), FileError> {
     ops::trash_entry(&entry(g, path)?)
 }
 
-/// What "Show in Explorer / Finder" may reveal: an item in the Library, or
-/// the root itself.
+/// What "Show in Explorer / Finder" may reveal: an item in the Library (a
+/// link only if it points inside it), or the root itself.
 pub(crate) fn reveal_target(g: &Grants, path: &str) -> Result<PathBuf, FileError> {
-    entry(g, path).or_else(|_| g.in_root(Path::new(path)))
+    match entry(g, path) {
+        Ok(item) => {
+            if fs::symlink_metadata(&item)?.file_type().is_symlink() {
+                g.in_root(&item)?;
+            }
+            Ok(item)
+        }
+        Err(e) => {
+            let target = g.in_root(Path::new(path))?;
+            if Some(&target) == g.root().as_ref() {
+                Ok(target)
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 #[tauri::command]
@@ -358,8 +387,92 @@ mod tests {
         let out = copy_to(&g, &[s(&secret).to_owned()], s(&root));
         assert_eq!(out[0].path.as_deref(), Some(s(&root.join("secret.md"))));
         let out = copy_to(&g, &[s(&secret).to_owned()], s(&outside));
-        assert!(out[0].error.is_some());
+        assert!(matches!(out[0].error, Some(FileError::NotGranted)));
+        assert_eq!(
+            serde_json::to_value(&out[0]).unwrap()["error"]["kind"],
+            "not_granted"
+        );
         assert!(!outside.join("secret (2).md").exists());
+    }
+
+    /// Win32 drops trailing dots and spaces, so `<root>\...` is the root
+    /// itself and `<root>\sub.` is `sub`: none of these may name an item.
+    #[cfg(windows)]
+    #[test]
+    fn root_aliases_are_refused_on_windows() {
+        let (_tmp, g, root, outside) = library();
+        let sub = root.join("sub");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("a.md"), "a").unwrap();
+        let r = s(&root).to_owned();
+        let sub_str = s(&sub).to_owned();
+        for alias in ["...", ". ", ".. ", "....", "  ", " ", "."] {
+            let p = format!(r"{r}\{alias}");
+            assert!(trash(&g, &p).is_err(), "trash {alias:?}");
+            assert!(rename(&g, &p, "renamed").is_err(), "rename {alias:?}");
+            assert!(move_to(&g, &p, &sub_str).is_err(), "move {alias:?}");
+            assert!(move_to(&g, &p, s(&outside)).is_err(), "move {alias:?}");
+            if alias == "." {
+                // `<root>\.` is the root in plain spelling: revealing it is fine.
+                assert_eq!(reveal_target(&g, &p).unwrap(), root);
+            } else {
+                assert!(reveal_target(&g, &p).is_err(), "reveal {alias:?}");
+            }
+        }
+        for alias in ["sub.", "sub ", "sub. .", "SUB."] {
+            let p = format!(r"{r}\{alias}");
+            let refused =
+                |res: Result<String, FileError>| matches!(res, Err(FileError::NotGranted));
+            assert!(
+                matches!(trash(&g, &p), Err(FileError::NotGranted)),
+                "{alias:?}"
+            );
+            assert!(refused(rename(&g, &p, "x")), "{alias:?}");
+            assert!(refused(move_to(&g, &p, &r)), "{alias:?}");
+            assert!(
+                matches!(list(&g, &p), Err(FileError::NotGranted)),
+                "{alias:?}"
+            );
+            assert!(refused(create_file(&g, &p, "n", "md")), "{alias:?}");
+            assert!(refused(create_folder(&g, &p, "n")), "{alias:?}");
+            let out = copy_to(&g, &[format!(r"{sub_str}\a.md")], &p);
+            assert!(
+                matches!(out[0].error, Some(FileError::NotGranted)),
+                "{alias:?}"
+            );
+            let a = format!(r"{p}\a.md");
+            assert!(
+                matches!(trash(&g, &a), Err(FileError::NotGranted)),
+                "{alias:?}"
+            );
+        }
+        assert!(root.is_dir());
+        assert!(sub.join("a.md").is_file());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reveal_refuses_links_that_point_outside() {
+        use std::os::unix::fs::symlink;
+        let (_tmp, g, root, outside) = library();
+        symlink(&outside, root.join("out")).unwrap();
+        assert!(reveal_target(&g, s(&root.join("out"))).is_err());
+        fs::create_dir(root.join("real")).unwrap();
+        symlink(root.join("real"), root.join("in")).unwrap();
+        assert!(reveal_target(&g, s(&root.join("in"))).is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn reveal_refuses_junctions_that_point_outside() {
+        use crate::library::tests::junction;
+        let (_tmp, g, root, outside) = library();
+        junction(&root.join("out"), &outside);
+        assert!(reveal_target(&g, s(&root.join("out"))).is_err());
+        fs::create_dir(root.join("real")).unwrap();
+        junction(&root.join("in"), &root.join("real"));
+        assert!(reveal_target(&g, s(&root.join("in"))).is_ok());
     }
 
     #[test]

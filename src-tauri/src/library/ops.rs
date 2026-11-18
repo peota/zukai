@@ -5,6 +5,7 @@
 //! Callers check every path against the folder grant first (`commands.rs`).
 
 use crate::files::FileError;
+use crate::files::grants::key;
 use crate::files::io::{rename_path_no_replace, validate_stem};
 use serde::Serialize;
 use std::cmp::Ordering;
@@ -43,7 +44,10 @@ pub struct Entry {
 pub fn list_dir(dir: &Path, root: &Path) -> io::Result<Vec<Entry>> {
     let mut entries = Vec::new();
     for item in fs::read_dir(dir)? {
-        let item = item?;
+        // One unreadable entry doesn't hide the rest of the folder.
+        let Ok(item) = item else {
+            continue;
+        };
         // A name that isn't UTF-8 can't cross to the webview and back.
         let Ok(name) = item.file_name().into_string() else {
             continue;
@@ -55,7 +59,9 @@ pub fn list_dir(dir: &Path, root: &Path) -> io::Result<Vec<Entry>> {
         let Some(path_str) = path.to_str().map(str::to_owned) else {
             continue;
         };
-        let kind = item.file_type()?;
+        let Ok(kind) = item.file_type() else {
+            continue;
+        };
         let (is_dir, link) = if kind.is_symlink() {
             let target = dunce::canonicalize(&path).ok();
             let inside = target.as_ref().is_some_and(|t| t.starts_with(root));
@@ -251,7 +257,11 @@ fn new_file(path: &Path, contents: &[u8]) -> Result<PathBuf, FileError> {
 /// Renames in place without replacing anything. For a file `new_name` is
 /// the new stem and the extension is kept; for a folder it is the new name.
 pub fn rename_entry(path: &Path, new_name: &str) -> Result<PathBuf, FileError> {
-    if !fs::symlink_metadata(path)?.is_dir() {
+    let meta = fs::symlink_metadata(path)?;
+    // A link to a folder renames like a folder.
+    let is_dir = meta.is_dir()
+        || (meta.file_type().is_symlink() && fs::metadata(path).is_ok_and(|m| m.is_dir()));
+    if !is_dir {
         return crate::files::io::rename_no_replace(path, new_name);
     }
     validate_stem(new_name)?;
@@ -296,7 +306,8 @@ fn copy_one(src: &Path, dest_dir: &Path) -> Result<PathBuf, FileError> {
     if meta.is_dir() {
         let real = dunce::canonicalize(src)?;
         let dest_real = dunce::canonicalize(dest_dir)?;
-        if dest_real.starts_with(&real) {
+        // By key, so another case spelling of a descendant counts too.
+        if Path::new(&key(&dest_real)).starts_with(Path::new(&key(&real))) {
             return Err(FileError::IntoSelf);
         }
     }
@@ -358,16 +369,105 @@ fn copy_file_new(src: &Path, to: &Path) -> Result<(), FileError> {
 /// Moves `path` to the OS trash. If the trash refuses, so do we: the item
 /// stays where it is (`TrashUnavailable`).
 pub fn trash_entry(path: &Path) -> Result<(), FileError> {
-    trash_with(path, |p| trash::delete(p).map_err(|e| e.to_string()))
+    trash_with(path, recycle_bin_available, |p| {
+        trash::delete(p).map_err(|e| e.to_string())
+    })
 }
 
-/// `trash_entry` with the trash call injected, so its failure is testable.
+/// `trash_entry` with the recycle-bin check and the trash call injected, so
+/// both refusals are testable. The trash is only tried where the volume has
+/// a bin: on Windows the shell might otherwise delete for good.
 pub(crate) fn trash_with(
     path: &Path,
+    bin_available: impl FnOnce(&Path) -> bool,
     trash: impl FnOnce(&Path) -> Result<(), String>,
 ) -> Result<(), FileError> {
     fs::symlink_metadata(path)?;
-    trash(path).map_err(|_| FileError::TrashUnavailable)
+    if !bin_available(path) {
+        return Err(FileError::TrashUnavailable(
+            "this drive has no recycle bin".into(),
+        ));
+    }
+    trash(path).map_err(FileError::TrashUnavailable)
+}
+
+/// Whether the volume holding `path` has a Recycle Bin (`SHQueryRecycleBinW`
+/// on its volume root). Network shares and some removable drives don't.
+#[cfg(windows)]
+pub(crate) fn recycle_bin_available(path: &Path) -> bool {
+    volume_root(path).is_some_and(|root| bin::query(&root))
+}
+
+/// Elsewhere the `trash` crate moves items into a trash folder or fails; it
+/// never deletes.
+#[cfg(not(windows))]
+pub(crate) fn recycle_bin_available(_path: &Path) -> bool {
+    true
+}
+
+/// The root of the volume holding `path` (`C:\`, `\\server\share\`, or a
+/// mounted folder).
+#[cfg(windows)]
+pub(crate) fn volume_root(path: &Path) -> Option<PathBuf> {
+    bin::volume_path(path)
+}
+
+#[cfg(windows)]
+mod bin {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use std::path::{Path, PathBuf};
+
+    /// `SHQUERYRBINFO`; shellapi.h packs it to 1 byte on 32-bit Windows.
+    #[repr(C)]
+    #[cfg_attr(target_pointer_width = "32", repr(packed))]
+    #[allow(dead_code)] // filled in by the shell, never read
+    struct ShQueryRbInfo {
+        cb_size: u32,
+        size: i64,
+        items: i64,
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetVolumePathNameW(file: *const u16, volume: *mut u16, len: u32) -> i32;
+    }
+
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn SHQueryRecycleBinW(root: *const u16, info: *mut ShQueryRbInfo) -> i32;
+    }
+
+    fn wide(p: &Path) -> Vec<u16> {
+        p.as_os_str().encode_wide().chain(Some(0)).collect()
+    }
+
+    pub fn volume_path(path: &Path) -> Option<PathBuf> {
+        const LEN: usize = 32 * 1024;
+        let file = wide(path);
+        let mut buf = vec![0u16; LEN];
+        // SAFETY: `file` is NUL-terminated and `buf` holds `LEN` u16s.
+        let ok = unsafe { GetVolumePathNameW(file.as_ptr(), buf.as_mut_ptr(), LEN as u32) };
+        if ok == 0 {
+            return None;
+        }
+        let end = buf.iter().position(|&c| c == 0)?;
+        Some(PathBuf::from(OsString::from_wide(&buf[..end])))
+    }
+
+    /// `S_OK` means the volume has a Recycle Bin.
+    pub fn query(root: &Path) -> bool {
+        let root = wide(root);
+        let mut info = ShQueryRbInfo {
+            cb_size: std::mem::size_of::<ShQueryRbInfo>() as u32,
+            size: 0,
+            items: 0,
+        };
+        // SAFETY: `root` is NUL-terminated; `info` is a valid SHQUERYRBINFO
+        // with its size set, living for the call.
+        let hr = unsafe { SHQueryRecycleBinW(root.as_ptr(), &mut info) };
+        hr == 0
+    }
 }
 
 #[cfg(test)]
@@ -464,6 +564,59 @@ mod tests {
         assert!(get("in-dir").is_dir);
         assert_eq!(get("out-dir").link, Some(LinkKind::Outside));
         assert_eq!(get("real").link, None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn volume_root_of_a_local_path_is_its_drive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = canon(tmp.path());
+        let vol = volume_root(&dir).unwrap();
+        assert!(dir.starts_with(&vol), "{vol:?} vs {dir:?}");
+        assert!(vol.parent().is_none() || vol.to_string_lossy().ends_with('\\'));
+        // The local system drive has a recycle bin.
+        assert!(recycle_bin_available(&dir));
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn copy_into_own_descendant_refused_in_another_case() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = canon(tmp.path());
+        let proj = dir.join("Proj");
+        fs::create_dir_all(proj.join("inner")).unwrap();
+        let other_case = dir.join("PROJ").join("INNER");
+        let res = copy_into(std::slice::from_ref(&dir.join("proj")), &other_case);
+        assert!(matches!(res[0], Err(FileError::IntoSelf)), "{res:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rename_link_to_folder_takes_whole_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = canon(tmp.path());
+        fs::create_dir(dir.join("real")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("link.v1")).unwrap();
+        let renamed = rename_entry(&dir.join("link.v1"), "link.v2").unwrap();
+        assert_eq!(renamed, dir.join("link.v2"));
+        assert!(
+            fs::symlink_metadata(&renamed)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rename_junction_takes_whole_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = canon(tmp.path());
+        fs::create_dir(dir.join("real")).unwrap();
+        crate::library::tests::junction(&dir.join("link.v1"), &dir.join("real"));
+        let renamed = rename_entry(&dir.join("link.v1"), "link.v2").unwrap();
+        assert_eq!(renamed, dir.join("link.v2"));
+        assert!(dir.join("real").is_dir());
     }
 
     #[test]
@@ -660,21 +813,42 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let f = tmp.path().join("keep.md");
         fs::write(&f, "keep").unwrap();
-        let res = trash_with(&f, |_| Err("no trash on this drive".into()));
-        assert!(matches!(res, Err(FileError::TrashUnavailable)));
+        let res = trash_with(&f, |_| true, |_| Err("no trash on this drive".into()));
+        let Err(FileError::TrashUnavailable(why)) = res else {
+            panic!("expected TrashUnavailable, got {res:?}");
+        };
+        assert!(why.contains("no trash on this drive"));
         assert_eq!(fs::read(&f).unwrap(), b"keep");
 
+        // A volume without a recycle bin is refused before the trash is tried.
+        let mut tried = false;
+        let res = trash_with(
+            &f,
+            |_| false,
+            |_| {
+                tried = true;
+                Ok(())
+            },
+        );
+        assert!(matches!(res, Err(FileError::TrashUnavailable(_))));
+        assert!(!tried);
+        assert!(f.exists());
+
         let mut called = false;
-        trash_with(&f, |p| {
-            called = p == f;
-            Ok(())
-        })
+        trash_with(
+            &f,
+            |_| true,
+            |p| {
+                called = p == f;
+                Ok(())
+            },
+        )
         .unwrap();
         assert!(called);
         // A missing item never reaches the trash.
         let missing = tmp.path().join("gone.md");
         assert!(matches!(
-            trash_with(&missing, |_| Ok(())),
+            trash_with(&missing, |_| true, |_| Ok(())),
             Err(FileError::Io(_))
         ));
     }
