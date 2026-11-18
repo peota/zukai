@@ -78,6 +78,10 @@ export const EXEC_EXTS: readonly string[] = [
   ".workflow",
   ".action",
   ".tool",
+  ".fileloc",
+  ".inetloc",
+  ".webloc",
+  ".mobileconfig",
   // Linux
   ".desktop",
   ".sh",

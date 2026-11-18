@@ -59,7 +59,20 @@ const WINDOWS: &[&str] = &[
     "rb",
 ];
 const MACOS: &[&str] = &[
-    "app", "command", "pkg", "mpkg", "terminal", "workflow", "action", "tool",
+    "app",
+    "command",
+    "pkg",
+    "mpkg",
+    "terminal",
+    "workflow",
+    "action",
+    "tool",
+    // Location files open their URL (`file://` included) in its handler.
+    "fileloc",
+    "inetloc",
+    "webloc",
+    // A configuration profile installs settings.
+    "mobileconfig",
 ];
 const LINUX: &[&str] = &["desktop", "sh", "run", "bin", "appimage"];
 
@@ -154,6 +167,10 @@ mod tests {
             "x.py",
             "x.pkg",
             "x.workflow",
+            "x.fileloc",
+            "x.inetloc",
+            "x.WEBLOC",
+            "x.mobileconfig",
             "x.AppImage",
             "x.run",
             "x.desktop",
