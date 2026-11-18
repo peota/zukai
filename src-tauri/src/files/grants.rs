@@ -27,11 +27,45 @@ pub struct Grants {
 enum Located {
     /// Provably inside the root, as this canonical path.
     Inside(PathBuf),
-    /// The root isn't there right now: nothing can be decided.
+    /// Can't be decided now: the root isn't there, or an ordinary I/O
+    /// error (a permission, a share dropping briefly) got in the way.
     Offline,
-    /// It leaves the root (a link out, a dangling link) or isn't a plain
-    /// name.
+    /// A link that leads out of the root, or dangles, was found on its way
+    /// (or it isn't a plain path).
     Escapes,
+}
+
+/// True if a link that leads out of `root`, or dangles, sits on the way
+/// from `root` to `p` (`root` itself included). Only what exists is looked
+/// at; an error reading a part is not a link out.
+pub(crate) fn link_out_on(p: &Path, root: &Path) -> bool {
+    let link_out = |at: &Path| {
+        std::fs::symlink_metadata(at).is_ok_and(|m| m.file_type().is_symlink())
+            && match dunce::canonicalize(at) {
+                Ok(target) => !target.starts_with(root),
+                Err(e) => e.kind() == io::ErrorKind::NotFound,
+            }
+    };
+    if link_out(root) {
+        return true;
+    }
+    let mut parts = p.components();
+    for _ in root.components() {
+        if parts.next().is_none() {
+            return false;
+        }
+    }
+    let mut at = root.to_path_buf();
+    for c in parts {
+        at.push(c);
+        if std::fs::symlink_metadata(&at).is_err() {
+            return false;
+        }
+        if link_out(&at) {
+            return true;
+        }
+    }
+    false
 }
 
 /// True if `p` is `base` or under it, comparing each part by `key` (so
@@ -146,7 +180,7 @@ impl Grants {
 
     /// Where `p`, a path in the Library, really leads.
     fn locate(&self, p: &Path) -> Located {
-        let Some(root) = self.root() else {
+        let Some(root) = self.root().or_else(|| self.recover_root()) else {
             return Located::Offline;
         };
         if std::fs::symlink_metadata(&root).is_err() {
@@ -156,8 +190,27 @@ impl Grants {
             Ok(path) => Located::Inside(path),
             // The root went away during the check.
             Err(_) if std::fs::symlink_metadata(&root).is_err() => Located::Offline,
-            Err(_) => Located::Escapes,
+            Err(_) if !plain_absolute(p) || win32_alias(p) || link_out_on(p, &root) => {
+                Located::Escapes
+            }
+            // An ordinary I/O error: refuse for now, decide again later.
+            Err(_) => Located::Offline,
         }
+    }
+
+    /// The stored root came back (a drive plugged in again): grant it again,
+    /// with the same checks as at load, so Library paths work without
+    /// waiting for the UI to ask.
+    fn recover_root(&self) -> Option<PathBuf> {
+        let hint = self
+            .root_hint
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()?;
+        if !hint.is_dir() {
+            return None;
+        }
+        self.set_root(&hint).ok()
     }
 
     /// The canonical form of `p` if it is the Library root or inside it,
@@ -233,12 +286,16 @@ impl Grants {
     /// while the root itself is unavailable (renamed away, a drive offline)
     /// it is refused but kept, so it works again when the root is back.
     /// Grants elsewhere (Files the user opened) are returned as they are.
-    fn still_granted(&self, granted: PathBuf) -> Result<PathBuf, FileError> {
+    ///
+    /// `offline_ok`: for bookkeeping only (which Session paths to keep and
+    /// save), never for I/O, a grant that can't be decided now still counts.
+    fn still_granted(&self, granted: PathBuf, offline_ok: bool) -> Result<PathBuf, FileError> {
         if !self.in_library(&granted) {
             return Ok(granted);
         }
         match self.locate(&granted) {
             Located::Inside(_) => Ok(granted),
+            Located::Offline if offline_ok => Ok(granted),
             Located::Offline => Err(FileError::NotGranted),
             Located::Escapes => {
                 let mut map = self.map();
@@ -293,6 +350,11 @@ impl Grants {
     /// case-sensitive folder). The lock is never held across file system
     /// calls.
     pub fn check(&self, p: &str) -> Result<PathBuf, FileError> {
+        self.check_with(p, false)
+    }
+
+    /// `check`; `offline_ok` see `still_granted`.
+    fn check_with(&self, p: &str, offline_ok: bool) -> Result<PathBuf, FileError> {
         let path = Path::new(p);
         if !path.is_absolute() {
             return Err(FileError::NotGranted);
@@ -303,7 +365,7 @@ impl Grants {
             .filter(|g| g.as_os_str() == path.as_os_str())
             .cloned();
         if let Some(granted) = stored {
-            return self.still_granted(granted);
+            return self.still_granted(granted, offline_ok);
         }
         let canon = canonical(path).map_err(|_| FileError::NotGranted)?;
         let stored = self
@@ -312,7 +374,7 @@ impl Grants {
             .filter(|g| g.as_os_str() == canon.as_os_str())
             .cloned();
         if let Some(granted) = stored {
-            return self.still_granted(granted);
+            return self.still_granted(granted, offline_ok);
         }
         // Anything inside the Library root is granted as a folder.
         if win32_alias(path) {
@@ -325,8 +387,19 @@ impl Grants {
     /// a path in the Library, exactly its canonical form).
     /// A key match alone could be a different file (another case on a
     /// case-sensitive folder, a Unicode case fold NTFS doesn't do).
+    #[cfg(test)]
     pub fn check_exact(&self, p: &str) -> Result<PathBuf, FileError> {
-        let granted = self.check(p)?;
+        self.exact(p, self.check(p)?)
+    }
+
+    /// `check_exact` for bookkeeping, never I/O: a Library grant that can't
+    /// be decided while the root is offline still counts, so the Session
+    /// keeps (and can save) its Files. One whose path leads out doesn't.
+    pub fn check_exact_stored(&self, p: &str) -> Result<PathBuf, FileError> {
+        self.exact(p, self.check_with(p, true)?)
+    }
+
+    fn exact(&self, p: &str, granted: PathBuf) -> Result<PathBuf, FileError> {
         if granted.as_os_str() == OsStr::new(p) {
             Ok(granted)
         } else {
@@ -340,7 +413,7 @@ impl Grants {
 pub fn filter_exact(grants: &Grants, paths: Vec<String>) -> Vec<String> {
     paths
         .into_iter()
-        .filter(|p| grants.check_exact(p).is_ok())
+        .filter(|p| grants.check_exact_stored(p).is_ok())
         .collect()
 }
 
@@ -413,7 +486,7 @@ pub fn grant_session(grants: &Grants, json: String) -> String {
 /// `session_read` grants exactly that spelling.
 pub fn check_session(grants: &Grants, json: &str) -> Result<(), FileError> {
     for path in extract_file_paths(json) {
-        grants.check_exact(&path)?;
+        grants.check_exact_stored(&path)?;
     }
     Ok(())
 }

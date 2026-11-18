@@ -1063,6 +1063,110 @@ mod tests {
         assert!(g.check(s(&outside.join("x.txt"))).is_err());
     }
 
+    /// The Library offline at launch: the Session keeps its Library Files
+    /// (bookkeeping), but no I/O reaches them until the root is back.
+    #[test]
+    fn session_keeps_library_files_while_the_root_is_offline_at_launch() {
+        use crate::files::grants::{check_session, filter_exact, grant_session};
+        let (tmp, g, root, _outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root).unwrap();
+        fs::write(root.join("a.md"), "a").unwrap();
+        let a = s(&root.join("a.md")).to_owned();
+        let m = s(&root.join("m").join("x.txt")).to_owned();
+        let json = serde_json::json!({
+            "version": 3,
+            "tabs": [{ "id": "t", "file": { "path": a } }],
+            "closed": [{ "tab": { "id": "c", "file": { "path": m } } }],
+        })
+        .to_string();
+        let away = tmp.path().join("away");
+        fs::rename(&root, &away).unwrap();
+
+        let next = Grants::default();
+        root_state(&next, data.path());
+        assert_eq!(grant_session(&next, json.clone()), json);
+        assert_eq!(
+            filter_exact(&next, vec![a.clone(), m.clone()]),
+            [a.clone(), m.clone()]
+        );
+        check_session(&next, &json).unwrap();
+        assert!(next.check(&a).is_err(), "no I/O while offline");
+        assert!(next.check(&m).is_err());
+
+        // C: the drive comes back; Rust finds the root again by itself.
+        fs::rename(&away, &root).unwrap();
+        assert_eq!(next.check(&a).unwrap(), root.join("a.md"));
+        assert!(next.root().is_some());
+    }
+
+    /// The root goes away mid-run: the Session can still be saved, but I/O
+    /// on its Library Files is refused.
+    #[test]
+    fn session_write_allowed_while_the_root_is_away() {
+        let (tmp, g, root, _outside) = library();
+        fs::write(root.join("a.md"), "a").unwrap();
+        let a = root.join("a.md");
+        assert_eq!(g.grant(&a).unwrap(), a);
+        let json = serde_json::json!({
+            "version": 3,
+            "tabs": [{ "id": "t", "file": { "path": s(&a) } }],
+            "closed": [],
+        })
+        .to_string();
+        let away = tmp.path().join("away");
+        fs::rename(&root, &away).unwrap();
+        crate::files::grants::check_session(&g, &json).unwrap();
+        assert!(g.check(s(&a)).is_err());
+        fs::rename(&away, &root).unwrap();
+        assert_eq!(g.check(s(&a)).unwrap(), a);
+    }
+
+    /// C: the stored root missing from the start, created later.
+    #[test]
+    fn root_recovered_from_the_stored_path_when_it_appears() {
+        let (tmp, _g, _root, _outside) = library();
+        let base = dunce::canonicalize(tmp.path()).unwrap();
+        let later = base.join("later");
+        let g = Grants::default();
+        g.set_root_hint(&later);
+        let x = later.join("x.txt");
+        assert_eq!(g.grant(&x).unwrap(), x, "kept as given while missing");
+        assert!(g.check(s(&x)).is_err());
+        fs::create_dir(&later).unwrap();
+        assert_eq!(g.check(s(&x)).unwrap(), x);
+        assert_eq!(g.root(), Some(later));
+    }
+
+    /// D: only a link that leads out (or dangles) counts as escaping; a
+    /// plain path that merely can't be read now is kept.
+    #[test]
+    fn only_a_link_out_counts_as_escaping() {
+        let (_tmp, g, root, outside) = library();
+        let p = root.join("p");
+        let x = p.join("sub").join("x.txt");
+        let granted = follow(&g, s(&p), s(&root), &[s(&x).to_owned()]);
+        let kept = root.join("sub").join("x.txt");
+        assert_eq!(granted, [Some(s(&kept).to_owned())]);
+        // Plain parts, present or missing, are never an escape.
+        assert!(!crate::files::grants::link_out_on(&kept, &root));
+        fs::create_dir(root.join("sub")).unwrap();
+        assert!(!crate::files::grants::link_out_on(&kept, &root));
+        assert_eq!(g.check_exact(s(&kept)).unwrap(), kept, "grant kept");
+        // A link out on the way is an escape: dropped.
+        fs::remove_dir(root.join("sub")).unwrap();
+        link_dir(&root.join("sub"), &outside.join("gone"));
+        assert!(crate::files::grants::link_out_on(&kept, &root), "dangling");
+        #[cfg(windows)]
+        fs::remove_dir(root.join("sub")).unwrap();
+        #[cfg(unix)]
+        fs::remove_file(root.join("sub")).unwrap();
+        link_dir(&root.join("sub"), &outside);
+        assert!(crate::files::grants::link_out_on(&kept, &root));
+        assert!(g.check(s(&kept)).is_err());
+        assert!(g.check_exact_stored(s(&kept)).is_err());
+    }
+
     /// Grants outside the root (Files opened from a dialog) are untouched.
     #[test]
     fn grants_outside_the_root_are_not_rechecked() {
