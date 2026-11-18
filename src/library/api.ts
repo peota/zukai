@@ -66,6 +66,9 @@ export const libraryCopyInto = (
   srcs: string[],
   destDir: string,
 ): Promise<CopyResult[]> => invoke("library_copy_into", { srcs, destDir });
+/** The canonical path a Library file opens as (an inside link's target). */
+export const libraryResolve = (path: string): Promise<string> =>
+  invoke("library_resolve", { path });
 export const libraryTrash = (path: string): Promise<void> =>
   invoke("library_trash", { path });
 export const libraryReveal = (path: string): Promise<void> =>

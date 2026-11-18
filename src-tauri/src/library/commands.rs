@@ -401,6 +401,20 @@ pub fn copy_dropped(app: &AppHandle, dir: String, paths: Vec<PathBuf>) {
     );
 }
 
+/// What opening the Library file `path` opens: its canonical path, so a
+/// link that stays inside the root opens as its target (spec §5.8.3). The
+/// Tab, the Session and the File watcher then all name the target, the one
+/// spelling `check_session` accepts; the link stays the tree row for
+/// rename, trash and reveal. A link out of the root (or dangling) is
+/// refused like any path outside it.
+pub(crate) fn resolve(g: &Grants, path: &str) -> Result<String, FileError> {
+    let target = g.in_root(Path::new(path))?;
+    if target.is_dir() {
+        return Err(FileError::NotAFile);
+    }
+    path_string(&target)
+}
+
 pub(crate) fn trash(g: &Grants, path: &str) -> Result<(), FileError> {
     ops::trash_entry(&entry(g, path)?)
 }
@@ -566,6 +580,12 @@ pub async fn library_copy_into(
     dest_dir: String,
 ) -> Result<Vec<CopyResult>, FileError> {
     blocking(app, move |g| Ok(copy_to(g, &srcs, &dest_dir))).await
+}
+
+/// See `resolve`.
+#[tauri::command]
+pub async fn library_resolve(app: AppHandle, path: String) -> Result<String, FileError> {
+    blocking(app, move |g| resolve(g, &path)).await
 }
 
 #[tauri::command]
@@ -1366,5 +1386,75 @@ mod tests {
         assert_eq!(v["type"], "excalidraw");
         let note = create_file(&g, s(&root), "Untitled", "md").unwrap();
         assert_eq!(fs::read(&note).unwrap(), b"");
+    }
+
+    /// A file link (a symlink; on Windows only where creating one is
+    /// allowed). False if it couldn't be made.
+    fn link_file(link: &Path, target: &Path) -> bool {
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(target, link);
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(target, link);
+        made.is_ok()
+    }
+
+    /// A file link that stays inside the Library opens as its target, the
+    /// one spelling the Session checks accept (now and after a relaunch).
+    #[test]
+    fn inside_file_link_opens_as_its_target_and_the_session_keeps_it() {
+        use crate::files::grants::{check_session, filter_exact, grant_session};
+        let (_tmp, g, root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root).unwrap();
+        fs::write(root.join("real.md"), "r").unwrap();
+        fs::write(outside.join("secret.md"), "s").unwrap();
+        let link = root.join("link.md");
+        if !link_file(&link, &root.join("real.md")) {
+            // Windows without Developer Mode or the symlink privilege.
+            eprintln!("skipped: creating a file symlink isn't allowed here");
+            return;
+        }
+        let opened = resolve(&g, s(&link)).unwrap();
+        assert_eq!(opened, s(&root.join("real.md")));
+
+        let session = |path: &str| {
+            serde_json::json!({
+                "version": 3,
+                "tabs": [{ "id": "t", "file": { "path": path } }],
+                "closed": [{ "tab": { "id": "c", "file": { "path": path } } }],
+            })
+            .to_string()
+        };
+        let json = session(&opened);
+        check_session(&g, &json).unwrap();
+        assert_eq!(
+            filter_exact(&g, vec![opened.clone()]),
+            std::slice::from_ref(&opened)
+        );
+        // The link's own path is what the UI used to store: refused.
+        assert!(check_session(&g, &session(s(&link))).is_err());
+
+        // Relaunch: granted as is, kept, and accepted back.
+        let next = Grants::default();
+        root_state(&next, data.path());
+        assert_eq!(grant_session(&next, json.clone()), json);
+        assert_eq!(
+            filter_exact(&next, vec![opened.clone()]),
+            std::slice::from_ref(&opened)
+        );
+        check_session(&next, &json).unwrap();
+
+        // A link out of the root, and a folder, don't open.
+        assert!(link_file(&root.join("out.md"), &outside.join("secret.md")));
+        assert!(matches!(
+            resolve(&g, s(&root.join("out.md"))),
+            Err(FileError::NotGranted)
+        ));
+        fs::create_dir(root.join("dir")).unwrap();
+        assert!(matches!(
+            resolve(&g, s(&root.join("dir"))),
+            Err(FileError::NotAFile)
+        ));
+        assert!(resolve(&g, s(&outside.join("secret.md"))).is_err());
     }
 }

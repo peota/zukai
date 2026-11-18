@@ -78,6 +78,7 @@ vi.mock("../library/api", () => ({
   librarySearch: vi.fn(),
   libraryWatch: vi.fn(),
   libraryReserve: vi.fn(),
+  libraryResolve: vi.fn(),
   libraryFollow: vi.fn(),
   librarySetDropTarget: vi.fn(),
   libraryResync: vi.fn(),
@@ -320,6 +321,28 @@ describe("useLibrary", () => {
     expect(result.current.library.activePath).toBe(board);
     await act(() => result.current.library.open(file(A)));
     expect(tabByPath(result, A)?.kind).toBe("text");
+  });
+
+  it("openingAnInsideLinkOpensItsTarget", async () => {
+    const link: Entry = { ...file(`${PROJ}\\link.md`), link: "inside" };
+    l.libraryResolve.mockResolvedValue(A);
+    const { result } = await mount();
+    await act(() => result.current.library.open(link));
+    expect(l.libraryResolve).toHaveBeenCalledWith(link.path);
+    expect(f.fileRead).toHaveBeenCalledWith(A);
+    expect(f.fileRead).not.toHaveBeenCalledWith(link.path);
+    const tab = tabByPath(result, A);
+    expect(tab).toBeDefined();
+    expect(tabByPath(result, link.path)).toBeUndefined();
+    // Opening the target, or the link again, reuses that Tab.
+    await act(() => result.current.library.open(file(A)));
+    await act(() => result.current.library.open(link));
+    expect(
+      result.current.state.tabs.filter((t) => t.file?.path === A),
+    ).toHaveLength(1);
+    expect(result.current.state.activeId).toBe(tab?.id);
+    // Plain files aren't resolved.
+    expect(l.libraryResolve).toHaveBeenCalledTimes(2);
   });
 
   it("createNoteOpensAndStartsRename", async () => {

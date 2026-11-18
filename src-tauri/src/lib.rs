@@ -239,6 +239,7 @@ pub fn run() {
             library::commands::library_reveal,
             library::commands::library_watch,
             library::commands::library_search,
+            library::commands::library_resolve,
             library::commands::library_reserve,
             library::commands::library_set_drop_target,
             library::commands::library_resync,
