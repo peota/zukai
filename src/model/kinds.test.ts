@@ -33,6 +33,10 @@ describe("isExecPath", () => {
       "x.appref-ms",
       "x.pkg",
       "x.AppImage",
+      "x.fileloc",
+      "x.inetloc",
+      "x.Webloc",
+      "x.mobileconfig",
     ]) {
       expect(isExecPath(p)).toBe(true);
     }
