@@ -271,9 +271,11 @@ pub(crate) fn retry_released<T>(
     }
 }
 
-/// `op` (a rename or move), retried once with the File and Library
-/// watchers dropped; they are started again afterwards either way (the UI
-/// then replaces the File set with the paths that moved).
+/// `op` (a rename, move or trash): if a handle is held open in the folder,
+/// the File and Library watchers are dropped and it retries for up to 2 s
+/// while the folder is still held open (`retry_released`); the watchers
+/// are started again afterwards either way (the UI then replaces the File
+/// set with the paths that moved).
 fn with_watchers_released<T>(
     app: &AppHandle,
     g: &Grants,
@@ -886,7 +888,8 @@ mod tests {
 
     /// Windows refuses to rename a folder while a handle is open inside it.
     /// The File watcher holds one on each open File's folder: dropping it
-    /// and retrying once lets the rename through.
+    /// and retrying for up to 2 s while the folder is still held open lets
+    /// the rename through.
     #[cfg(windows)]
     #[test]
     fn rename_retries_after_dropping_watchers() {

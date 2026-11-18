@@ -46,7 +46,7 @@ jobs:
         run: cargo fmt --check
       - name: cargo clippy
         working-directory: src-tauri
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       - name: cargo test
         working-directory: src-tauri
         # Ignored tests touch the real OS (the Recycle Bin): CI only.
