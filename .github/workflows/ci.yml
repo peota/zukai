@@ -49,6 +49,7 @@ jobs:
         run: cargo clippy -- -D warnings
       - name: cargo test
         working-directory: src-tauri
-        run: cargo test
+        # Ignored tests touch the real OS (the Recycle Bin): CI only.
+        run: cargo test -- --include-ignored
 
       - run: pnpm tauri build --no-bundle
