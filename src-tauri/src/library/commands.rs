@@ -240,8 +240,14 @@ fn held_open(e: &FileError) -> bool {
     false
 }
 
+/// How long a retry waits for released handles to actually close: a
+/// dropped watcher closes its folder handles on its own thread, a moment
+/// after the drop returns.
+const RELEASE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// Runs `op`; if it failed because a handle is open (Windows), runs
-/// `release` to close Zukai's own handles and tries once more.
+/// `release` to close Zukai's own handles and tries again, for as long as
+/// it is still refused as held open, up to `RELEASE_WAIT`.
 pub(crate) fn retry_released<T>(
     mut op: impl FnMut() -> Result<T, FileError>,
     release: impl FnOnce(),
@@ -249,7 +255,15 @@ pub(crate) fn retry_released<T>(
     match op() {
         Err(e) if held_open(&e) => {
             release();
-            op()
+            let deadline = std::time::Instant::now() + RELEASE_WAIT;
+            loop {
+                match op() {
+                    Err(e) if held_open(&e) && std::time::Instant::now() < deadline => {
+                        std::thread::sleep(std::time::Duration::from_millis(25));
+                    }
+                    other => return other,
+                }
+            }
         }
         other => other,
     }
