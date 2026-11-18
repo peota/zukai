@@ -44,6 +44,17 @@ export interface FileChanged {
 export const fileRead = (path: string): Promise<FileRead> =>
   invoke<FileRead>("file_read", { path });
 
+/** A File's raw bytes (an Image), at most the open size limit. */
+export const fileReadBytes = (path: string): Promise<ArrayBuffer> =>
+  invoke<ArrayBuffer>("file_read_bytes", { path });
+
+/** `refused_exec`: it would run or install something, so it isn't opened. */
+export type OpenOutcome = { kind: "opened" } | { kind: "refused_exec" };
+
+/** Opens a granted File in the OS's default app (only from the explicit button). */
+export const openDefault = (path: string): Promise<OpenOutcome> =>
+  invoke<OpenOutcome>("open_default", { path });
+
 export const fileRereadAs = (
   path: string,
   encoding: string,

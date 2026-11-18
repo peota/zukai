@@ -11,6 +11,7 @@ use super::fingerprint::{self, Fingerprint};
 use super::grants::{self, Grants};
 use super::io::{self, FileRead, WriteOutcome};
 use std::path::{Path, PathBuf};
+use tauri::ipc::Response;
 use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
@@ -195,6 +196,82 @@ pub async fn file_pick_save(
     .await
 }
 
+/// A granted File's raw bytes (an Image), at most `MAX_OPEN_BYTES`.
+pub(crate) fn read_bytes_checked(g: &Grants, path: &str) -> Result<Vec<u8>, FileError> {
+    Ok(io::read_bytes(&g.check(path)?)?.0)
+}
+
+/// Raw bytes, not JSON: an `ArrayBuffer` in the webview.
+#[tauri::command]
+pub async fn file_read_bytes(app: AppHandle, path: String) -> Result<Response, FileError> {
+    blocking(app, move |g| {
+        Ok(Response::new(read_bytes_checked(g, &path)?))
+    })
+    .await
+}
+
+/// Never launched by the opener: they would run or install something. The
+/// same list as `EXEC_EXTS` in `src/model/kinds.ts`, which only hides the
+/// button; this is the check that counts.
+const EXEC_EXTS: [&str; 12] = [
+    "exe", "com", "msi", "bat", "cmd", "ps1", "vbs", "lnk", "app", "desktop", "sh", "command",
+];
+
+/// True if `p`'s extension is in `EXEC_EXTS` (any case). Windows ignores
+/// trailing dots and spaces in a name, so `a.exe.` counts as `a.exe`.
+fn is_exec(p: &Path) -> bool {
+    let Some(name) = p.file_name() else {
+        return false;
+    };
+    let name = name.to_string_lossy();
+    let name = name.trim_end_matches(['.', ' ']);
+    name.rsplit_once('.')
+        .is_some_and(|(_, ext)| EXEC_EXTS.iter().any(|x| x.eq_ignore_ascii_case(ext)))
+}
+
+fn is_link(p: &Path) -> bool {
+    std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink())
+}
+
+/// What `open_default` may hand to the OS: the granted regular File `path`
+/// names, or `None` if it would run something. A link (as the path given or
+/// as what it was granted as) is never followed, and a folder never opened.
+pub(crate) fn open_target(g: &Grants, path: &str) -> Result<Option<PathBuf>, FileError> {
+    let target = g.check(path)?;
+    if is_link(Path::new(path)) || is_link(&target) {
+        return Err(FileError::NotGranted);
+    }
+    if !std::fs::metadata(&target)?.is_file() {
+        return Err(FileError::NotAFile);
+    }
+    if is_exec(Path::new(path)) || is_exec(&target) {
+        return Ok(None);
+    }
+    Ok(Some(target))
+}
+
+#[derive(Debug, PartialEq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum OpenOutcome {
+    Opened,
+    RefusedExec,
+}
+
+/// Opens a granted File in its default app, from Rust: the webview has no
+/// `opener:*` permission. Only the explicit button calls this.
+#[tauri::command]
+pub async fn open_default(app: AppHandle, path: String) -> Result<OpenOutcome, FileError> {
+    blocking(app, move |g| {
+        let Some(target) = open_target(g, &path)? else {
+            return Ok(OpenOutcome::RefusedExec);
+        };
+        tauri_plugin_opener::open_path(&target, None::<&str>)
+            .map_err(|e| FileError::Io(std::io::Error::other(e.to_string())))?;
+        Ok(OpenOutcome::Opened)
+    })
+    .await
+}
+
 /// The Session File paths that are granted under exactly that spelling.
 /// `session_read` keeps paths it couldn't grant; the UI drops those so that
 /// `session_write` accepts the Session it saves back.
@@ -220,5 +297,148 @@ mod tests {
             ],
         };
         assert_eq!(plain_extensions(&f), vec!["excalidraw", "png2"]);
+    }
+
+    use crate::files::io::MAX_OPEN_BYTES;
+    use crate::library::tests::library;
+    use std::fs;
+
+    fn s(p: &Path) -> &str {
+        p.to_str().unwrap()
+    }
+
+    #[test]
+    fn open_default_refuses_exec_extensions() {
+        let (_tmp, g, root, outside) = library();
+        for name in [
+            "a.exe",
+            "b.COM",
+            "c.msi",
+            "d.Bat",
+            "e.cmd",
+            "f.ps1",
+            "g.vbs",
+            "h.lnk",
+            "i.app",
+            "j.desktop",
+            "k.sh",
+            "l.command",
+        ] {
+            let p = root.join(name);
+            fs::write(&p, "x").unwrap();
+            assert!(
+                matches!(open_target(&g, s(&p)), Ok(None)),
+                "{name} must be refused"
+            );
+        }
+        // Windows drops trailing dots and spaces: still the executable.
+        let dotted = format!("{}.", s(&root.join("a.exe")));
+        assert!(!matches!(open_target(&g, &dotted), Ok(Some(_))));
+
+        let pdf = root.join("doc.pdf");
+        fs::write(&pdf, "%PDF").unwrap();
+        assert_eq!(open_target(&g, s(&pdf)).unwrap(), Some(pdf.clone()));
+        // A folder is never opened.
+        fs::create_dir(root.join("dir")).unwrap();
+        assert!(matches!(
+            open_target(&g, s(&root.join("dir"))),
+            Err(FileError::NotAFile)
+        ));
+        // Outside the Library and not granted.
+        let secret = outside.join("secret.pdf");
+        fs::write(&secret, "s").unwrap();
+        assert!(matches!(
+            open_target(&g, s(&secret)),
+            Err(FileError::NotGranted)
+        ));
+        // A File the user opened from a dialog is granted exactly.
+        g.grant(&secret).unwrap();
+        assert_eq!(open_target(&g, s(&secret)).unwrap(), Some(secret.clone()));
+    }
+
+    /// A link as the last part of the path is never opened, even one that
+    /// stays in the Library.
+    #[test]
+    fn open_default_refuses_links() {
+        let (_tmp, g, root, outside) = library();
+        let target = root.join("real.pdf");
+        fs::write(&target, "x").unwrap();
+        fs::write(outside.join("out.pdf"), "o").unwrap();
+        // A folder link that stays in the Library (a junction on Windows).
+        fs::create_dir(root.join("sub")).unwrap();
+        let dir_link = root.join("dir-link");
+        #[cfg(windows)]
+        crate::library::tests::junction(&dir_link, &root.join("sub"));
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(root.join("sub"), &dir_link).unwrap();
+        assert!(matches!(
+            open_target(&g, s(&dir_link)),
+            Err(FileError::NotGranted)
+        ));
+
+        let link = root.join("link.pdf");
+        let out_link = root.join("out-link.pdf");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            std::os::unix::fs::symlink(outside.join("out.pdf"), &out_link).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            // File symlinks need Developer Mode or elevation on Windows.
+            if std::os::windows::fs::symlink_file(&target, &link).is_err() {
+                eprintln!("skipped: can't create file symlinks here");
+                return;
+            }
+            std::os::windows::fs::symlink_file(outside.join("out.pdf"), &out_link).unwrap();
+        }
+        assert!(open_target(&g, s(&link)).is_err());
+        assert!(open_target(&g, s(&out_link)).is_err());
+    }
+
+    #[test]
+    fn read_bytes_requires_grant_and_cap() {
+        let (_tmp, g, root, outside) = library();
+        let png = root.join("pic.png");
+        fs::write(&png, [0x89, b'P', b'N', b'G', 0, 1, 2]).unwrap();
+        assert_eq!(
+            read_bytes_checked(&g, s(&png)).unwrap(),
+            vec![0x89, b'P', b'N', b'G', 0, 1, 2]
+        );
+
+        let out = outside.join("pic.png");
+        fs::write(&out, "o").unwrap();
+        assert!(matches!(
+            read_bytes_checked(&g, s(&out)),
+            Err(FileError::NotGranted)
+        ));
+        assert!(matches!(
+            read_bytes_checked(&g, "pic.png"),
+            Err(FileError::NotGranted)
+        ));
+        g.grant(&out).unwrap();
+        assert_eq!(read_bytes_checked(&g, s(&out)).unwrap(), b"o");
+
+        let big = root.join("big.png");
+        fs::File::create(&big)
+            .unwrap()
+            .set_len(MAX_OPEN_BYTES + 1)
+            .unwrap();
+        assert!(matches!(
+            read_bytes_checked(&g, s(&big)),
+            Err(FileError::TooLarge)
+        ));
+        assert!(matches!(
+            read_bytes_checked(&g, s(&root)),
+            Err(FileError::NotAFile)
+        ));
+    }
+
+    #[test]
+    fn open_outcome_serializes_kind() {
+        let v = serde_json::to_value(OpenOutcome::RefusedExec).unwrap();
+        assert_eq!(v["kind"], "refused_exec");
+        let v = serde_json::to_value(OpenOutcome::Opened).unwrap();
+        assert_eq!(v["kind"], "opened");
     }
 }

@@ -4,6 +4,7 @@ import type { FileFormat, LanguageId } from "../model/types";
 import type { SaveStatus } from "../storage/autosave";
 import { encodingLabel, lineEndingLabel } from "./encodings";
 import { Menu } from "./Menu";
+import type { ImageInfo } from "../image/ImageHost";
 
 export type FormatKind = "beautify" | "minify";
 
@@ -36,6 +37,8 @@ export interface StatusBarProps {
    * Language, encoding, line ending or Format.
    */
   kindLabel?: string;
+  /** An Image Tab: shown in place of `kindLabel` once the image has loaded. */
+  image?: ImageInfo;
 }
 
 export const LANGUAGE_LABELS: Record<LanguageId, string> = {
@@ -73,6 +76,7 @@ export function StatusBar({
   notice,
   beautifyHint,
   kindLabel,
+  image,
 }: StatusBarProps) {
   const [formatAt, setFormatAt] = useState<DOMRect | null>(null);
   const closeFormat = useCallback(() => {
@@ -98,7 +102,13 @@ export function StatusBar({
           {notice}
         </span>
       )}
-      {kindLabel !== undefined ? (
+      {kindLabel !== undefined && image ? (
+        <div className="ml-auto flex items-center gap-3 px-1.5 py-0.5">
+          <span>{`${image.width} × ${image.height}`}</span>
+          <span>{image.format}</span>
+          <span>{fileSize(image.bytes)}</span>
+        </div>
+      ) : kindLabel !== undefined ? (
         <span className="ml-auto px-1.5 py-0.5">{kindLabel}</span>
       ) : (
         <div className="ml-auto flex items-center gap-1.5">
@@ -166,6 +176,14 @@ export function StatusBar({
       )}
     </div>
   );
+}
+
+/** "512 B", "1.5 KB", "10 MB". */
+export function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${Number(kb.toFixed(1))} KB`;
+  return `${Number((kb / 1024).toFixed(1))} MB`;
 }
 
 function Chip({

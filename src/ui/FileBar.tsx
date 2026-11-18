@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { TabState } from "../model/types";
 import { baseName } from "../files/paths";
+import { isExecPath } from "../model/kinds";
 import { encodingLabel } from "./encodings";
 
 export interface FileBarProps {
@@ -13,6 +14,8 @@ export interface FileBarProps {
   onSaveToOriginal(): void;
   onReopenWithEncoding(): void;
   onConvertToUtf8(): void;
+  /** Opens the File in the OS's default app (never offered for executables). */
+  onOpenDefault?(): void;
 }
 
 export type BarKind = "warn" | "err" | "info";
@@ -29,6 +32,12 @@ export function FileBar(p: FileBarProps) {
         {`${name} has unsaved text that can't be read yet.`}
       </Bar>
     );
+  }
+  if (p.tab.kind === "image") {
+    // An image is never edited: nothing to save, no text to re-read.
+    return file.held === "missing" ? (
+      <Bar kind="err">{`${name} was moved or deleted.`}</Bar>
+    ) : null;
   }
   switch (file.held) {
     case "conflict":
@@ -81,9 +90,16 @@ export function FileBar(p: FileBarProps) {
         <Bar
           kind="info"
           actions={
-            <BarButton onClick={p.onReopenWithEncoding}>
-              Reopen with encoding…
-            </BarButton>
+            <>
+              {p.onOpenDefault && !isExecPath(file.path) && (
+                <BarButton onClick={p.onOpenDefault}>
+                  Open with default app
+                </BarButton>
+              )}
+              <BarButton onClick={p.onReopenWithEncoding}>
+                Reopen with encoding…
+              </BarButton>
+            </>
           }
         >
           This file isn't readable as text, so it's open read-only to protect

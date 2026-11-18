@@ -55,7 +55,7 @@ export function useBarActions(c: FilesContext, d: BarDeps) {
 
   const keepMine = useCallback(
     async (id: string) => {
-      if (refuseUnreadable(id)) return;
+      if (tabOf(id)?.kind === "image" || refuseUnreadable(id)) return;
       const text = await loadContent(id);
       await lock(id, async () => {
         const file = tabOf(id)?.file;
@@ -102,7 +102,8 @@ export function useBarActions(c: FilesContext, d: BarDeps) {
 
   const saveToOriginal = useCallback(
     async (id: string) => {
-      if (refuseUnreadable(id)) return;
+      // An Image Tab's text isn't its bytes: never write it back.
+      if (tabOf(id)?.kind === "image" || refuseUnreadable(id)) return;
       const text = await loadContent(id);
       await lock(id, async () => {
         const file = tabOf(id)?.file;

@@ -38,3 +38,16 @@ export function kindOf(path: string): Kind {
   if (ext === CANVAS_EXT) return "canvas";
   return IMAGE_EXTS.includes(ext) ? "image" : "text";
 }
+
+/**
+ * True if the opener must never launch `path` (an `EXEC_EXTS` extension,
+ * any case; Windows ignores trailing dots and spaces). Only hides the
+ * button: Rust refuses them again.
+ */
+export function isExecPath(path: string): boolean {
+  const name = path
+    .slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1)
+    .replace(/[. ]+$/, "");
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 && EXEC_EXTS.includes(name.slice(dot).toLowerCase());
+}

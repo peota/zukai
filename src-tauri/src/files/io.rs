@@ -32,7 +32,7 @@ pub enum WriteOutcome {
 
 /// Reads at most `MAX_OPEN_BYTES` of a regular file, checking the size from
 /// metadata first so an oversized file is never read into memory.
-fn read_bytes(path: &Path) -> Result<(Vec<u8>, Fingerprint), FileError> {
+pub(crate) fn read_bytes(path: &Path) -> Result<(Vec<u8>, Fingerprint), FileError> {
     // Path metadata first: on Windows a directory can't even be opened as a File.
     let meta = fs::metadata(path)?;
     if !meta.is_file() {
