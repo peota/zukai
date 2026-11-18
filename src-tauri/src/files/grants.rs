@@ -48,6 +48,21 @@ pub fn key(p: &Path) -> String {
     }
 }
 
+/// True if a part of `p` ends in a dot or a space. Win32 drops those, so
+/// `<root>\...` is the root itself and `<root>\sub.` is `sub`: such a path
+/// is never a name the webview may use for an item in the Library. Elsewhere
+/// they are ordinary names.
+pub fn win32_alias(p: &Path) -> bool {
+    cfg!(windows)
+        && p.components().any(|c| match c {
+            Component::Normal(name) => {
+                let name = name.to_string_lossy();
+                name.ends_with('.') || name.ends_with(' ')
+            }
+            _ => false,
+        })
+}
+
 /// True if `p` is absolute and has no `.` or `..` parts, so it can be
 /// trusted as is when it can't be canonicalized.
 fn plain_absolute(p: &Path) -> bool {
@@ -86,7 +101,7 @@ impl Grants {
     /// its parent; a link that resolves outside the root (or dangles) is
     /// refused.
     pub fn in_root(&self, p: &Path) -> Result<PathBuf, FileError> {
-        if !p.is_absolute() {
+        if !p.is_absolute() || win32_alias(p) {
             return Err(FileError::NotGranted);
         }
         let canon = canonical(p).map_err(|_| FileError::NotGranted)?;
@@ -152,6 +167,9 @@ impl Grants {
             _ => {}
         }
         // Anything inside the Library root is granted as a folder.
+        if win32_alias(path) {
+            return Err(FileError::NotGranted);
+        }
         self.within_root(canon)
     }
 

@@ -26,13 +26,31 @@ pub enum FileError {
     InvalidName,
     /// The OS trash refused the item (e.g. on some network drives); nothing
     /// was deleted, and Zukai never falls back to a permanent delete.
-    #[error("the trash isn't available here, so nothing was deleted")]
-    TrashUnavailable,
+    #[error("the trash isn't available here, so nothing was deleted ({0})")]
+    TrashUnavailable(String),
     #[error("a folder can't be moved into itself")]
     IntoSelf,
     /// Serialized with kind `"io"`: the frontend only ever sends labels it got from us.
     #[error("unknown encoding: {0}")]
     UnknownEncoding(String),
+}
+
+/// `io::Error` isn't `Clone`; a copy keeps the variant (so the UI still sees
+/// the same kind) and, for I/O errors, the error kind and message.
+impl Clone for FileError {
+    fn clone(&self) -> Self {
+        match self {
+            FileError::Io(e) => FileError::Io(std::io::Error::new(e.kind(), e.to_string())),
+            FileError::NotGranted => FileError::NotGranted,
+            FileError::NotAFile => FileError::NotAFile,
+            FileError::TooLarge => FileError::TooLarge,
+            FileError::Exists => FileError::Exists,
+            FileError::InvalidName => FileError::InvalidName,
+            FileError::TrashUnavailable(why) => FileError::TrashUnavailable(why.clone()),
+            FileError::IntoSelf => FileError::IntoSelf,
+            FileError::UnknownEncoding(label) => FileError::UnknownEncoding(label.clone()),
+        }
+    }
 }
 
 impl Serialize for FileError {
@@ -44,7 +62,7 @@ impl Serialize for FileError {
             FileError::TooLarge => "too_large",
             FileError::Exists => "exists",
             FileError::InvalidName => "invalid_name",
-            FileError::TrashUnavailable => "trash_unavailable",
+            FileError::TrashUnavailable(_) => "trash_unavailable",
             FileError::IntoSelf => "into_self",
         };
         let mut st = s.serialize_struct("FileError", 2)?;
@@ -65,8 +83,9 @@ mod tests {
         assert!(v["message"].as_str().unwrap().contains("exists"));
         let v = serde_json::to_value(FileError::UnknownEncoding("x".into())).unwrap();
         assert_eq!(v["kind"], "io");
-        let v = serde_json::to_value(FileError::TrashUnavailable).unwrap();
+        let v = serde_json::to_value(FileError::TrashUnavailable("no bin".into())).unwrap();
         assert_eq!(v["kind"], "trash_unavailable");
+        assert!(v["message"].as_str().unwrap().contains("no bin"));
         let v = serde_json::to_value(FileError::IntoSelf).unwrap();
         assert_eq!(v["kind"], "into_self");
     }
