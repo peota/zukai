@@ -814,7 +814,10 @@ describe("useFiles save and save as", () => {
     });
 
     it("converting back to the disk format clears unsaved", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
       const { result, id } = await convertToCrlf();
+      await act(() => vi.advanceTimersByTimeAsync(300));
+      expect(fileTabOf(result)!.file!.unsaved).toBe(true);
       const file = fileTabOf(result)!.file!;
       act(() =>
         result.current.updateTab(id, { file: { ...file, format: FMT } }),
@@ -827,11 +830,86 @@ describe("useFiles save and save as", () => {
     });
 
     it("Save after a Convert writes the new format", async () => {
-      // saveNow isn't exposed yet (Task 6): keepMine is the explicit write.
       const { result, id } = await convertToCrlf();
-      await act(() => result.current.keepMine(id));
+      await act(() => result.current.save(id));
       expect(f.fileWrite).toHaveBeenCalledWith(P, "{}", CRLF, fp("h1"));
       expect(fileTabOf(result)!.file!.diskFormat).toBeUndefined();
+    });
+  });
+
+  describe("Save", () => {
+    it("Mod+S writes an unsaved File and clears the dot", async () => {
+      const { result } = await mount(false);
+      const id = await openP(result);
+      act(() => result.current.setContent(id, "typed"));
+      await settle();
+      expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+      await act(() => result.current.run({ type: "save" }));
+      expect(f.fileWrite).toHaveBeenCalledWith(P, "typed", FMT, fp("h1"));
+      expect(disk[P].text).toBe("typed");
+      expect(fileTabOf(result)!.file!.unsaved).toBeUndefined();
+      expect(shadows[id]).toBeUndefined();
+    });
+
+    it("Mod+S on a clean File writes nothing", async () => {
+      const { result } = await mount(false);
+      await openP(result);
+      await act(() => result.current.run({ type: "save" }));
+      expect(f.fileWrite).not.toHaveBeenCalled();
+      expect(f.fileSaveAs).not.toHaveBeenCalled();
+    });
+
+    it("Mod+S on a conflict shows a notice and writes nothing", async () => {
+      const { result } = await mount(false);
+      const id = await openP(result);
+      act(() => result.current.setContent(id, "mine"));
+      disk[P] = { text: "theirs", hash: "h2" };
+      act(() => h.fileChanged!({ path: P, kind: "changed" }));
+      await waitFor(() =>
+        expect(fileTabOf(result)!.file!.held).toBe("conflict"),
+      );
+      await settle();
+      await act(() => result.current.run({ type: "save" }));
+      expect(result.current.notice).toBe("Resolve the conflict first");
+      expect(f.fileWrite).not.toHaveBeenCalled();
+      expect(disk[P].text).toBe("theirs");
+    });
+
+    it("Mod+S on a Missing File recreates it", async () => {
+      const { result } = await mount(false);
+      const id = await openP(result);
+      act(() => result.current.setContent(id, "kept"));
+      delete disk[P];
+      act(() => h.fileChanged!({ path: P, kind: "removed" }));
+      await waitFor(() =>
+        expect(fileTabOf(result)!.file!.held).toBe("missing"),
+      );
+      await settle();
+      await act(() => result.current.run({ type: "save" }));
+      expect(f.fileSaveAs).toHaveBeenCalledWith(P, "kept", FMT);
+      expect(disk[P].text).toBe("kept");
+      expect(fileTabOf(result)!.file!.held).toBeNull();
+    });
+
+    it("Save all saves every unsaved File and names skipped conflicts", async () => {
+      disk[Q] = { text: "q", hash: "q1" };
+      const { result } = await mount(false);
+      const a = await openP(result);
+      const b = await openP(result, Q);
+      act(() => result.current.setContent(a, "A2"));
+      act(() => result.current.setContent(b, "B2"));
+      await settle();
+      disk[Q] = { text: "q-theirs", hash: "q2" };
+      act(() => h.fileChanged!({ path: Q, kind: "changed" }));
+      await waitFor(() =>
+        expect(fileTabOf(result, Q)!.file!.held).toBe("conflict"),
+      );
+      await settle();
+      await act(() => result.current.saveAll());
+      expect(disk[P].text).toBe("A2");
+      expect(fileTabOf(result)!.file!.unsaved).toBeUndefined();
+      expect(disk[Q].text).toBe("q-theirs");
+      expect(result.current.notice).toBe("Not saved (conflict): notes.txt");
     });
   });
 

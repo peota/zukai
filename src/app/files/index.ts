@@ -35,6 +35,8 @@ export interface FilesApi {
   pickAndOpen(): Promise<void>;
   /** Scratchpad: Save As. File: write now. */
   save(id: string): Promise<void>;
+  /** Saves every File Tab with pending edits; names skipped conflicts. */
+  saveAll(): Promise<void>;
   /** The save dialog (starting in `opts.dir`, offering `opts.suggested`). */
   saveAs(id: string, opts?: SaveAsOptions): Promise<void>;
   keepMine(id: string): Promise<void>;
@@ -113,10 +115,12 @@ export function useFiles(
     refuseUnreadable,
   );
   const bar = useBarActions(c, { refuseUnreadable, loadContent, reloadLocked });
-  const { save, saveAs, saveTo, renameFile, renameExtension } = useSave(c, {
-    refuseUnreadable,
-    loadContent,
-  });
+  const { save, saveAll, saveAs, saveTo, renameFile, renameExtension } =
+    useSave(c, {
+      refuseUnreadable,
+      loadContent,
+      saveToOriginal: bar.saveToOriginal,
+    });
   const { closeFile, reopenEntry } = useCloseReopen(c, {
     markUnreadable,
     readShadow,
@@ -167,6 +171,7 @@ export function useFiles(
     openPaths,
     pickAndOpen,
     save,
+    saveAll,
     saveAs,
     keepMine: bar.keepMine,
     loadDiskVersion: bar.loadDiskVersion,

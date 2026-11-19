@@ -419,7 +419,7 @@ export function useWorkspace(): Workspace {
   );
   const { saveTo, rewriteTabPaths, recheckTabs } = internal;
   const { refuseEdit } = internal;
-  const { renameFile, reopenEntry, pickAndOpen, save, saveAs } = files;
+  const { renameFile, reopenEntry, pickAndOpen, save, saveAll, saveAs } = files;
   const { requestFormat, showNotice } = files;
 
   const setContent = useCallback(
@@ -788,6 +788,8 @@ export function useWorkspace(): Workspace {
         case "open":
           return pickAndOpen();
         case "save":
+          // A rich editor's pending edit counts as typed text.
+          flushRich(s.activeId);
           return save(s.activeId);
         case "saveAs":
           return saveAs(s.activeId);
@@ -837,6 +839,7 @@ export function useWorkspace(): Workspace {
       newTab,
       pickAndOpen,
       reopenEntry,
+      flushRich,
       requestFormat,
       save,
       saveAs,
@@ -1002,8 +1005,14 @@ export function useWorkspace(): Workspace {
   const active = state.tabs.find((t) => t.id === state.activeId);
   useWindowTitle(ready && active ? active.title : null);
 
+  const saveAllFlushed = useCallback(() => {
+    flushRich();
+    return saveAll();
+  }, [flushRich, saveAll]);
+
   return {
     ...filesApi,
+    saveAll: saveAllFlushed,
     state,
     loadContent,
     setContent,

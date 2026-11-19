@@ -52,14 +52,15 @@ export interface SaveAsOptions {
 interface SaveDeps {
   refuseUnreadable(id: string): boolean;
   loadContent(id: string): Promise<string>;
+  saveToOriginal(id: string): Promise<void>;
 }
 
 /** Save, Save As, and rename. */
 export function useSave(c: FilesContext, d: SaveDeps) {
   const { stateRef, commit, contents, onDisk, saver, lock } = c;
   const { saveSessionNow, keyOf, newFileFormat } = c;
-  const { tabOf, showNotice, keepAside, dropShadow } = c;
-  const { refuseUnreadable, loadContent } = d;
+  const { tabOf, showNotice, keepAside, dropShadow, hasPending, saveNow } = c;
+  const { refuseUnreadable, loadContent, saveToOriginal } = d;
 
   /**
    * Writes Tab `id` to `target` (a path Rust granted: picked in the save
@@ -189,11 +190,55 @@ export function useSave(c: FilesContext, d: SaveDeps) {
       const tab = tabOf(id);
       if (!tab || tab.kind === "image") return;
       if (!tab.file) return saveAs(id);
-      // Autosave already runs; Ctrl+S writes now. A failure shows "Not saved".
-      await saver.flush(id).catch(logError("save"));
+      switch (tab.file.held) {
+        case "conflict":
+          return showNotice("Resolve the conflict first");
+        case "missing":
+          return saveToOriginal(id);
+        case "unencodable":
+          return showNotice(
+            `Can't save: some characters can't be written in ${tab.file.format.encoding}`,
+          );
+        case "readonly":
+          return;
+        case null:
+          break;
+      }
+      try {
+        await saver.flush(id);
+        // saveNow takes the Tab's lock itself (it isn't re-entrant).
+        if (hasPending(id)) await saveNow(id, contents.get(id) ?? "");
+      } catch (err) {
+        logError("save")(err);
+      }
     },
-    [saveAs, saver, tabOf],
+    [
+      contents,
+      hasPending,
+      saveAs,
+      saveNow,
+      saveToOriginal,
+      saver,
+      showNotice,
+      tabOf,
+    ],
   );
+
+  /** Saves every File Tab with edits not yet in its File, in tab order. */
+  const saveAll = useCallback(async () => {
+    const skipped: string[] = [];
+    for (const tab of stateRef.current.tabs) {
+      if (!tab.file || tab.kind === "image" || !hasPending(tab.id)) continue;
+      if (tab.file.held === "conflict") {
+        skipped.push(tab.title);
+        continue;
+      }
+      await save(tab.id);
+    }
+    if (skipped.length > 0) {
+      showNotice(`Not saved (conflict): ${skipped.join(", ")}`);
+    }
+  }, [hasPending, save, showNotice, stateRef]);
 
   /**
    * Renames Tab `id`'s File with `rename` (Rust's call, given its path),
@@ -282,5 +327,5 @@ export function useSave(c: FilesContext, d: SaveDeps) {
     [renameWith],
   );
 
-  return { save, saveAs, saveTo, renameFile, renameExtension };
+  return { save, saveAll, saveAs, saveTo, renameFile, renameExtension };
 }
