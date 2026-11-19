@@ -175,6 +175,7 @@ pub fn run() {
         .manage(files::open_paths::LaunchPaths::default())
         .manage(library::index::NameIndex::default())
         .manage(library::watch::LibraryWatcher::default())
+        .manage(library::watch::AddedWatchers::default())
         .manage(library::commands::DropTarget::default())
         .on_window_event(|window, event| {
             // Rust needs the drop (it grants the paths), so the webview's own
@@ -247,6 +248,9 @@ pub fn run() {
             library::commands::library_resync,
             library::commands::library_recreate,
             library::commands::library_follow,
+            library::commands::library_add_folder,
+            library::commands::library_locate_folder,
+            library::commands::library_remove_folder,
             app_exit_after_flush,
             exit_flush_failed,
             app_startup_mark,

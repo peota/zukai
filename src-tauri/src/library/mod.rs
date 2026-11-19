@@ -117,10 +117,28 @@ pub(crate) mod tests {
         assert!(refused(g.in_root(&added.join("link").join("new.md"))));
         assert!(refused(g.check(via.to_str().unwrap())));
         assert!(refused(g.grant_in_root(&via)));
-        assert!(g.grant(&via).is_err());
+        assert!(refused(g.grant(&via)));
         // Into another added folder: refused the same way.
         assert!(refused(g.in_root(&added.join("hop").join("y"))));
         // The Library itself is untouched.
+        assert_eq!(g.in_root(&root.join("x")).unwrap(), root.join("x"));
+    }
+
+    #[test]
+    fn link_in_added_inside_a_wider_library_judged_by_the_added_root() {
+        // The Library re-pointed to a folder holding an added folder (before
+        // `use_root` drops it): the added root, the deepest, judges its links.
+        let (_tmp, g, root, added, _outside) = library_with_added();
+        fs::write(root.join("x"), "x").unwrap();
+        dir_link(&added.join("link"), &root);
+        let base = added.parent().unwrap().to_path_buf();
+        assert_eq!(g.set_root(&base).unwrap(), base);
+        assert!(refused(g.in_root(&added.join("link").join("x"))));
+        assert!(refused(g.in_root(&added.join("link"))));
+        assert!(refused(
+            g.check(added.join("link").join("x").to_str().unwrap())
+        ));
+        assert_eq!(g.root_of(&added.join("y")), Some(added.clone()));
         assert_eq!(g.in_root(&root.join("x")).unwrap(), root.join("x"));
     }
 

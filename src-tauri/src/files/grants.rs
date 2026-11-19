@@ -84,14 +84,20 @@ impl RootSlot {
 }
 
 /// The slot `p` lexically sits under. A granted root wins over a hint or
-/// stored spelling, and among those the deepest wins, so a stale hint
-/// covering another root never decides for a path in that root.
+/// stored spelling; among the granted roots, and among the others, the
+/// deepest wins, so a root (or stale hint) covering another root never
+/// decides for a path in that root.
 fn slot_of(slots: &[RootSlot], p: &Path) -> Option<usize> {
-    if let Some(i) = slots
+    if let Some((_, i)) = slots
         .iter()
-        .position(|s| s.root.as_ref().is_some_and(|r| under_by_key(p, r)))
+        .enumerate()
+        .filter_map(|(i, s)| {
+            let r = s.root.as_ref().filter(|r| under_by_key(p, r))?;
+            Some((r.components().count(), std::cmp::Reverse(i)))
+        })
+        .max()
     {
-        return Some(i);
+        return Some(i.0);
     }
     slots
         .iter()
@@ -398,7 +404,6 @@ impl Grants {
     /// granted now (or overlaps the Library or an earlier entry) is kept as
     /// a hint only. Returns each path (canonical if available, else as
     /// stored) and whether it is available, in order.
-    #[allow(dead_code)] // until the added-folder commands call it
     pub fn load_added(&self, stored: &[PathBuf]) -> Vec<(PathBuf, bool)> {
         // The disk is looked at before the lock is taken.
         let found: Vec<Option<PathBuf>> = stored.iter().map(|s| Self::load(s).ok()).collect();
@@ -424,7 +429,6 @@ impl Grants {
     /// canonical form. Refused (with the message the user sees) if it
     /// overlaps the Library or an added folder, is too broad, or can't be
     /// read.
-    #[allow(dead_code)] // until the added-folder commands call it
     pub fn add_root(&self, dir: &Path) -> Result<PathBuf, FileError> {
         let canon = Self::folder(dir).map_err(|_| unreadable())?;
         let home = home();
@@ -440,7 +444,6 @@ impl Grants {
     /// root, hint or stored path), keeping its position, with the same
     /// checks as `add_root` against everything but `old`. On any error the
     /// list is unchanged.
-    #[allow(dead_code)] // until the added-folder commands call it
     pub fn replace_root(&self, old: &Path, dir: &Path) -> Result<PathBuf, FileError> {
         if added_index(&self.slots(), old).is_none() {
             return Err(FileError::NotGranted);
@@ -459,7 +462,6 @@ impl Grants {
 
     /// Forgets the added folder `path` (its root, hint or stored path). The
     /// Library is never touched. Files granted on their own stay granted.
-    #[allow(dead_code)] // until the added-folder commands call it
     pub fn remove_root(&self, path: &Path) {
         let mut slots = self.slots();
         if let Some(i) = added_index(&slots, path) {
@@ -469,7 +471,6 @@ impl Grants {
 
     /// The added folders in order: each one's root, or its stored path
     /// while it is unavailable.
-    #[allow(dead_code)] // until the added-folder commands call it
     pub fn added(&self) -> Vec<PathBuf> {
         self.slots()
             .iter()
@@ -480,7 +481,6 @@ impl Grants {
 
     /// The canonical granted root `p` lexically sits under (the Library or
     /// an added folder): `None` if none, or if that root is unavailable.
-    #[allow(dead_code)] // until the added-folder commands call it
     pub fn root_of(&self, p: &Path) -> Option<PathBuf> {
         let slots = self.slots();
         slots[slot_of(&slots, p)?].root.clone()
@@ -501,10 +501,12 @@ impl Grants {
         let slots = self.slots();
         match slot_of(&slots, p) {
             Some(i) => slots[i].root.clone(),
+            // The deepest, as in `slot_of`.
             None => slots
                 .iter()
                 .filter_map(|s| s.root.as_ref())
-                .find(|r| canon.starts_with(r))
+                .filter(|r| canon.starts_with(r))
+                .max_by_key(|r| r.components().count())
                 .cloned(),
         }
     }
@@ -891,6 +893,15 @@ mod tests {
         assert_eq!(slot_of(&slots, &b.join("x")), Some(2));
         assert_eq!(slot_of(&slots, &base.join("c")), Some(0));
         assert_eq!(slot_of(&slots, &base.with_file_name("elsewhere")), None);
+
+        // Granted roots nested (the Library re-pointed over an added
+        // folder): the deepest decides.
+        let nested = vec![
+            RootSlot::granted(base.clone(), &base),
+            RootSlot::granted(a.clone(), &a),
+        ];
+        assert_eq!(slot_of(&nested, &a.join("x")), Some(1));
+        assert_eq!(slot_of(&nested, &base.join("c")), Some(0));
     }
 
     #[test]
