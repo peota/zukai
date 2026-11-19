@@ -491,6 +491,13 @@ export default function App() {
               if (t.id !== id && !t.pinned) void w.closeTab(t.id);
             }
           }}
+          canCloseAll={w.state.tabs.some((t) => !t.pinned)}
+          onCloseAll={() => {
+            // Pinned Tabs stay open, as with Close other tabs.
+            for (const t of w.state.tabs) {
+              if (!t.pinned) void w.closeTab(t.id);
+            }
+          }}
           onReopen={() => void run({ type: "reopenTab" })}
           onReopenEntry={(id) => void w.reopenEntry(id)}
           onDismiss={closeTabMenu}

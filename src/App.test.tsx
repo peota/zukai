@@ -267,4 +267,23 @@ describe("App", () => {
     fireEvent.click(r.getByRole("button", { name: "Settings" }));
     expect(r.getByRole("dialog", { name: "Settings" })).toBeTruthy();
   });
+
+  it("Close all tabs closes every unpinned Tab and leaves one fresh Tab", async () => {
+    s.listScratchpads.mockResolvedValue([
+      { id: "a", ext: "txt" },
+      { id: "b", ext: "txt" },
+    ]);
+    s.closeScratchpad.mockResolvedValue(undefined);
+    s.deleteScratchpad.mockResolvedValue(undefined);
+    const r = render(<App />);
+    await waitFor(() => expect(r.getAllByRole("tab")).toHaveLength(2));
+    fireEvent.contextMenu(r.getAllByRole("tab")[0]);
+    fireEvent.click(r.getByRole("menuitem", { name: "Close all tabs" }));
+    await waitFor(() => {
+      const tabs = r.getAllByRole("tab");
+      expect(tabs).toHaveLength(1);
+      expect(tabs[0]).toHaveTextContent("Untitled");
+    });
+    expect(s.closeScratchpad).toHaveBeenCalledWith("a");
+  });
 });
