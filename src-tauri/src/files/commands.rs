@@ -44,9 +44,23 @@ fn grant_picked(grants: &Grants, p: FilePath) -> Result<String, FileError> {
     path_string(&grants.grant(&dialog_path(p)?)?)
 }
 
+/// Reads the File `path` for a Tab, and keeps it granted as a File: one
+/// opened from the Library or an added folder (reached through the root
+/// grant) is then a stored grant, re-checked on every use while it lies in
+/// a root (`Grants::still_granted`), so the Session can still name it while
+/// that root is offline or after the folder is removed from the sidebar.
+pub(crate) fn read_opened(g: &Grants, path: &str) -> Result<FileRead, FileError> {
+    let file = g.check(path)?;
+    let read = io::read_file(&file)?;
+    // Only a path in a root: a File granted on its own already is one, and
+    // granting it again would follow a link put on its way since.
+    let _ = g.grant_in_root(&file);
+    Ok(read)
+}
+
 #[tauri::command]
 pub async fn file_read(app: AppHandle, path: String) -> Result<FileRead, FileError> {
-    blocking(app, move |g| io::read_file(&g.check(&path)?)).await
+    blocking(app, move |g| read_opened(g, &path)).await
 }
 
 #[tauri::command]
