@@ -81,6 +81,8 @@ export interface FilesInternalApi {
   closeFile(id: string): Promise<void>;
   /** True (with a notice) if the Tab's text can't be changed now. */
   refuseEdit(id: string): boolean;
+  /** Holds a File Tab as a Disk conflict (its text is kept as "mine"). */
+  holdConflict(id: string): void;
   /** Writes the Tab to a granted `target`; resolves to whether it did. */
   saveTo(id: string, target: string): Promise<boolean>;
   /**
@@ -188,6 +190,10 @@ export function useFiles(
       afterRestore,
       closeFile,
       refuseEdit: refuseUnreadable,
+      holdConflict: (id: string) => {
+        const file = c.tabOf(id)?.file;
+        if (file && file.held === null) c.hold(id, file, "conflict");
+      },
       saveTo,
       rewriteTabPaths,
       recheckTabs,

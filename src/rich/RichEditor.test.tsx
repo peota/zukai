@@ -312,13 +312,19 @@ describe("RichEditor", () => {
 
   it("an_outside_change_never_drops_a_pending_edit", async () => {
     const bridge = fakeBridge({ a: "# Hi\n" });
-    mount(bridge);
+    const onConflict = vi.fn();
+    mount(bridge, { onConflict });
     const view = await viewOf();
     act(() => view.dispatch(view.state.tr.insertText("Oh ", 1)));
     act(() => bridge.outside("a", "# Other\n"));
-    // The edit is written (it wins), not cleared.
+    // The edit is kept as the conflict's "mine": the app holds the Tab
+    // first, then the edit is written (never cleared, never silent).
     await waitFor(() =>
       expect(bridge.replace).toHaveBeenCalledWith("a", "# Oh Hi\n"),
+    );
+    expect(onConflict).toHaveBeenCalledTimes(1);
+    expect(onConflict.mock.invocationCallOrder[0]).toBeLessThan(
+      bridge.replace.mock.invocationCallOrder[0],
     );
     expect(view.state.doc.textContent).toBe("Oh Hi");
   });

@@ -69,6 +69,11 @@ export interface RichEditorProps {
    */
   register?(id: string, sync: RichSync): () => void;
   /**
+   * The Tab's text changed from outside while an edit was pending: hold it
+   * as a conflict. The edit is written right after (as its "mine").
+   */
+  onConflict?(): void;
+  /**
    * The editor's own UI (toolbar, menus), shown above the text once the
    * editor exists; it reaches the editor through `useRich`.
    */
@@ -123,6 +128,7 @@ export function RichEditor(p: RichEditorProps) {
     onFallback: p.onFallback,
     onZoom: p.onZoom,
     register: p.register,
+    onConflict: p.onConflict,
   });
   useEffect(() => {
     latest.current = {
@@ -131,6 +137,7 @@ export function RichEditor(p: RichEditorProps) {
       onFallback: p.onFallback,
       onZoom: p.onZoom,
       register: p.register,
+      onConflict: p.onConflict,
     };
   });
 
@@ -195,20 +202,29 @@ export function RichEditor(p: RichEditorProps) {
       );
     };
 
+    /** A pending edit met an outside change: it becomes the conflict's mine. */
+    const keepAsConflict = () => {
+      if (!live || !dirty) return;
+      // Holding the Tab writes the edit first (the app flushes on a hold).
+      latest.current.onConflict?.();
+      write();
+    };
+
     const onOutside = (text: string) => {
       if (text === known) return;
       const seq = ++outsideSeq;
       if (dirty) {
-        // An edit not yet written wins: it is written once the plain
-        // editor's update is over (never from inside it). The app treats
-        // the edit as pending, so a disk change meanwhile is a conflict.
-        queueMicrotask(write);
+        // Not expected (a pending edit makes a disk change a conflict, and
+        // in-app actions write it first), but never silent: the Tab is held
+        // as a conflict and the edit written as its "mine", once the plain
+        // editor's update is over (never from inside it).
+        queueMicrotask(keepAsConflict);
         return;
       }
       known = text;
       void canKeep(text).then((ok) => {
         if (!live || seq !== outsideSeq) return;
-        if (dirty) return write();
+        if (dirty) return keepAsConflict();
         if (ok) reparse(text);
         else fallBack(CANT_KEEP_NOTICE);
       });

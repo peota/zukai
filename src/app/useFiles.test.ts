@@ -1739,6 +1739,52 @@ describe("useFiles and a pending rich edit", () => {
     expect(fileTabOf(result)).toBeUndefined();
   });
 
+  it("typing_in_rich_during_a_reloads_read_becomes_a_conflict", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    // Rich has nothing pending when the reload is decided.
+    let pending = false;
+    const flush = vi.fn(() => {
+      if (!pending) return;
+      pending = false;
+      result.current.setContent(id, "mine");
+    });
+    result.current.registerRich(id, { pending: () => pending, flush });
+    const g = gate();
+    const read = f.fileRead.getMockImplementation()!;
+    f.fileRead.mockImplementationOnce(async (path) => {
+      await g.promise;
+      return read(path);
+    });
+    disk[P] = { text: "theirs", hash: "h2" };
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    await waitFor(() => expect(f.fileRead).toHaveBeenCalledTimes(2));
+    // Typed in Rich while the disk is read: pending, not yet in contents.
+    pending = true;
+    g.open();
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
+    expect(flush).toHaveBeenCalled();
+    await settle();
+    expect(shadows[id]).toBe("mine");
+    expect(disk[P].text).toBe("theirs");
+    expect(await result.current.loadContent(id)).toBe("mine");
+    expect(result.current.replaceRequests).not.toContainEqual(
+      expect.objectContaining({ id, text: "theirs" }),
+    );
+  });
+
+  it("a_rich_conflict_holds_the_file_with_the_edit_as_mine", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    const rich = richEdit(result, id, "mine");
+    act(() => result.current.richConflict(id));
+    expect(fileTabOf(result)!.file!.held).toBe("conflict");
+    expect(rich.flush).toHaveBeenCalled();
+    await settle();
+    expect(shadows[id]).toBe("mine");
+    expect(disk[P].text).toBe("{}");
+  });
+
   it("an_unregistered_rich_editor_is_forgotten", async () => {
     const { result } = await mount();
     const id = await openP(result);
