@@ -30,6 +30,7 @@ import {
   foldCode,
   foldGutter,
   indentOnInput,
+  indentRange,
   unfoldCode,
 } from "@codemirror/language";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
@@ -227,6 +228,43 @@ function offsetOf(s: string, line: number, col: number): number {
     at = nl + 1;
   }
   return Math.min(s.length, at + col - 1);
+}
+
+/**
+ * The Languages Shift+Alt+F re-indents. Python and YAML are left out on
+ * purpose: their indentation is their meaning, so re-indenting could change
+ * what the file says; Markdown likewise (lists, code blocks). Shell and plain
+ * text have no indentation rules.
+ */
+const REINDENT_LANGUAGES: ReadonlySet<LanguageId> = new Set([
+  "javascript",
+  "typescript",
+  "html",
+  "xml",
+  "css",
+  "sql",
+]);
+
+/**
+ * Re-indents the lines of every selection range, or the whole document when
+ * the selection is empty, by the Language's indentation rules, as one edit.
+ * Only leading whitespace changes. Returns whether anything changed.
+ */
+function reindent(view: EditorView): boolean {
+  const { state } = view;
+  const whole = state.selection.ranges.every((r) => r.empty);
+  const spans = whole
+    ? [{ from: 0, to: state.doc.length }]
+    : state.selection.ranges.map((r) => ({
+        from: state.doc.lineAt(r.from).from,
+        to: state.doc.lineAt(r.to).to,
+      }));
+  const changes = state.changes(
+    spans.map(({ from, to }) => indentRange(state, from, to)),
+  );
+  if (changes.empty) return false;
+  view.dispatch({ changes, userEvent: "input.indent" });
+  return true;
 }
 
 /**
@@ -703,13 +741,23 @@ export function EditorHost(props: EditorHostProps) {
     applyConvert(e, file, patch);
   }, [convertRequest]);
 
-  // Beautify / Minify the active JSON Tab.
+  // Beautify / Minify the active JSON Tab; Beautify (Shift+Alt+F) on a code
+  // Tab re-indents it.
   useEffect(() => {
     if (!formatRequest) return;
     const id = latest.current.activeId;
     const tab = tabOf(id);
     const e = views.current.get(id);
-    if (!tab || !e || tab.language !== "json" || e.view.state.readOnly) return;
+    if (!tab || !e || e.view.state.readOnly) return;
+    if (tab.language !== "json") {
+      if (
+        formatRequest.kind === "beautify" &&
+        REINDENT_LANGUAGES.has(tab.language)
+      ) {
+        reindent(e.view);
+      }
+      return;
+    }
     // Not inline in `?.()`: that would skip formatting with no listener.
     const result = formatJson(e.view, formatRequest.kind);
     latest.current.onFormatResult?.(result);
