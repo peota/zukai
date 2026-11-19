@@ -1,7 +1,7 @@
 # Zukai — Added folders
 
 Date: 2026-11-19
-Status: Draft, waiting for approval
+Status: Approved 2026-11-19
 
 Background reading: the glossary [`CONTEXT.md`](../../../CONTEXT.md) (**Library**, **Library folder**, **Sidebar**, **Pinned**) and [ADR 0011](../../adr/0011-library-sidebar.md) (a Library of real folders, one folder grant).
 
