@@ -20,6 +20,9 @@ export interface TabContextMenuProps {
   onTogglePin(id: string): void;
   onClose(id: string): void;
   onCloseOthers(id: string): void;
+  /** False when every open Tab is pinned (pins stay open). */
+  canCloseAll?: boolean;
+  onCloseAll(): void;
   onReopen(): void;
   /** The entry's Tab id: the list may change before the click lands. */
   onReopenEntry(id: string): void;
@@ -38,6 +41,8 @@ export function TabContextMenu({
   onTogglePin,
   onClose,
   onCloseOthers,
+  canCloseAll = true,
+  onCloseAll,
   onReopen,
   onReopenEntry,
   onDismiss,
@@ -63,6 +68,11 @@ export function TabContextMenu({
       label: "Close other tabs",
       disabled: tabId === null || tabCount < 2,
       onSelect: () => tabId !== null && onCloseOthers(tabId),
+    },
+    {
+      label: "Close all tabs",
+      disabled: !canCloseAll,
+      onSelect: onCloseAll,
     },
     {
       label: "Reopen closed tab",

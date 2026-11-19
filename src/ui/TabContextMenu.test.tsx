@@ -39,6 +39,7 @@ function setup(
   closed: ClosedEntry[],
   tabCount = 2,
   pinned = false,
+  canCloseAll = true,
 ) {
   const props = {
     x: 10,
@@ -50,6 +51,8 @@ function setup(
     onTogglePin: vi.fn(),
     onClose: vi.fn(),
     onCloseOthers: vi.fn(),
+    canCloseAll,
+    onCloseAll: vi.fn(),
     onReopen: vi.fn(),
     onReopenEntry: vi.fn(),
     onDismiss: vi.fn(),
@@ -85,6 +88,32 @@ describe("TabContextMenu", () => {
     expect(screen.queryByRole("menuitem", { name: "Pin tab" })).toBeNull();
     fireEvent.click(screen.getByRole("menuitem", { name: "Unpin tab" }));
     expect(p.onTogglePin).toHaveBeenCalledWith("a");
+  });
+
+  it("Close all tabs closes them all, from a Tab or the empty bar", () => {
+    const p = setup("a", []);
+    const items = screen.getAllByRole("menuitem").map((el) => el.textContent);
+    // Right after Close other tabs.
+    expect(items.indexOf("Close all tabs")).toBe(
+      items.indexOf("Close other tabs") + 1,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close all tabs" }));
+    expect(p.onCloseAll).toHaveBeenCalledTimes(1);
+    expect(p.onDismiss).toHaveBeenCalled();
+  });
+
+  it("Close all tabs works on the empty bar", () => {
+    const p = setup(null, []);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close all tabs" }));
+    expect(p.onCloseAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("Close all tabs is disabled when only pinned Tabs are open", () => {
+    const p = setup("a", [], 2, true, false);
+    const item = screen.getByRole("menuitem", { name: "Close all tabs" });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(item);
+    expect(p.onCloseAll).not.toHaveBeenCalled();
   });
 
   it("on the empty bar, the close items are disabled", () => {
