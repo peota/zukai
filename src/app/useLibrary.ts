@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  libraryAddFolder,
   libraryChoose,
+  libraryCopyInto,
   libraryCreateFile,
   libraryCreateFolder,
   libraryFollow,
   libraryList,
+  libraryLocateFolder,
   libraryMove,
   libraryRecreate,
+  libraryRemoveFolder,
   libraryRename,
   libraryReserve,
   libraryResolve,
@@ -21,6 +25,7 @@ import {
   onDragDrop,
   onLibraryChanged,
   onLibraryDropped,
+  type AddedState,
   type DragPoint,
   type Entry,
   type RootState,
@@ -31,6 +36,7 @@ import {
   filterRows,
   invalidate,
   rewritePrefix,
+  rootOf,
   setChildren,
   toggle as toggleDir,
   visibleRows,
@@ -89,6 +95,8 @@ export interface LibraryDeps {
 export interface LibraryApi {
   root: string | null;
   available: boolean;
+  /** The folders added beside the Library, in the order added. */
+  added: AddedState[];
   tree: TreeState;
   /** What the tree shows: the listing, or search results with their folders. */
   rows: Row[];
@@ -111,6 +119,12 @@ export interface LibraryApi {
   copyPath(path: string): void;
   chooseRoot(): Promise<void>;
   recreateRoot(): Promise<void>;
+  /** Add folder…: the OS folder picker; a refusal shows its reason. */
+  addFolder(): Promise<void>;
+  /** Locate…: picks the folder that replaces the added `path`. */
+  locateFolder(path: string): Promise<void>;
+  /** Remove from sidebar: nothing on disk changes. */
+  removeFolder(path: string): Promise<void>;
   setQuery(q: string): void;
   /** `destDir` null: Move to Library… (the save dialog, in the root). */
   scratchpadMove(id: string, destDir: string | null): Promise<void>;
@@ -121,7 +135,78 @@ const EMPTY_TREE: TreeState = {
   children: {},
   expanded: new Set(),
   selected: null,
+  added: [],
 };
+
+const NO_ADDED: AddedState[] = [];
+
+/** The re-point notice, one per added folder the new Library overlaps. */
+const removedNotice = (name: string) =>
+  `Removed ${name} from the sidebar: it overlaps the new Library folder.`;
+
+/** The Library root and every added folder, available or not. */
+function rootsOf(rs: RootState | null): string[] {
+  if (!rs) return [];
+  return [
+    ...(rs.root === null ? [] : [rs.root]),
+    ...rs.added.map((a) => a.path),
+  ];
+}
+
+/** The roots Rust watches: one key per set, so a change re-syncs them. */
+function watchKey(rs: RootState): string {
+  return [
+    ...(rs.available && rs.root !== null ? [rs.root] : []),
+    ...rs.added.filter((a) => a.available).map((a) => a.path),
+  ].join("\n");
+}
+
+/** Drops cached listings (and, with `collapse`, expanded state) under `root`. */
+function dropUnder(t: TreeState, root: string, collapse: boolean): TreeState {
+  const under = (p: string) => rootOf(p, [root]) !== null;
+  const children = Object.fromEntries(
+    Object.entries(t.children).filter(([dir]) => !under(dir)),
+  );
+  const expanded = collapse
+    ? new Set([...t.expanded].filter((p) => !under(p)))
+    : t.expanded;
+  return { ...t, children, expanded };
+}
+
+/**
+ * Takes Rust's added list: a removed folder forgets its listings and
+ * expanded state; one gone missing drops its listings (listed afresh when
+ * it's back); with `expandNew`, a new one starts expanded.
+ */
+function withAdded(
+  t: TreeState,
+  added: AddedState[],
+  expandNew: boolean,
+): TreeState {
+  const same =
+    t.added.length === added.length &&
+    t.added.every(
+      (a, i) => a.path === added[i].path && a.available === added[i].available,
+    );
+  if (same) return t;
+  const before = new Map(t.added.map((a) => [a.path, a]));
+  const now = new Set(added.map((a) => a.path));
+  let next = t;
+  for (const a of t.added) {
+    if (!now.has(a.path)) next = dropUnder(next, a.path, true);
+  }
+  for (const a of added) {
+    const old = before.get(a.path);
+    if (!old) {
+      if (expandNew && !next.expanded.has(a.path)) {
+        next = { ...next, expanded: new Set(next.expanded).add(a.path) };
+      }
+    } else if (old.available && !a.available) {
+      next = dropUnder(next, a.path, false);
+    }
+  }
+  return { ...next, added };
+}
 
 /** Calls `subscribe` safely: a missing Tauri API in a test must not throw. */
 function listenSafely(
@@ -147,19 +232,32 @@ function fileErrorText(e: FileError, name: string): string {
   return e.message || "something went wrong";
 }
 
-/** The folder a drop at (x, y) lands in, or null when it isn't the Library. */
-function dropDirAt(p: DragPoint, root: string | null): string | null {
-  if (!p || root === null) return null;
+/**
+ * The folder a drop at (x, y) lands in, in the Library or an added folder,
+ * or null when it's in none (or in a missing one).
+ */
+function dropDirAt(p: DragPoint, rs: RootState | null): string | null {
+  if (!p || !rs) return null;
   const el = document.elementFromPoint(p.x, p.y);
   if (!el?.closest("[data-z-sidebar]")) return null;
+  const addedAt = (path: string | undefined) =>
+    rs.added.find((a) => a.path === path);
   const row = el.closest<HTMLElement>("[data-row]");
   if (row) {
     if (row.getAttribute("aria-disabled") === "true") return null;
     const path = row.dataset.path ?? null;
     if (path === null) return null;
+    // An added folder's heading row is that folder.
+    const heading = addedAt(path);
+    if (heading) return heading.available ? path : null;
     return row.dataset.dir === "true" ? path : parentOf(path);
   }
-  return el.closest("[data-z-library-tree]") ? root : null;
+  // Empty space in a tree: an added folder's tree names its root.
+  const tree = el.closest<HTMLElement>("[data-z-library-tree]");
+  if (!tree) return null;
+  const added = addedAt(tree.dataset.zLibraryTree);
+  if (added) return added.available ? added.path : null;
+  return rs.root;
 }
 
 /**
@@ -177,7 +275,8 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   const rootRef = useRef<RootState | null>(null);
   const [tree, setTreeState] = useState<TreeState>(EMPTY_TREE);
   const treeRef = useRef(tree);
-  const watchedRoot = useRef<string | null>(null);
+  /** The roots last given to `libraryWatch` (`watchKey`), null before. */
+  const watchedKey = useRef<string | null>(null);
   const creatingDefault = useRef(false);
   /** The default root couldn't be created: offer Choose Library folder…. */
   const [defaultFailed, setDefaultFailed] = useState(false);
@@ -190,27 +289,41 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   }, []);
 
   /**
-   * A new root starts an empty tree. The stored root's first answer takes
-   * the expanded folders from the Session; `keepExpanded` keeps them across
-   * a re-check of the same root.
+   * A new Library root starts an empty Library tree (the added folders keep
+   * theirs). The stored root's first answer takes the expanded folders from
+   * the Session; `keepExpanded` keeps them across a re-check of the same
+   * root. Then the added list is taken: a newly added folder starts
+   * expanded.
    */
   const applyRoot = useCallback(
     (rs: RootState, keepExpanded: boolean) => {
       const prev = rootRef.current;
       rootRef.current = rs;
       setRootStateRaw(rs);
-      if (prev?.root === rs.root && prev.available === rs.available) return;
-      setTree((t) => ({
-        ...EMPTY_TREE,
-        root: rs.root,
-        expanded:
-          prev === null
-            ? new Set(sidebarRef.current.expanded)
-            : keepExpanded
-              ? t.expanded
-              : new Set(),
-      }));
-      if (prev?.root !== rs.root) watchedRoot.current = null;
+      const libraryChanged =
+        prev?.root !== rs.root || prev.available !== rs.available;
+      setTree((t) => {
+        let next = t;
+        if (libraryChanged) {
+          const added = rs.added.map((a) => a.path);
+          const keep = (p: string) => rootOf(p, added) !== null;
+          next = {
+            ...EMPTY_TREE,
+            root: rs.root,
+            children: Object.fromEntries(
+              Object.entries(t.children).filter(([dir]) => keep(dir)),
+            ),
+            expanded:
+              prev === null
+                ? new Set(sidebarRef.current.expanded)
+                : keepExpanded
+                  ? t.expanded
+                  : new Set([...t.expanded].filter(keep)),
+            added: t.added,
+          };
+        }
+        return withAdded(next, rs.added, prev !== null);
+      });
     },
     [setTree, sidebarRef],
   );
@@ -241,6 +354,10 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
           expanded.delete(dir);
           return { ...t, children, expanded };
         });
+        // An added folder that can't be listed may have gone missing.
+        if (treeRef.current.added.some((a) => a.path === dir)) {
+          return refreshRoot();
+        }
       }
     },
     [refreshRoot, setTree],
@@ -256,12 +373,35 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     [reload],
   );
 
-  /** The root and every expanded folder, listed afresh. */
-  const reloadShown = useCallback(async () => {
+  /**
+   * What's on screen: the Library root and every expanded folder in an
+   * available root (an expanded added folder is its own root's row).
+   */
+  const shownDirs = useCallback((): string[] => {
     const t = treeRef.current;
-    if (t.root === null) return;
-    await Promise.all([t.root, ...t.expanded].map((dir) => reload(dir)));
-  }, [reload]);
+    const rs = rootRef.current;
+    const lib = rs?.available && t.root !== null ? [t.root] : [];
+    const roots = [
+      ...lib,
+      ...t.added.filter((a) => a.available).map((a) => a.path),
+    ];
+    return [
+      ...lib,
+      ...[...t.expanded].filter((p) => rootOf(p, roots) !== null),
+    ];
+  }, []);
+
+  /** Everything on screen, listed afresh. */
+  const reloadShown = useCallback(async () => {
+    await Promise.all(shownDirs().map((dir) => reload(dir)));
+  }, [reload, shownDirs]);
+
+  /** What's on screen but not listed yet (a new root, or one back). */
+  const listMissing = useCallback(async () => {
+    const children = treeRef.current.children;
+    const missing = shownDirs().filter((dir) => !(dir in children));
+    await Promise.all(missing.map((dir) => reload(dir)));
+  }, [reload, shownDirs]);
 
   // The stored root, once the Session is restored.
   useEffect(() => {
@@ -276,8 +416,9 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     if (known) patchSidebar({ expanded: [...expanded] });
   }, [known, expanded, patchSidebar]);
 
-  // Shown: create the default root the first time, then watch it (once per
-  // root: it rebuilds the index) and list what's on screen.
+  // Shown: create the default root the first time, then watch the available
+  // roots (once per set: it syncs the watchers and indexes) and list what's
+  // on screen.
   const open = sidebar.open;
   useEffect(() => {
     if (!ready || !open || rootState === null) return;
@@ -295,13 +436,13 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
         .finally(() => (creatingDefault.current = false));
       return;
     }
-    if (!rootState.available) return;
-    if (watchedRoot.current !== rootState.root) {
-      watchedRoot.current = rootState.root;
-      libraryWatch().catch(logError("watch library"));
+    const key = watchKey(rootState);
+    if (watchedKey.current !== key) {
+      watchedKey.current = key;
+      if (key !== "") libraryWatch().catch(logError("watch library"));
     }
-    if (!(rootState.root in treeRef.current.children)) void reloadShown();
-  }, [ready, open, rootState, applyRoot, reloadShown]);
+    void listMissing();
+  }, [ready, open, rootState, applyRoot, listMissing]);
 
   // --- Search --------------------------------------------------------------
 
@@ -404,16 +545,19 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   );
 
   // Windows drops watcher events when its buffer overflows: on focus, list
-  // what's shown again and have Rust rebuild a stale index.
+  // what's shown again and have Rust rebuild a stale index. The roots are
+  // asked again too, so a re-plugged drive comes back (or a gone one shows).
   useEffect(() => {
     const onFocus = () => {
-      if (watchedRoot.current === null || !rootRef.current?.available) return;
+      if (rootRef.current === null) return;
+      void refreshRoot();
+      if (!watchedKey.current) return;
       void reloadShown();
       libraryResync().catch(logError("resync library"));
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [reloadShown]);
+  }, [refreshRoot, reloadShown]);
 
   // An OS drag over a sidebar folder: tell Rust, so the drop copies there.
   useEffect(() => {
@@ -421,7 +565,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     return listenSafely(
       () =>
         onDragDrop((p) => {
-          const dir = dropDirAt(p, rootRef.current?.root ?? null);
+          const dir = dropDirAt(p, rootRef.current);
           if (dir === last) return;
           last = dir;
           librarySetDropTarget(dir).catch(logError("drop target"));
@@ -506,18 +650,23 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     [openPaths, showIn, showNotice],
   );
 
+  /** File paths of open Tabs and Recently Closed entries (Rust keeps them granted). */
+  const allHeldPaths = useCallback(() => {
+    const s = stateRef.current;
+    return [
+      ...new Set(
+        [...s.tabs, ...s.closed.map((e) => e.tab)].flatMap((t) =>
+          t.file ? [t.file.path] : [],
+        ),
+      ),
+    ];
+  }, [stateRef]);
+
   /** File paths of open Tabs and Recently Closed entries at or under `path`. */
   const heldPaths = useCallback(
-    (path: string) => {
-      const s = stateRef.current;
-      const all = [...s.tabs, ...s.closed.map((e) => e.tab)].flatMap((t) =>
-        t.file ? [t.file.path] : [],
-      );
-      return [
-        ...new Set(all.filter((p) => movedPath(p, path, path, keyOf) !== null)),
-      ];
-    },
-    [keyOf, stateRef],
+    (path: string) =>
+      allHeldPaths().filter((p) => movedPath(p, path, path, keyOf) !== null),
+    [allHeldPaths, keyOf],
   );
 
   /** Open Tabs whose File is `path` or inside it. */
@@ -620,8 +769,36 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     [entryOf, relocated, withFlushed],
   );
 
+  /** A drop into another tree: Rust never moves across roots, so it copies. */
+  const copyAcross = useCallback(
+    async (path: string, destDir: string) => {
+      const name = baseName(path);
+      await withFlushed(path, "copy", async () => {
+        let error: FileError | null;
+        try {
+          const results = await libraryCopyInto([path], destDir);
+          error = results.find((r) => r.error)?.error ?? null;
+        } catch (err) {
+          error = asFileError(err);
+        }
+        if (error) {
+          const msg = `Can't copy ${name}: ${fileErrorText(error, name)}`;
+          showNotice(msg);
+          return msg;
+        }
+        await reloadIfListed(destDir);
+        return null;
+      });
+    },
+    [reloadIfListed, showNotice, withFlushed],
+  );
+
   const move = useCallback(
     async (path: string, destDir: string) => {
+      const roots = rootsOf(rootRef.current);
+      if (rootOf(path, roots) !== rootOf(destDir, roots)) {
+        return copyAcross(path, destDir);
+      }
       await withFlushed(path, "move", async () => {
         let to: string;
         try {
@@ -635,7 +812,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
         return null;
       });
     },
-    [relocated, showNotice, withFlushed],
+    [copyAcross, relocated, showNotice, withFlushed],
   );
 
   const trash = useCallback(
@@ -691,12 +868,57 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   }, []);
 
   const chooseRoot = useCallback(async () => {
+    let rs: RootState;
     try {
-      applyRoot(await libraryChoose(), false);
+      rs = await libraryChoose(allHeldPaths());
     } catch (err) {
-      showNotice(`Can't use that folder: ${asFileError(err).message}`);
+      return showNotice(`Can't use that folder: ${asFileError(err).message}`);
+    }
+    applyRoot(rs, false);
+    for (const name of rs.removed ?? []) showNotice(removedNotice(name));
+  }, [allHeldPaths, applyRoot, showNotice]);
+
+  const addFolder = useCallback(async () => {
+    try {
+      applyRoot(await libraryAddFolder(), true);
+    } catch (err) {
+      showNotice(asFileError(err).message);
     }
   }, [applyRoot, showNotice]);
+
+  /** Treated as the folder having moved: held Files follow, as on a rename. */
+  const locateFolder = useCallback(
+    async (path: string) => {
+      const at = (rootRef.current?.added ?? NO_ADDED).findIndex(
+        (a) => a.path === path,
+      );
+      let rs: RootState;
+      try {
+        rs = await libraryLocateFolder(path);
+      } catch (err) {
+        return showNotice(asFileError(err).message);
+      }
+      applyRoot(rs, true);
+      // Rust replaces the entry in place; cancelling leaves it as it was.
+      if (at < 0 || at >= rs.added.length) return;
+      const to = rs.added[at].path;
+      if (to !== path) await relocated(path, to);
+    },
+    [applyRoot, relocated, showNotice],
+  );
+
+  const removeFolder = useCallback(
+    async (path: string) => {
+      try {
+        applyRoot(await libraryRemoveFolder(path, allHeldPaths()), true);
+      } catch (err) {
+        showNotice(
+          `Can't remove ${baseName(path)} from the sidebar: ${asFileError(err).message}`,
+        );
+      }
+    },
+    [allHeldPaths, applyRoot, showNotice],
+  );
 
   const recreateRoot = useCallback(async () => {
     try {
@@ -748,15 +970,19 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   // --- What the Sidebar shows ---------------------------------------------
 
   const root = rootState?.root ?? null;
+  const added = rootState?.added ?? NO_ADDED;
   const searching = query.trim() !== "";
   const rows = useMemo(
     () =>
       searching
         ? root === null
           ? []
-          : filterRows(results.entries, root)
+          : filterRows(results.entries, [
+              root,
+              ...added.filter((a) => a.available).map((a) => a.path),
+            ])
         : visibleRows(tree),
-    [searching, root, results.entries, tree],
+    [searching, root, added, results.entries, tree],
   );
   const search = useMemo(
     () => ({ query, results: results.entries, ready: results.ready }),
@@ -780,6 +1006,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
       rootState === null ||
       rootState.available ||
       (rootState.root === null && !defaultFailed),
+    added,
     tree,
     rows,
     searching,
@@ -796,6 +1023,9 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     copyPath,
     chooseRoot,
     recreateRoot,
+    addFolder,
+    locateFolder,
+    removeFolder,
     setQuery,
     scratchpadMove,
   };

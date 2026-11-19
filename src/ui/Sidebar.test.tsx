@@ -38,6 +38,7 @@ function makeTree(over: Partial<TreeState> = {}): TreeState {
     },
     expanded: new Set([IDEAS.path]),
     selected: null,
+    added: [],
     ...over,
   };
 }
@@ -219,7 +220,7 @@ describe("Sidebar", () => {
       ...p,
       searching: true,
       search: { query: "no", results: [NOTES], ready: true },
-      rows: filterRows([NOTES], ROOT),
+      rows: filterRows([NOTES], [ROOT]),
     });
     rerender(<Sidebar {...ready} />);
     expect(screen.queryByText("Searching…")).toBeNull();

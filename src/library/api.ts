@@ -10,9 +10,19 @@ export interface Entry {
   link: "inside" | "outside" | null;
 }
 
+/** A folder added to the sidebar beside the Library. */
+export interface AddedState {
+  path: string;
+  available: boolean;
+}
+
 export interface RootState {
   root: string | null;
   available: boolean;
+  /** The added folders, in the order added. */
+  added: AddedState[];
+  /** Names of added folders dropped because a re-pointed Library overlaps them. */
+  removed?: string[];
 }
 
 export interface CopyResult {
@@ -43,7 +53,20 @@ export type DragPoint = { x: number; y: number } | null;
 export const libraryRoot = (): Promise<RootState> => invoke("library_root");
 export const libraryUseDefault = (): Promise<RootState> =>
   invoke("library_use_default");
-export const libraryChoose = (): Promise<RootState> => invoke("library_choose");
+/** `openPaths`: the Files the UI holds, kept granted if an added folder goes. */
+export const libraryChoose = (openPaths: string[]): Promise<RootState> =>
+  invoke("library_choose", { openPaths });
+/** Opens the folder picker; cancelling resolves to the current state. */
+export const libraryAddFolder = (): Promise<RootState> =>
+  invoke("library_add_folder");
+/** Picks the folder that replaces the added `path` (missing or moved). */
+export const libraryLocateFolder = (path: string): Promise<RootState> =>
+  invoke("library_locate_folder", { path });
+/** Forgets the added `path`; `openPaths` under it keep their file grants. */
+export const libraryRemoveFolder = (
+  path: string,
+  openPaths: string[],
+): Promise<RootState> => invoke("library_remove_folder", { path, openPaths });
 /** Creates the stored root's folder again ("Create it again"). */
 export const libraryRecreate = (): Promise<RootState> =>
   invoke("library_recreate");
