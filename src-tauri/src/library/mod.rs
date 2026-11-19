@@ -4,6 +4,7 @@
 //! (`Grants::set_root` / `in_root`) and runs every operation on it
 //! (`ops.rs`, `commands.rs`).
 
+pub mod added;
 pub mod commands;
 pub mod index;
 pub mod ops;
