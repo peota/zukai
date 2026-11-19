@@ -6,6 +6,7 @@ import {
   EditorState,
   Prec,
   Transaction,
+  type ChangeSpec,
   type Extension,
 } from "@codemirror/state";
 import {
@@ -29,8 +30,11 @@ import {
   codeFolding,
   foldCode,
   foldGutter,
+  forceParsing,
   indentOnInput,
   indentRange,
+  language as languageFacet,
+  syntaxTree,
   unfoldCode,
 } from "@codemirror/language";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
@@ -233,8 +237,9 @@ function offsetOf(s: string, line: number, col: number): number {
 /**
  * The Languages Shift+Alt+F re-indents. Python and YAML are left out on
  * purpose: their indentation is their meaning, so re-indenting could change
- * what the file says; Markdown likewise (lists, code blocks). Shell and plain
- * text have no indentation rules.
+ * what the file says; Markdown likewise (lists, code blocks). SQL's only rule
+ * indents every continuation line one step, which undoes the usual aligned
+ * style. Shell and plain text have no indentation rules.
  */
 const REINDENT_LANGUAGES: ReadonlySet<LanguageId> = new Set([
   "javascript",
@@ -242,28 +247,83 @@ const REINDENT_LANGUAGES: ReadonlySet<LanguageId> = new Set([
   "html",
   "xml",
   "css",
-  "sql",
 ]);
+
+type Tree = ReturnType<typeof syntaxTree>;
+type SyntaxNode = ReturnType<Tree["resolveInner"]>;
+
+/** How long a re-indent may spend parsing the rest of a long file. */
+const REINDENT_PARSE_MS = 500;
+
+/**
+ * True if the leading whitespace of the line starting at `pos` is part of
+ * the content, so re-indenting would change what it says: inside an HTML
+ * `<pre>` or `<textarea>`, or an HTML/XML comment or CDATA section.
+ */
+function keepsIndent(tree: Tree, state: EditorState, pos: number): boolean {
+  for (let n: SyntaxNode | null = tree.resolveInner(pos, 1); n; n = n.parent) {
+    if (n.name === "Comment" || n.name === "Cdata") return pos > n.from;
+    if (n.name === "TextareaText") return true;
+    if (n.name === "Element") {
+      const open = n.getChild("OpenTag");
+      const tag = open?.getChild("TagName");
+      if (
+        open &&
+        tag &&
+        pos > open.to &&
+        /^(pre|textarea)$/i.test(state.sliceDoc(tag.from, tag.to))
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 /**
  * Re-indents the lines of every selection range, or the whole document when
  * the selection is empty, by the Language's indentation rules, as one edit.
- * Only leading whitespace changes. Returns whether anything changed.
+ * Only leading whitespace changes, and never where it is content (see
+ * `keepsIndent`). Does nothing until `language` (the Tab's) is the one
+ * loaded, or if the file can't be parsed in time. Returns whether anything
+ * changed.
  */
-function reindent(view: EditorView): boolean {
+export function reindent(view: EditorView, language: LanguageId): boolean {
+  if (view.state.facet(languageFacet)?.name !== language) return false;
+  const { doc, selection } = view.state;
+  const whole = selection.ranges.every((r) => r.empty);
+  // Whole lines, sorted; ranges sharing a line are merged, so no line is
+  // indented twice.
+  const spans: { from: number; to: number }[] = [];
+  const lineSpans = whole
+    ? [{ from: 0, to: doc.length }]
+    : selection.ranges
+        .map((r) => ({
+          from: doc.lineAt(r.from).from,
+          to: doc.lineAt(r.to).to,
+        }))
+        .sort((a, b) => a.from - b.from);
+  for (const s of lineSpans) {
+    const last = spans[spans.length - 1];
+    if (last && s.from <= last.to) last.to = Math.max(last.to, s.to);
+    else spans.push({ ...s });
+  }
+  // The indentation rules read the view's own tree, so parse into the view
+  // (a long file is otherwise parsed only around what's on screen).
+  const end = spans[spans.length - 1].to;
+  if (!forceParsing(view, end, REINDENT_PARSE_MS)) return false;
   const { state } = view;
-  const whole = state.selection.ranges.every((r) => r.empty);
-  const spans = whole
-    ? [{ from: 0, to: state.doc.length }]
-    : state.selection.ranges.map((r) => ({
-        from: state.doc.lineAt(r.from).from,
-        to: state.doc.lineAt(r.to).to,
-      }));
-  const changes = state.changes(
-    spans.map(({ from, to }) => indentRange(state, from, to)),
-  );
-  if (changes.empty) return false;
-  view.dispatch({ changes, userEvent: "input.indent" });
+  const tree = syntaxTree(state);
+  const specs: ChangeSpec[] = [];
+  for (const { from, to } of spans) {
+    indentRange(state, from, to).iterChanges((fromA, toA, _b, _e, text) => {
+      if (!keepsIndent(tree, state, doc.lineAt(fromA).from)) {
+        specs.push({ from: fromA, to: toA, insert: text });
+      }
+    });
+  }
+  if (specs.length === 0) return false;
+  view.dispatch({ changes: specs, userEvent: "input.indent" });
   return true;
 }
 
@@ -754,7 +814,7 @@ export function EditorHost(props: EditorHostProps) {
         formatRequest.kind === "beautify" &&
         REINDENT_LANGUAGES.has(tab.language)
       ) {
-        reindent(e.view);
+        reindent(e.view, tab.language);
       }
       return;
     }

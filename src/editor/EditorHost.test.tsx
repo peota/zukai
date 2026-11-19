@@ -7,7 +7,13 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
-import { EditorHost, type EditorHostProps } from "./EditorHost";
+import {
+  EditorSelection,
+  EditorState,
+  type Extension,
+} from "@codemirror/state";
+import { javascript } from "@codemirror/lang-javascript";
+import { EditorHost, reindent, type EditorHostProps } from "./EditorHost";
 import { undo } from "@codemirror/commands";
 import { foldedRanges, syntaxTree } from "@codemirror/language";
 import type { FileInfo, TabState } from "../model/types";
@@ -537,19 +543,99 @@ describe("EditorHost re-indent (Shift+Alt+F on code)", () => {
     expect(v.state.doc.toString()).toBe(src);
   });
 
-  it("reindent_before_language_loads_is_harmless", async () => {
-    const src = "function f() {\nreturn 1;\n}";
+  it("two_selections_on_one_line_indent_it_once", async () => {
+    const src = "if (a) {\nfoo(); foo();\n}";
     const { container, rerender } = setup({
-      tabs: [code("a", "typescript")],
+      tabs: [code("a", "javascript")],
       loadContent: () => Promise.resolve(src),
     });
     const v = await activeView(container, src);
-    expect(() =>
-      rerender({ formatRequest: { seq: 1, kind: "beautify" } }),
-    ).not.toThrow();
-    expect([src, "function f() {\n  return 1;\n}"]).toContain(
-      v.state.doc.toString(),
+    await parsed(v);
+    // Both `foo`s selected (as after Ctrl+D).
+    act(() =>
+      v.dispatch({
+        selection: EditorSelection.create([
+          EditorSelection.range(9, 12),
+          EditorSelection.range(16, 19),
+        ]),
+      }),
     );
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe("if (a) {\n  foo(); foo();\n}");
+  });
+
+  it("sql_is_left_alone", async () => {
+    const src = "SELECT a,\n       b\nFROM t\nWHERE x = 1\n  AND y = 2;";
+    const { container, rerender } = setup({
+      tabs: [code("a", "sql")],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    await parsed(v);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe(src);
+  });
+
+  it("html_keeps_pre_textarea_and_comment_text", async () => {
+    const src =
+      "<div>\n<p>x</p>\n<pre>\n      kept\n</pre>\n<textarea>\n   kept\n</textarea>\n<!--\n     kept\n-->\n</div>";
+    const { container, rerender } = setup({
+      tabs: [code("a", "html")],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    await parsed(v);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    const out = v.state.doc.toString();
+    expect(out).toContain("\n  <p>x</p>");
+    expect(out).toContain("\n      kept\n</pre>");
+    expect(out).toContain("\n   kept\n</textarea>");
+    expect(out).toContain("\n     kept\n-->");
+  });
+
+  it("xml_keeps_comment_and_cdata_text", async () => {
+    const src =
+      "<a>\n<b/>\n<!--\n     kept\n-->\n<![CDATA[\n    kept\n]]>\n</a>";
+    const { container, rerender } = setup({
+      tabs: [code("a", "xml")],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    await parsed(v);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    const out = v.state.doc.toString();
+    expect(out).toContain("\n  <b/>");
+    expect(out).toContain("\n     kept\n-->");
+    expect(out).toContain("\n    kept\n]]>");
+  });
+});
+
+describe("reindent", () => {
+  const viewOf = (doc: string, extensions: Extension = []) =>
+    new EditorView({ state: EditorState.create({ doc, extensions }) });
+
+  it("changes nothing until the Tab's own Language is loaded", () => {
+    // No Language yet: the first line must not be stripped.
+    const bare = viewOf("    <div>\n  x\n");
+    expect(reindent(bare, "html")).toBe(false);
+    expect(bare.state.doc.toString()).toBe("    <div>\n  x\n");
+    // Another Language's rules aren't used either.
+    const other = viewOf("function f() {\nreturn 1;\n}", javascript());
+    expect(reindent(other, "css")).toBe(false);
+    expect(other.state.doc.toString()).toBe("function f() {\nreturn 1;\n}");
+    bare.destroy();
+    other.destroy();
+  });
+
+  it("re-indents the whole of a long file", () => {
+    const block = "function f() {\nreturn 1;\n}\n";
+    const src = block.repeat(4000);
+    const v = viewOf(src, javascript());
+    expect(reindent(v, "javascript")).toBe(true);
+    const out = v.state.doc.toString();
+    expect(out.endsWith("function f() {\n  return 1;\n}\n")).toBe(true);
+    expect(out).not.toContain("\nreturn 1;");
+    v.destroy();
   });
 });
 
