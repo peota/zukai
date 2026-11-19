@@ -505,19 +505,28 @@ impl Grants {
         }
     }
 
-    /// Drops every File grant lexically under `base`, compared by key, and
-    /// under the other spellings of the added folder `base` names, if any.
-    pub fn forget_under(&self, base: &Path) {
-        let mut bases = vec![base.to_path_buf()];
-        {
-            let slots = self.slots();
-            if let Some(i) = added_index(&slots, base) {
-                let s = &slots[i];
-                bases.extend([&s.root, &s.hint, &s.stored].into_iter().flatten().cloned());
-            }
+    /// Before the added folder `base` names is forgotten: drops the File
+    /// grants that folder decides (`slot_of`: never one in the Library,
+    /// whatever spelling the entry has), except those whose path is exactly
+    /// one of `keep` (the paths the UI holds). Nothing is ever granted here.
+    pub fn forget_added(&self, base: &Path, keep: &[String]) {
+        let slots = self.slots().clone();
+        if let Some(i) = added_index(&slots, base) {
+            self.forget_decided_by(&slots, i, keep);
         }
-        self.map()
-            .retain(|_, p| !bases.iter().any(|b| under_by_key(p, b)));
+    }
+
+    /// Before the Library is re-pointed: drops the File grants it decides,
+    /// except those whose path is exactly one of `keep`.
+    pub fn forget_library(&self, keep: &[String]) {
+        let slots = self.slots().clone();
+        self.forget_decided_by(&slots, 0, keep);
+    }
+
+    fn forget_decided_by(&self, slots: &[RootSlot], i: usize, keep: &[String]) {
+        self.map().retain(|_, p| {
+            slot_of(slots, p) != Some(i) || keep.iter().any(|k| p.as_os_str() == OsStr::new(k))
+        });
     }
 
     /// The added folders in order: each one's root, or its stored path
@@ -953,6 +962,30 @@ mod tests {
         ];
         assert_eq!(slot_of(&nested, &a.join("x")), Some(1));
         assert_eq!(slot_of(&nested, &base.join("c")), Some(0));
+    }
+
+    /// An added folder's stored spelling that lexically holds the Library
+    /// (a stale entry): removing it never drops the Library's grants.
+    #[test]
+    fn forgetting_an_added_folder_spares_the_library() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = canonical(dir.path()).unwrap();
+        let (lib, a) = (base.join("lib"), base.join("a"));
+        std::fs::create_dir(&lib).unwrap();
+        std::fs::create_dir(&a).unwrap();
+        let g = Grants::default();
+        g.set_root(&lib).unwrap();
+        g.slots().push(RootSlot {
+            root: Some(a.clone()),
+            hint: Some(a.clone()),
+            stored: Some(base.clone()),
+            missed: None,
+        });
+        let in_lib = g.grant(&abs(&lib, "x.md")).unwrap();
+        let in_a = g.grant(&abs(&a, "y.md")).unwrap();
+        g.forget_added(&a, &[]);
+        assert!(g.map().contains_key(&key(&in_lib)));
+        assert!(!g.map().contains_key(&key(&in_a)));
     }
 
     #[test]
