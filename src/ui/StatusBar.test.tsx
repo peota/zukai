@@ -189,4 +189,51 @@ describe("StatusBar", () => {
     setup({ notice: "Open files, not folders" });
     expect(screen.getByText("Open files, not folders")).toBeInTheDocument();
   });
+  it("a Markdown Tab's Rich / Markdown switch shows and sets the mode", () => {
+    const onChange = vi.fn();
+    setup({
+      language: "markdown",
+      markdownMode: { mode: "markdown", onChange, hint: "Ctrl+Shift+M" },
+      preview: { mode: "edit", onChange: vi.fn() },
+    });
+    const group = screen.getByRole("radiogroup", { name: "Markdown editor" });
+    expect(group.getAttribute("title")).toBe("Markdown editor (Ctrl+Shift+M)");
+    expect(screen.getByRole("radio", { name: "Markdown" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Rich" }));
+    expect(onChange).toHaveBeenCalledWith("rich");
+    // Markdown mode keeps the preview switch and the position.
+    expect(
+      screen.getByRole("radiogroup", { name: "Markdown preview" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Ln 3, Col 17")).toBeInTheDocument();
+  });
+
+  it("other Tabs have no Rich / Markdown switch", () => {
+    setup();
+    expect(
+      screen.queryByRole("radiogroup", { name: "Markdown editor" }),
+    ).toBeNull();
+  });
+
+  it("Rich hides the preview switch and the position", () => {
+    const onChange = vi.fn();
+    setup({
+      language: "markdown",
+      markdownMode: { mode: "rich", onChange },
+      preview: { mode: "edit", onChange: vi.fn() },
+    });
+    expect(screen.getByRole("radio", { name: "Rich" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(
+      screen.queryByRole("radiogroup", { name: "Markdown preview" }),
+    ).toBeNull();
+    expect(screen.queryByText(/^Ln /)).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Markdown" }));
+    expect(onChange).toHaveBeenCalledWith("markdown");
+  });
 });

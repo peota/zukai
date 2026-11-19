@@ -5,7 +5,9 @@ import {
   allowsContextMenu,
   blocksBrowserKey,
   isEditorTarget,
+  richHandled,
 } from "./app/browserGuard";
+import { effectiveMode } from "./model/markdownMode";
 import type {
   ImageInfo,
   LanguageId,
@@ -44,6 +46,7 @@ const REVEAL_LABEL = revealLabel(platform);
 const BEAUTIFY_HINT = platform === "mac" ? "⇧⌥F" : "Shift+Alt+F";
 const SETTINGS_HINT = platform === "mac" ? "⌘," : "Ctrl+,";
 const PREVIEW_HINT = platform === "mac" ? "⇧⌘V" : "Ctrl+Shift+V";
+const RICH_HINT = platform === "mac" ? "⇧⌘M" : "Ctrl+Shift+M";
 
 interface Cursor {
   id: string;
@@ -70,16 +73,20 @@ export default function App() {
   );
   // Settings is the App's own dialog; every other command is the Workspace's.
   const workspaceRun = w.run;
+  const [focusSignal, setFocusSignal] = useState(0);
+  /** Give the keyboard back to the editor. */
+  const refocus = useCallback(() => setFocusSignal((n) => n + 1), []);
   const run = useCallback(
     async (cmd: Command) => {
       if (cmd.type === "openSettings") setSettingsOpen(true);
       else await workspaceRun(cmd);
+      // The other editor takes the keyboard.
+      if (cmd.type === "toggleRichMarkdown") refocus();
     },
-    [workspaceRun],
+    [workspaceRun, refocus],
   );
   /** The side a dragged Tab would split the editor area on, while shown. */
   const [dropZone, setDropZone] = useState<SplitOrientation | null>(null);
-  const [focusSignal, setFocusSignal] = useState(0);
   const [tabMenu, setTabMenu] = useState<{
     x: number;
     y: number;
@@ -98,7 +105,8 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const cmd = matchShortcut(e, platform);
-      if (cmd) {
+      // A key the rich editor used (Mod+B is bold there) is its own.
+      if (cmd && !richHandled(e)) {
         e.preventDefault();
         void run(cmd);
       } else if (blocksBrowserKey(e, platform, isEditorTarget(e.target))) {
@@ -121,6 +129,7 @@ export default function App() {
   const isCanvas = active?.kind === "canvas";
   const isImage = active?.kind === "image";
   const isMarkdown = active?.kind === "text" && active.language === "markdown";
+  const activeMode = active ? effectiveMode(active, w.settings) : null;
   /** A Markdown Tab's preview; any other Tab is just edited. */
   const previewMode = (isMarkdown && active?.preview) || "edit";
   const theme = useColorScheme(w.settings.theme);
@@ -209,9 +218,6 @@ export default function App() {
     },
     [showNotice],
   );
-
-  /** Give the keyboard back to the editor. */
-  const refocus = useCallback(() => setFocusSignal((n) => n + 1), []);
 
   const closePicker = useCallback(() => {
     setPicking(false);
@@ -353,6 +359,11 @@ export default function App() {
       readBytes={fileReadBytes}
       reloadSeq={reloadSeqOf(tab.id)}
       onImageInfo={onImageInfo}
+      mode={effectiveMode(tab, w.settings)}
+      bridge={w.bridge}
+      fontSize={w.fontSize}
+      onRichFallback={(notice) => w.richFallback(tab.id, notice)}
+      focusSignal={focusSignal}
     />
   );
 
@@ -467,6 +478,7 @@ export default function App() {
                 fontSize={w.fontSize}
                 onZoom={w.zoomEditor}
                 lineNumbers={w.settings.lineNumbers}
+                bridgeRef={w.bridgeRef}
               />
             </div>
           )}
@@ -520,8 +532,19 @@ export default function App() {
           notice={w.notice ?? undefined}
           onSettings={() => setSettingsOpen(true)}
           settingsHint={SETTINGS_HINT}
+          markdownMode={
+            active && activeMode
+              ? {
+                  mode: activeMode,
+                  hint: RICH_HINT,
+                  onChange: (mode) => {
+                    void w.setMarkdownMode(active.id, mode).then(refocus);
+                  },
+                }
+              : undefined
+          }
           preview={
-            isMarkdown && active
+            isMarkdown && active && activeMode !== "rich"
               ? {
                   mode: previewMode,
                   hint: PREVIEW_HINT,

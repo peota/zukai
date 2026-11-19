@@ -117,7 +117,7 @@ async function mount() {
   const r = renderHook(() => useWorkspace());
   await waitFor(() => expect(r.result.current.ready).toBe(true));
   await waitFor(() => expect(m.readScratchpad).toHaveBeenCalledWith("a"));
-  expect(await r.result.current.loadContent("a")).toBe("alpha");
+  expect(await r.result.current.loadContent("a")).toBe(disk.a);
   return r;
 }
 
@@ -577,5 +577,143 @@ describe("useWorkspace Split", () => {
     expect(
       (lastSession() as unknown as { splits: unknown[] }).splits,
     ).toMatchObject([{ a: "a", b: "b", orientation: "column" }]);
+  });
+});
+
+describe("useWorkspace Rich / Markdown editor", () => {
+  type R = { current: ReturnType<typeof useWorkspace> };
+  const modeOf = (r: R, id = "a") =>
+    r.current.state.tabs.find((t) => t.id === id)!.markdownMode;
+  const bridgeFor = (r: R) => {
+    const bridge = {
+      text: () => null,
+      replace: vi.fn(),
+      onOutsideChange: () => () => {},
+      clearHistory: vi.fn(),
+      readOnly: () => false,
+      ready: async () => {},
+    };
+    act(() => r.current.bridgeRef(bridge));
+    return bridge;
+  };
+  /** Tab a becomes a Markdown note the user picked, shown in `mode`. */
+  async function markdownTab(r: R, mode: "rich" | "markdown") {
+    act(() =>
+      r.current.updateTab("a", { language: "markdown", languagePicked: true }),
+    );
+    await waitFor(() => expect(modeOf(r)).toBeDefined());
+    if (modeOf(r) !== mode)
+      act(() => r.current.updateTab("a", { markdownMode: mode }));
+  }
+  const big = "x".repeat(1_048_577);
+
+  it("first_show_writes_default_mode", async () => {
+    const { result } = await mount();
+    act(() =>
+      result.current.updateTab("a", {
+        language: "markdown",
+        languagePicked: true,
+      }),
+    );
+    await waitFor(() => expect(modeOf(result)).toBe("rich"));
+    // b isn't shown yet; a guessed Scratchpad gets "markdown" once it is.
+    act(() =>
+      result.current.updateTab("b", {
+        language: "markdown",
+        languageGuessed: true,
+      }),
+    );
+    expect(modeOf(result, "b")).toBeUndefined();
+    act(() => result.current.activate("b"));
+    await waitFor(() => expect(modeOf(result, "b")).toBe("markdown"));
+    // The Settings default no longer changes a decided Tab.
+    act(() => result.current.setSettings({ markdownDefault: "markdown" }));
+    expect(modeOf(result)).toBe("rich");
+  });
+
+  it("first_show_of_a_too_large_note_is_markdown", async () => {
+    disk.a = big;
+    const { result } = await mount();
+    act(() =>
+      result.current.updateTab("a", {
+        language: "markdown",
+        languagePicked: true,
+      }),
+    );
+    await waitFor(() => expect(modeOf(result)).toBe("markdown"));
+    expect(result.current.notice).toBe("Too large for the rich editor");
+  });
+
+  it("toggle_refuses_rich_when_too_large", async () => {
+    const { result } = await mount();
+    await markdownTab(result, "markdown");
+    act(() => result.current.setContent("a", big));
+    await act(() => result.current.run({ type: "toggleRichMarkdown" }));
+    expect(modeOf(result)).toBe("markdown");
+    expect(result.current.notice).toBe("Too large for the rich editor");
+  });
+
+  it("toggle_to_markdown_clears_history", async () => {
+    const { result } = await mount();
+    const bridge = bridgeFor(result);
+    await markdownTab(result, "rich");
+    await act(() => result.current.run({ type: "toggleRichMarkdown" }));
+    expect(modeOf(result)).toBe("markdown");
+    expect(bridge.clearHistory).toHaveBeenCalledWith("a");
+    await act(() => result.current.run({ type: "toggleRichMarkdown" }));
+    expect(modeOf(result)).toBe("rich");
+    expect(bridge.clearHistory).toHaveBeenCalledTimes(1);
+    // Not a Markdown Tab: nothing to toggle.
+    act(() => result.current.activate("b"));
+    await act(() => result.current.run({ type: "toggleRichMarkdown" }));
+    expect(modeOf(result, "b")).toBeUndefined();
+  });
+
+  it("find_on_rich_switches_to_markdown", async () => {
+    const { result } = await mount();
+    const bridge = bridgeFor(result);
+    await markdownTab(result, "rich");
+    await act(() => result.current.run({ type: "replace" }));
+    expect(modeOf(result)).toBe("markdown");
+    expect(bridge.clearHistory).toHaveBeenCalledWith("a");
+    expect(result.current.findRequest).toEqual({ mode: "replace", seq: 1 });
+  });
+
+  it("fallback_shows_markdown_with_the_notice", async () => {
+    const { result } = await mount();
+    const bridge = bridgeFor(result);
+    await markdownTab(result, "rich");
+    act(() =>
+      result.current.richFallback(
+        "a",
+        "This note uses Markdown the rich editor can't keep",
+      ),
+    );
+    expect(modeOf(result)).toBe("markdown");
+    expect(result.current.notice).toBe(
+      "This note uses Markdown the rich editor can't keep",
+    );
+    // Rich never wrote: the plain editor keeps its undo.
+    expect(bridge.clearHistory).not.toHaveBeenCalled();
+  });
+
+  it("language_back_to_markdown_reapplies_default", async () => {
+    const { result } = await mount();
+    await markdownTab(result, "markdown");
+    act(() => result.current.updateTab("a", { language: "plaintext" }));
+    act(() => result.current.updateTab("a", { language: "markdown" }));
+    await waitFor(() => expect(modeOf(result)).toBe("rich"));
+  });
+
+  it("switch_round_trip_keeps_text", async () => {
+    disk.a = "# Hi\n\n* a\n";
+    const { result } = await mount();
+    await markdownTab(result, "rich");
+    await act(() => result.current.run({ type: "toggleRichMarkdown" }));
+    await act(() => result.current.run({ type: "toggleRichMarkdown" }));
+    expect(modeOf(result)).toBe("rich");
+    expect(await result.current.loadContent("a")).toBe("# Hi\n\n* a\n");
+    await act(() => h.flushAll!());
+    expect(m.writeScratchpad).not.toHaveBeenCalled();
   });
 });
