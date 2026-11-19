@@ -20,7 +20,7 @@ It is not a Notepad replacement and not a productivity system. It opens and edit
 
 ## Positioning
 
-Notes, code, drawings and data sit side by side in one tabbed notebook, each shown the way that suits it (text with highlighting, Markdown rich editing, an Excalidraw canvas, a CSV grid, an image viewer), stored as plain files on the user's own disk with no account. Saving is invisible: Scratchpads and Files autosave, the session restores, and nothing is silently overwritten.
+Notes, code, drawings and data sit side by side in one tabbed notebook, each shown the way that suits it (text with highlighting, Markdown rich editing, an Excalidraw canvas, a CSV grid, an image viewer), stored as plain files on the user's own disk with no account. Scratchpads save themselves and the session restores; a File changes on disk only when you save it (or always, with Save files automatically), and nothing is silently overwritten.
 
 ## Operating Context
 
@@ -56,5 +56,5 @@ Notes, code, drawings and data sit side by side in one tabbed notebook, each sho
 1. Writing something down costs nothing: open, type, done. No dialogs before the first keystroke.
 2. The material leads; chrome recedes. The editor area is the product.
 3. Each kind of material is shown the way that suits it, inside one consistent shell.
-4. Plain files, local, trustworthy: saving is invisible but never surprising.
+4. Plain files, local, trustworthy: saving is never surprising.
 5. Stay a notebook, not a platform.

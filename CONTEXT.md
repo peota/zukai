@@ -19,7 +19,7 @@ A Document that lives only in Zukai's own storage and has no path on disk. Every
 _Avoid_: note, untitled, temp file.
 
 **File**
-A Document backed by a path on the user's disk. Edits to a File are autosaved to that path, just like a Scratchpad's are saved to Zukai's storage (see [ADR 0001](docs/adr/0001-files-autosave-to-disk.md)). Only paths the user has granted to Rust (by opening, dropping or saving them) can be read or written; every other path is refused.
+A Document backed by a path on the user's disk. A File changes on disk only when it is saved (Ctrl+S, Save all, Save on the close prompt), unless Save files automatically is on. A Scratchpad always saves itself to Zukai's storage (see [ADR 0012](docs/adr/0012-files-save-on-ctrl-s.md)). Only paths the user has granted to Rust (by opening, dropping or saving them) can be read or written; every other path is refused.
 _Avoid_: external file, document (when you mean specifically the on-disk kind).
 
 **Kind**
@@ -31,7 +31,7 @@ _Avoid_: type, mode, format.
 **Canvas**
 The Kind for drawings, shown in an embedded Excalidraw editor (`@excalidraw/excalidraw`, pinned to 0.18.1) with its online and collaboration features turned off. Excalidraw is loaded the first time a Canvas Tab opens, so a text-only session never loads it.
 - A Canvas Scratchpad is stored as `scratchpads/<id>.excalidraw`; a Canvas File is any `.excalidraw` file.
-- The scene is saved as standard `.excalidraw` JSON through the same autosave, Fingerprint and atomic-write path as text, and only when the drawing changes, never for a scroll or zoom. The viewport is remembered per Tab in the Session.
+- The scene is saved as standard `.excalidraw` JSON through the same save, Fingerprint and atomic-write path as text, and only when the drawing changes, never for a scroll or zoom. The viewport is remembered per Tab in the Session.
 - Disk changes and Disk conflicts follow the Text rules. A file that isn't a valid drawing opens read-only with a notice and is never saved over.
 - App shortcuts win over Excalidraw's inside a Canvas.
 
@@ -39,7 +39,7 @@ The Kind for drawings, shown in an embedded Excalidraw editor (`@excalidraw/exca
 The Kind for pictures: a read-only viewer that fits the window, with zoom (Mod+= / Mod+- / Mod+0) and pan. The status bar shows the dimensions, the format and the size, and the image reloads when the file changes on disk. Bytes are read through Rust under the same grants. SVG is only ever shown as an image (`<img src="blob:…">`), never as live markup, so no script in it runs.
 
 **View**
-A way of displaying a Document that doesn't change what it is. A Table has two Views: the **grid** and the **raw text**. Switching View keeps the same Document and the same autosave.
+A way of displaying a Document that doesn't change what it is. A Table has two Views: the **grid** and the **raw text**. Switching View keeps the same Document and the same saving rule.
 
 **Language**
 The syntax a Text Document is highlighted as (JSON, SQL, Markdown and so on). A File gets it from its extension, and a Scratchpad from a guess based on its content. The user can always override it in the status bar.
@@ -52,7 +52,7 @@ A Split is made from a tab's "Split with" menu, with Mod+\ (which splits the act
 _Avoid_: pane, editor group.
 
 **Compare**
-A mode of a Split that shows a diff between its two Text Tabs, using `@codemirror/merge`. Both sides stay their real Documents, so they're editable and autosaved. Arrow buttons copy a chunk across as an ordinary edit that can be undone. F7 and Shift+F7 jump to the next and previous change, and whitespace can be ignored. Turning Compare off leaves an ordinary Split.
+A mode of a Split that shows a diff between its two Text Tabs, using `@codemirror/merge`. Both sides stay their real Documents, so they're editable and saved like any other Tab. Arrow buttons copy a chunk across as an ordinary edit that can be undone. F7 and Shift+F7 jump to the next and previous change, and whitespace can be ignored. Turning Compare off leaves an ordinary Split.
 Compare can be started from a Split, from "Compare with…" in the Command palette, from "Compare with previous version" (against a Snapshot, which is read-only), or from the Compare button on a Disk conflict bar.
 _Limits in v1:_ Tables are compared as raw text, and Canvas and Huge Files can't be compared.
 _Avoid_: diff tab.
@@ -152,7 +152,7 @@ The character that separates cells in a Table File: comma, semicolon, tab or pip
 A row with more or fewer cells than the header. It still shows in the grid. Missing cells are padded on screen only and never written to the file unless the user types into one. Extra cells appear under unnamed columns.
 
 **Unreadable Table**
-A Table File whose structure can't be parsed, for example because a quote is never closed or the Delimiter can't be determined. It opens in the raw text View with a notice that names the line where reading failed, and a "Try table view" button that re-parses it. Zukai never guesses a grid for it, because autosave would write the guess back to disk.
+A Table File whose structure can't be parsed, for example because a quote is never closed or the Delimiter can't be determined. It opens in the raw text View with a notice that names the line where reading failed, and a "Try table view" button that re-parses it. Zukai never guesses a grid for it, because a save would write the guess back to disk.
 
 Changes are written back with as small a diff as possible (see [ADR 0004](docs/adr/0004-minimal-diff-csv-writes.md)).
 
@@ -162,7 +162,7 @@ Changes are written back with as small a diff as possible (see [ADR 0004](docs/a
 The byte encoding (UTF-8, UTF-16, Windows-1252 and so on, with or without a BOM) and line-ending style (CRLF or LF) of a Text File. Zukai detects them on open, writes the File back the same way, shows them in the status bar, and changes them only through an explicit Convert action. See [ADR 0009](docs/adr/0009-preserve-text-encoding-and-line-endings.md).
 
 **Pending edits**
-Edits in a Tab that haven't been autosaved yet. For a File, these are edits not yet written to disk.
+Edits in a Tab that haven't been saved yet. For a File, this includes its Unsaved changes.
 
 **Disk change**
 A change to an open File made by something other than Zukai (git, a formatter, another editor). Zukai watches every open File for these.
@@ -170,10 +170,10 @@ A change to an open File made by something other than Zukai (git, a formatter, a
 - If the Tab has Pending edits, the result is a Disk conflict.
 
 **Disk conflict**
-A File that was changed on disk while its Tab had Pending edits. Autosave pauses for that Tab, and a bar offers **Keep mine** (overwrite the disk version) or **Load disk version** (discard the Pending edits), or **Compare** (open both versions in Compare and merge chunk by chunk). Nothing is written until the user resolves it.
+A File that was changed on disk while its Tab had Pending edits. Saving pauses for that Tab, and a bar offers **Keep mine** (overwrite the disk version) or **Load disk version** (discard the Pending edits), or **Compare** (open both versions in Compare and merge chunk by chunk). Nothing is written until the user resolves it.
 
 **Missing File**
-An open File whose path no longer exists because it was deleted or moved. The Tab keeps its content, autosave stops, and Save writes the content back.
+An open File whose path no longer exists because it was deleted or moved. The Tab keeps its content, saving stops, and Save writes the content back.
 
 **Session**
 Everything needed to bring the workspace back after a restart: open Tabs and their order, Splits, the active Tab, cursor and scroll positions, Sort/Filter, Undo history, and Pending edit state. It is stored in `session.json` (see [ADR 0005](docs/adr/0005-scratchpads-as-plain-files.md)).
@@ -182,11 +182,14 @@ _Avoid_: workspace (when you mean the saved state).
 **Fingerprint**
 A File's modified time, size and xxh3-64 content hash as Zukai last read or wrote it. Before every write, Rust re-hashes the file on disk. If the content differs from the Fingerprint, the write is refused and the Tab enters a Disk conflict. An empty hash marks a file over 50 MB that wasn't read; it never matches.
 
+**Unsaved changes**
+A File Tab's text or format (encoding, line endings) that isn't in its File yet, when Save files automatically is off. The text is kept in the Tab's Shadow file, so it survives a restart, and the Tab shows a dot. Undoing back to the saved text, or converting back, clears it. Closing the Tab asks to save; quitting never asks.
+
 **Held**
 A File Tab is held while it is in a Disk conflict, is a Missing File, is read-only (not readable as text), or has text its encoding can't represent. A held Tab never writes the File; its text goes to its Shadow file instead. If a Shadow file itself can't be read, the Tab stays held, can't be edited or moved, and the read is retried on the next launch.
 
 **Shadow file**
-`pending/<tab id>.txt` in the app data folder, holding a held Tab's unsaved text. It is written atomically and restored after a restart. It is deleted only once the Tab is resolved. Shadow files that no Tab references are recovered as Scratchpads at launch.
+`pending/<tab id>.txt` in the app data folder, holding the unsaved text of a held Tab or of a File Tab with Unsaved changes. It is written atomically and restored after a restart. It is deleted only once the Tab is resolved. Shadow files that no Tab references are recovered as Scratchpads at launch.
 
 ## Recovery
 
@@ -200,7 +203,7 @@ _Avoid_: backup, version (unless you mean a Snapshot).
 ## JSON tools
 
 **Format (Beautify / Minify)**
-Commands for Tabs whose Language is JSON, from the `{ }` chip in the status bar. Beautify (Shift+Alt+F) re-indents with 2 spaces, the selection if there is one, and otherwise the whole Document. Minify removes whitespace outside strings. Both are one undoable edit that autosave treats like typing. They re-indent existing tokens and never re-serialise values, so key order, number text and string escapes are untouched, and comments survive. Invalid JSON changes nothing and the status bar names the line and column.
+Commands for Tabs whose Language is JSON, from the `{ }` chip in the status bar. Beautify (Shift+Alt+F) re-indents with 2 spaces, the selection if there is one, and otherwise the whole Document. Minify removes whitespace outside strings. Both are one undoable edit that counts as typing for saving. They re-indent existing tokens and never re-serialise values, so key order, number text and string escapes are untouched, and comments survive. Invalid JSON changes nothing and the status bar names the line and column.
 
 **Folding**
 Collapsing a region of text (such as a JSON object) behind a marker in the fold gutter. Mod+Shift+[ folds, Mod+Shift+] unfolds, and clicking a marker toggles it. Copying a selection that spans folded regions copies the hidden text too.

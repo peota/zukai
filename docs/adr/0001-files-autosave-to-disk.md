@@ -1,7 +1,7 @@
 # 1. Files autosave to disk
 
 Date: 2026-10-25
-Status: Accepted
+Status: Superseded in part by [ADR 0012](0012-files-save-on-ctrl-s.md) (now the "Save files automatically" setting)
 
 ## Context
 
