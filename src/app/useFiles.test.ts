@@ -787,6 +787,54 @@ describe("useFiles save and save as", () => {
     expect(f.fileWrite).toHaveBeenLastCalledWith(P, "{}", crlf, fp("h1"));
   });
 
+  describe("with autosave off", () => {
+    const CRLF = { ...FMT, lineEnding: "crlf" as const };
+    async function convertToCrlf() {
+      const { result } = await mount(false);
+      const id = await openP(result);
+      await act(() => result.current.loadContent(id));
+      const file = fileTabOf(result)!.file!;
+      act(() =>
+        result.current.updateTab(id, { file: { ...file, format: CRLF } }),
+      );
+      await settle();
+      return { result, id };
+    }
+
+    it("a Convert with autosave off keeps the File unwritten and marks it unsaved", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const { result, id } = await convertToCrlf();
+      await act(() => vi.advanceTimersByTimeAsync(300));
+      expect(f.fileWrite).not.toHaveBeenCalled();
+      const file = fileTabOf(result)!.file!;
+      expect(file.diskFormat).toEqual(FMT);
+      expect(file.format).toEqual(CRLF);
+      expect(file.unsaved).toBe(true);
+      expect(shadows[id]).toBe("{}");
+    });
+
+    it("converting back to the disk format clears unsaved", async () => {
+      const { result, id } = await convertToCrlf();
+      const file = fileTabOf(result)!.file!;
+      act(() =>
+        result.current.updateTab(id, { file: { ...file, format: FMT } }),
+      );
+      await settle();
+      const back = fileTabOf(result)!.file!;
+      expect(back.unsaved).toBeUndefined();
+      expect(back.diskFormat).toBeUndefined();
+      expect(f.fileWrite).not.toHaveBeenCalled();
+    });
+
+    it("Save after a Convert writes the new format", async () => {
+      // saveNow isn't exposed yet (Task 6): keepMine is the explicit write.
+      const { result, id } = await convertToCrlf();
+      await act(() => result.current.keepMine(id));
+      expect(f.fileWrite).toHaveBeenCalledWith(P, "{}", CRLF, fp("h1"));
+      expect(fileTabOf(result)!.file!.diskFormat).toBeUndefined();
+    });
+  });
+
   it("the format shortcut issues a beautify request", async () => {
     const { result } = await mount();
     await act(() => result.current.run({ type: "format" }));

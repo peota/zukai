@@ -8,7 +8,7 @@ import {
 } from "../../files/api";
 import { decide, onWriteOutcome, type DiskEvent } from "../../files/fileState";
 import { baseName } from "../../files/paths";
-import type { FileFormat, TabState } from "../../model/types";
+import type { FileFormat, FileInfo, TabState } from "../../model/types";
 import * as ws from "../../model/workspace";
 import { logError } from "../workspaceEffects";
 import {
@@ -35,7 +35,7 @@ export function useBarActions(c: FilesContext, d: BarDeps) {
   const { stateRef, commit, contents, onDisk, lock } = c;
   const { setConvert, setFormat } = c;
   const { tabOf, patchFile, showNotice, hasPending } = c;
-  const { keepAside, hold, dropShadow } = c;
+  const { keepAside, hold, dropShadow, autosaveFiles } = c;
   const { refuseUnreadable, loadContent, reloadLocked } = d;
 
   /** After a write of `text` by an action: record it and clear the shadow. */
@@ -205,16 +205,19 @@ export function useBarActions(c: FilesContext, d: BarDeps) {
       const changed = !sameFormat(format, cur.format);
       // A Convert to a wider encoding may make held text writable again.
       const held = changed && cur.held === "unencodable" ? null : cur.held;
-      commit(
-        ws.updateTab(stateRef.current, id, {
-          ...patch,
-          file: { ...cur, format, held },
-        }),
-      );
-      // A Convert is a Pending edit: write the File in its new form.
+      // With autosave off the disk keeps its form until a save: remember it.
+      // Converting back to it is no change at all.
+      const next: FileInfo = { ...cur, format, held };
+      if (changed && !autosaveFiles()) {
+        const disk = cur.diskFormat ?? cur.format;
+        if (sameFormat(format, disk)) delete next.diskFormat;
+        else next.diskFormat = disk;
+      }
+      commit(ws.updateTab(stateRef.current, id, { ...patch, file: next }));
+      // A Convert is a Pending edit: the writer saves it, or keeps it aside.
       if (changed) keepAside(id);
     },
-    [commit, keepAside, refuseUnreadable, stateRef, tabOf],
+    [autosaveFiles, commit, keepAside, refuseUnreadable, stateRef, tabOf],
   );
 
   const updateTab = useCallback(
