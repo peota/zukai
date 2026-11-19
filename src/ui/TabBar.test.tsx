@@ -117,9 +117,32 @@ describe("TabBar", () => {
         unsaved: true,
       },
     ]);
-    expect(screen.getByTestId("unsaved-dot")).toBeInTheDocument();
+    const dot = screen.getByTestId("unsaved-dot");
+    const pin = screen.getByRole("button", { name: "Unpin a.json (unsaved)" });
     expect(
-      screen.getByRole("button", { name: "Unpin a.json (unsaved)" }),
+      dot.compareDocumentPosition(pin) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Close/ })).toBeNull();
+  });
+
+  it("a joined Tab with an unsaved member ends its name with (unsaved)", () => {
+    setup(
+      [
+        {
+          id: "a",
+          title: "First",
+          active: true,
+          file: { missing: false, path: "C:/d/First" },
+          unsaved: true,
+        },
+        { id: "b", title: "Second", active: false },
+      ],
+      { splits: [{ a: "a", b: "b", focus: "a" }] },
+    );
+    const tab = screen.getByRole("tab", { name: "First | Second (unsaved)" });
+    expect(tab).toHaveAttribute("title", "First | Second (unsaved)");
+    expect(
+      screen.getByRole("button", { name: "Close First | Second (unsaved)" }),
     ).toBeInTheDocument();
   });
 
