@@ -28,3 +28,9 @@ We considered:
 - **The webview may now read and write anything under the Library root.** That widens the allowlist from individual files to one folder the user chose.
 - **Deleting from the sidebar must go to the operating system's trash**, because these are real user files.
 - **Canvas moves earlier.** Flows are a core part of a project, so Canvas (M3) is delivered together with the Library, before M2.
+
+## Note, 2026-11-19: added folders
+
+- **The grant is now the Library plus added folders.** Besides the Library root, Rust holds a folder grant for each folder the user added to the sidebar with **Add folder…**. Only the OS folder dialog, run by Rust, can add one, so the webview still can't pick a path to grant.
+- **Why:** some projects already live elsewhere (a repo, a synced drive) and can't move into the Library. Adding them beside it keeps one sidebar without widening the grant to a parent folder such as the home folder, which is refused.
+- **Links never cross roots.** A link under one root only works if it resolves inside that same root; a link from an added folder into the Library or another added folder is refused like any escape. Moves never cross roots either: a drag into another tree copies.

@@ -399,6 +399,10 @@ export default function App() {
         }}
         onUnpin={(id) => w.setPinned(id, false)}
         onLeave={refocus}
+        added={lib.added}
+        onAddFolder={() => void lib.addFolder()}
+        onLocateFolder={(path) => void lib.locateFolder(path)}
+        onRemoveFolder={(path) => void lib.removeFolder(path)}
         platform={platform}
       />
       <div className="flex h-full min-w-0 flex-1 flex-col" data-z-workspace="">

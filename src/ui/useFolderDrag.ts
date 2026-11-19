@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent, RefObject } from "react";
 import type { Entry } from "../library/api";
-import type { Row } from "../library/tree";
+import { rootOf, type Row } from "../library/tree";
 import { isUnder, parentOf, sameDir } from "./libraryEntries";
 
 /** What is being dragged onto a Library folder. */
@@ -64,18 +64,27 @@ export function useFolderDrag({
   treeRef,
   rows,
   root,
+  roots,
   blocked,
+  fixed,
   onDrop,
 }: {
   treeRef: RefObject<HTMLElement | null>;
   rows: Row[];
   root: string | null;
+  /** The Library root and the added folders: a drop across them copies. */
+  roots: string[];
   /** Entries Zukai can't act on: never dragged, never a target. */
   blocked(e: Entry): boolean;
+  /** Entries that are never dragged but may be a target (an added folder). */
+  fixed(e: Entry): boolean;
   onDrop(source: DragSource, destDir: string): void;
 }) {
   const press = useRef<Press | null>(null);
-  const [view, setView] = useState<{ dest: string | null } | null>(null);
+  const [view, setView] = useState<{
+    dest: string | null;
+    copy: boolean;
+  } | null>(null);
   const swallow = useRef(false);
   // The parent index of the rows being dragged over, built when a drag starts.
   const parents = useRef<{ rows: Row[]; index: Int32Array } | null>(null);
@@ -128,7 +137,12 @@ export function useFolderDrag({
     swallow.current = false;
     if (e.button !== 0) return;
     if ((e.target as Element).closest("button, input")) return;
-    if (source.kind === "entry" && blocked(source.entry)) return;
+    if (
+      source.kind === "entry" &&
+      (blocked(source.entry) || fixed(source.entry))
+    ) {
+      return;
+    }
     press.current = {
       source,
       pointerId: e.pointerId,
@@ -152,7 +166,7 @@ export function useFolderDrag({
     }
     const i = Number(rowEl.dataset.row);
     const r = rows[i];
-    if (!r) return null;
+    if (!r || r.heading?.available === false) return null;
     if (r.entry.isDir) {
       return blocked(r.entry) ? null : allowed(source, r.entry.path);
     }
@@ -182,7 +196,14 @@ export function useFolderDrag({
     }
     const dest = destAt(d.source, e.clientX, e.clientY);
     press.current = { ...d, moving: true, dest };
-    if (!d.moving || dest !== d.dest) setView({ dest });
+    if (!d.moving || dest !== d.dest) {
+      // A drop into another tree copies (Rust never moves across roots).
+      const copy =
+        d.source.kind === "entry" &&
+        dest !== null &&
+        rootOf(d.source.entry.path, roots) !== rootOf(dest, roots);
+      setView({ dest, copy });
+    }
   };
 
   const end = (e: PointerEvent<HTMLElement>, drop: boolean) => {
@@ -212,6 +233,8 @@ export function useFolderDrag({
 
   return {
     dropTarget: view?.dest ?? null,
+    /** The drop would copy into another tree: the target shows "Copy". */
+    dropCopy: view?.copy ?? false,
     dragging: moving,
     handlers,
     swallowClick,

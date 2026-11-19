@@ -82,7 +82,7 @@ The Library replaces "no project concept" and "no notes library" (see [ADR 0011]
 
 **Library**
 A real folder on disk that holds the user's projects, `<Documents>/Zukai` by default. Its root is created on first launch and can be re-pointed with **Choose Library folder…**, which never moves or copies anything. The root path is stored only by Rust, in `library.json` in the app data folder, never in `session.json`, so the webview can't set it. If the root is missing at launch, the Sidebar says so and offers to choose another folder or create it again; open Tabs are unaffected.
-- Rust holds a **folder grant** for the root: everything inside it may be read and written, after resolving `..` and links. Nothing outside it is affected.
+- Rust holds a **folder grant** for the root and for each **Added folder**: everything inside them may be read and written, after resolving `..` and links. Nothing outside them is affected.
 - Links (symlinks, junctions) are never followed by the tree walk or the watcher. A link that resolves inside the root behaves like its target. A link that resolves outside is shown with a link icon and can't be opened, renamed or moved.
 - Every operation (new, rename, move, delete, copy-in) runs in Rust inside the grant and never replaces an existing name; clashes get ` (2)`. Delete goes to the operating system's trash, and is refused if there's no trash. Open Tabs follow their Files through renames and moves.
 - Rust watches the root and the tree updates when files change outside Zukai.
@@ -92,8 +92,15 @@ _Avoid_: workspace, vault, project root.
 A project folder inside the Library: an ordinary folder whose notes, canvases and images are ordinary files, usable outside Zukai (Explorer, sync, zip, git).
 _Avoid_: project, notebook.
 
+**Added folder**
+A folder outside the Library that the user added to the Sidebar with **Add folder…** (in the Library heading's ⋯ menu, or a right-click on empty sidebar space). Only the OS folder dialog, run by Rust, can add one, and its path is kept by Rust in `library.json` beside the root. It shows under its own heading, after the Library, in the order added, and works like the Library inside: new, rename, move, delete to the trash, copy-in, search, live updates.
+- Each added folder is its own tree. Dragging an item into another tree (Library ↔ added, or between added folders) **copies** it, and the drop target says "Copy"; the source is untouched. Moves never cross trees, and a link only works if it resolves inside its own tree.
+- **Remove from sidebar** forgets the folder and its grant. Nothing on disk changes, and open Tabs from it stay open and keep saving.
+- If the folder goes missing (an unplugged drive, a rename outside Zukai), its heading stays, greyed out and marked **Not found**, with **Locate…** to pick its new place and **Remove from sidebar**. It comes back by itself when the folder does.
+_Avoid_: linked folder, workspace folder, mount.
+
 **Sidebar**
-The panel left of the tab bar that shows, top to bottom, the Pinned list, the Library tree and the Scratchpads list. Mod+B toggles it (hidden, Zukai looks as before), and Mod+Shift+E focuses it. It is 240 px wide by default and its width can be dragged. Whether it's open, its width and which folders are expanded are stored in the Session (`sidebar { open, width, expanded }`).
+The panel left of the tab bar that shows, top to bottom, the Pinned list, the Library tree, each Added folder in the order added, and the Scratchpads list. Mod+B toggles it (hidden, Zukai looks as before), and Mod+Shift+E focuses it. It is 240 px wide by default and its width can be dragged. Whether it's open, its width and which folders are expanded are stored in the Session (`sidebar { open, width, expanded }`).
 _Avoid_: explorer, file tree (when you mean the whole panel).
 
 **Scratchpads list**
