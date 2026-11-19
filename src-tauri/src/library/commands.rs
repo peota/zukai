@@ -176,7 +176,7 @@ pub(crate) fn use_root(
     let overlapping: Vec<PathBuf> = g
         .added()
         .into_iter()
-        .filter(|a| added::refusal(a, Some(&canon), &[], None).is_some())
+        .filter(|a| added::refusal(a, Some(&canon), &[], None, false).is_some())
         .collect();
     // Judged by their own roots before the Library changes.
     for a in &overlapping {

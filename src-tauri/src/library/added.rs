@@ -41,15 +41,40 @@ fn within(inner: &[String], outer: &[String]) -> bool {
     inner.len() >= outer.len() && inner[..outer.len()] == *outer
 }
 
+/// True if `p` is a mount point (a volume root such as `/Volumes/X`): on
+/// another device than its parent. Never on Windows, where a volume root
+/// is a drive root (no parent) and `refusal` already refuses it.
+pub fn is_mount_point(p: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let Some(parent) = p.parent() else {
+            return false;
+        };
+        match (std::fs::metadata(p), std::fs::metadata(parent)) {
+            (Ok(m), Ok(up)) => m.dev() != up.dev(),
+            _ => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = p;
+        false
+    }
+}
+
 /// Why `candidate` may not be added, or `None` if it may. All paths are
-/// canonical; `home` is the user's home folder if known.
+/// canonical; `home` is the user's home folder if known; `mount_point`
+/// whether `candidate` is a volume root (`is_mount_point`).
 pub fn refusal(
     candidate: &Path,
     library: Option<&Path>,
     added: &[PathBuf],
     home: Option<&Path>,
+    mount_point: bool,
 ) -> Option<Refusal> {
-    if candidate.parent().is_none() || home.is_some_and(|h| key(h) == key(candidate)) {
+    if mount_point || candidate.parent().is_none() || home.is_some_and(|h| key(h) == key(candidate))
+    {
         return Some(Refusal::TooBroad);
     }
     let cand = parts(candidate);
@@ -77,7 +102,7 @@ pub fn refusal(
 pub fn clean_added(library: Option<&Path>, added: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut kept: Vec<PathBuf> = Vec::new();
     for p in added {
-        match refusal(&p, library, &kept, None) {
+        match refusal(&p, library, &kept, None, false) {
             None => kept.push(p),
             Some(r) => eprintln!("dropping added folder {}: {}", p.display(), r.message()),
         }
@@ -102,19 +127,22 @@ mod tests {
         let b = base();
         let lib = b.join("lib");
         assert_eq!(
-            refusal(&lib, Some(&lib), &[], None),
+            refusal(&lib, Some(&lib), &[], None, false),
             Some(Refusal::InLibrary)
         );
         assert_eq!(
-            refusal(&lib.join("inner"), Some(&lib), &[], None),
+            refusal(&lib.join("inner"), Some(&lib), &[], None, false),
             Some(Refusal::InLibrary)
         );
         assert_eq!(
-            refusal(&b, Some(&lib), &[], None),
+            refusal(&b, Some(&lib), &[], None, false),
             Some(Refusal::ContainsLibrary)
         );
-        assert_eq!(refusal(&b.join("other"), Some(&lib), &[], None), None);
-        assert_eq!(refusal(&lib, None, &[], None), None);
+        assert_eq!(
+            refusal(&b.join("other"), Some(&lib), &[], None, false),
+            None
+        );
+        assert_eq!(refusal(&lib, None, &[], None, false), None);
     }
 
     #[test]
@@ -122,18 +150,18 @@ mod tests {
         let b = base();
         let added = vec![b.join("x").join("y")];
         assert_eq!(
-            refusal(&b.join("x").join("y"), None, &added, None),
+            refusal(&b.join("x").join("y"), None, &added, None, false),
             Some(Refusal::AlreadyAdded)
         );
         assert_eq!(
-            refusal(&b.join("x").join("y").join("z"), None, &added, None),
+            refusal(&b.join("x").join("y").join("z"), None, &added, None, false),
             Some(Refusal::AlreadyAdded)
         );
         assert_eq!(
-            refusal(&b.join("x"), None, &added, None),
+            refusal(&b.join("x"), None, &added, None, false),
             Some(Refusal::ContainsAdded)
         );
-        assert_eq!(refusal(&b.join("w"), None, &added, None), None);
+        assert_eq!(refusal(&b.join("w"), None, &added, None, false), None);
     }
 
     #[cfg(windows)]
@@ -141,7 +169,7 @@ mod tests {
     fn same_folder_other_case_is_already_added() {
         let added = vec![PathBuf::from(r"C:\X\Work")];
         assert_eq!(
-            refusal(Path::new(r"c:\x\work"), None, &added, None),
+            refusal(Path::new(r"c:\x\work"), None, &added, None, false),
             Some(Refusal::AlreadyAdded)
         );
     }
@@ -149,22 +177,62 @@ mod tests {
     #[test]
     fn sibling_prefix_is_not_inside() {
         let b = base();
-        assert_eq!(refusal(&b.join("b2"), None, &[b.join("b")], None), None);
-        assert_eq!(refusal(&b.join("b"), None, &[b.join("b2")], None), None);
-        assert_eq!(refusal(&b.join("b2"), Some(&b.join("b")), &[], None), None);
+        assert_eq!(
+            refusal(&b.join("b2"), None, &[b.join("b")], None, false),
+            None
+        );
+        assert_eq!(
+            refusal(&b.join("b"), None, &[b.join("b2")], None, false),
+            None
+        );
+        assert_eq!(
+            refusal(&b.join("b2"), Some(&b.join("b")), &[], None, false),
+            None
+        );
     }
 
     #[test]
     fn drive_root_and_home_are_too_broad() {
         let b = base();
         let root = b.ancestors().last().unwrap().to_path_buf();
-        assert_eq!(refusal(&root, None, &[], Some(&b)), Some(Refusal::TooBroad));
-        let home = b.join("home");
         assert_eq!(
-            refusal(&home, None, &[], Some(&home)),
+            refusal(&root, None, &[], Some(&b), false),
             Some(Refusal::TooBroad)
         );
-        assert_eq!(refusal(&home.join("Docs"), None, &[], Some(&home)), None);
+        let home = b.join("home");
+        assert_eq!(
+            refusal(&home, None, &[], Some(&home), false),
+            Some(Refusal::TooBroad)
+        );
+        assert_eq!(
+            refusal(&home.join("Docs"), None, &[], Some(&home), false),
+            None
+        );
+    }
+
+    #[test]
+    fn a_volume_root_is_too_broad() {
+        let vol = base().join("Volumes").join("X");
+        assert_eq!(
+            refusal(&vol, None, &[], None, true),
+            Some(Refusal::TooBroad)
+        );
+        assert_eq!(refusal(&vol.join("work"), None, &[], None, false), None);
+    }
+
+    #[test]
+    fn a_plain_folder_is_not_a_mount_point() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("sub")).unwrap();
+        assert!(!is_mount_point(&tmp.path().join("sub")));
+        assert!(!is_mount_point(&tmp.path().join("missing")));
+    }
+
+    /// `/dev` is its own file system on Linux and macOS.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn dev_is_a_mount_point() {
+        assert!(is_mount_point(Path::new("/dev")));
     }
 
     #[test]

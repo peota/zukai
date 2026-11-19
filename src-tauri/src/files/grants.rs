@@ -120,12 +120,14 @@ fn slot_of(slots: &[RootSlot], p: &Path) -> Option<usize> {
 pub struct AddedSlot(RootSlot);
 
 /// Why `candidate` (canonical) may not join the added folders, judged
-/// against the Library and every added slot but `except`.
+/// against the Library and every added slot but `except`. `home` and
+/// `mount_point`: see `added::refusal` (only checked when adding).
 fn overlap(
     slots: &[RootSlot],
     candidate: &Path,
     except: Option<usize>,
     home: Option<&Path>,
+    mount_point: bool,
 ) -> Option<crate::library::added::Refusal> {
     let library = slots.first().and_then(RootSlot::place);
     let others: Vec<PathBuf> = slots
@@ -135,7 +137,13 @@ fn overlap(
         .filter(|(i, _)| Some(*i) != except)
         .filter_map(|(_, s)| s.place().cloned())
         .collect();
-    crate::library::added::refusal(candidate, library.map(PathBuf::as_path), &others, home)
+    crate::library::added::refusal(
+        candidate,
+        library.map(PathBuf::as_path),
+        &others,
+        home,
+        mount_point,
+    )
 }
 
 /// The refusal as the error the UI shows.
@@ -421,7 +429,7 @@ impl Grants {
         slots.truncate(1);
         let mut out = Vec::with_capacity(stored.len());
         for (s, canon) in stored.iter().zip(found) {
-            let canon = canon.filter(|c| overlap(&slots, c, None, None).is_none());
+            let canon = canon.filter(|c| overlap(&slots, c, None, None, false).is_none());
             let slot = match canon {
                 Some(c) => RootSlot::granted(c, s),
                 None => RootSlot::hinted(s),
@@ -442,8 +450,9 @@ impl Grants {
     pub fn add_root(&self, dir: &Path) -> Result<PathBuf, FileError> {
         let canon = Self::folder(dir).map_err(|_| unreadable())?;
         let home = home();
+        let mount = crate::library::added::is_mount_point(&canon);
         let mut slots = self.slots();
-        if let Some(r) = overlap(&slots, &canon, None, home.as_deref()) {
+        if let Some(r) = overlap(&slots, &canon, None, home.as_deref(), mount) {
             return Err(refused(r));
         }
         slots.push(RootSlot::granted(canon.clone(), &canon));
@@ -460,10 +469,11 @@ impl Grants {
         }
         let canon = Self::folder(dir).map_err(|_| unreadable())?;
         let home = home();
+        let mount = crate::library::added::is_mount_point(&canon);
         let mut slots = self.slots();
         // Looked up again: the list may have changed while the lock was free.
         let i = added_index(&slots, old).ok_or(FileError::NotGranted)?;
-        if let Some(r) = overlap(&slots, &canon, Some(i), home.as_deref()) {
+        if let Some(r) = overlap(&slots, &canon, Some(i), home.as_deref(), mount) {
             return Err(refused(r));
         }
         slots[i] = RootSlot::granted(canon.clone(), &canon);
@@ -617,7 +627,7 @@ impl Grants {
         if slot.root.is_some() || slot.hint.as_ref() != Some(&hint) {
             return slot.root.clone();
         }
-        let found = found.filter(|c| i == 0 || overlap(&slots, c, Some(i), None).is_none());
+        let found = found.filter(|c| i == 0 || overlap(&slots, c, Some(i), None, false).is_none());
         let slot = &mut slots[i];
         let Some(canon) = found else {
             slot.missed = Some(Instant::now());
