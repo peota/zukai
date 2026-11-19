@@ -135,6 +135,82 @@ impl LibraryWatcher {
         drop(was);
         running
     }
+
+    /// True while a watcher is running.
+    pub fn running(&self) -> bool {
+        self.active
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+    }
+}
+
+/// Managed state: one watcher and one name index per available added
+/// folder, in sidebar order. The lock is held across starting and stopping
+/// them, like `LibraryWatcher`'s gate, so callers never interleave.
+#[derive(Default)]
+pub struct AddedWatchers(Mutex<Vec<(PathBuf, LibraryWatcher, NameIndex)>>);
+
+impl AddedWatchers {
+    fn list(&self) -> std::sync::MutexGuard<'_, Vec<(PathBuf, LibraryWatcher, NameIndex)>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Watches and indexes exactly `roots` (canonical), in that order: a
+    /// root already watched keeps its watcher and index, a new one starts,
+    /// one no longer listed is dropped. A root that can't be watched is
+    /// still indexed.
+    pub fn sync(&self, roots: &[PathBuf], sink: &Sink) {
+        let mut list = self.list();
+        let mut old = std::mem::take(&mut *list);
+        for root in roots {
+            let entry = match old.iter().position(|(r, _, _)| r == root) {
+                Some(i) => old.remove(i),
+                None => {
+                    let (w, index) = (LibraryWatcher::default(), NameIndex::default());
+                    let _ = w.set_ordered(w.ticket(), Some(root.clone()), &index, sink.clone());
+                    (root.clone(), w, index)
+                }
+            };
+            list.push(entry);
+        }
+        // What is left in `old` is dropped here: its watchers stop.
+    }
+
+    /// The roots watched, in order.
+    pub fn roots(&self) -> Vec<PathBuf> {
+        self.list().iter().map(|(r, _, _)| r.clone()).collect()
+    }
+
+    /// The name indexes, in order (cheap clones).
+    pub fn indexes(&self) -> Vec<NameIndex> {
+        self.list().iter().map(|(_, _, i)| i.clone()).collect()
+    }
+
+    /// Whether each watcher is running, in order.
+    #[cfg(test)]
+    pub fn running(&self) -> Vec<bool> {
+        self.list().iter().map(|(_, w, _)| w.running()).collect()
+    }
+
+    /// Stops every watcher (closing its handles), keeping the indexes.
+    /// Returns whether any was running.
+    pub fn pause_all(&self) -> bool {
+        let mut any = false;
+        for (_, w, _) in self.list().iter() {
+            any |= w.pause();
+        }
+        any
+    }
+
+    /// Starts every stopped watcher again (its index is rebuilt).
+    pub fn resume_all(&self, sink: &Sink) {
+        for (root, w, index) in self.list().iter() {
+            if !w.running() {
+                let _ = w.set_ordered(w.ticket(), Some(root.clone()), index, sink.clone());
+            }
+        }
+    }
 }
 
 /// The folders whose listing a batch of changed `paths` may have changed:

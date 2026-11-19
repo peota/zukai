@@ -6,8 +6,8 @@
 //! testable without an app.
 
 use super::index::{NameIndex, SEARCH_LIMIT, SearchResult};
-use super::watch::{LIBRARY_CHANGED_EVENT, LibraryWatcher, Sink};
-use super::{ops, root};
+use super::watch::{AddedWatchers, LIBRARY_CHANGED_EVENT, LibraryWatcher, Sink};
+use super::{added, ops, root};
 use crate::files::FileError;
 use crate::files::commands::{blocking, path_string};
 use crate::files::grants::{Grants, key, win32_alias};
@@ -26,6 +26,21 @@ pub struct RootState {
     /// The stored root, canonical when available; `null` if none was chosen.
     pub root: Option<String>,
     /// False when there is no root or its folder is missing or unreachable.
+    pub available: bool,
+    /// The added folders, in sidebar order.
+    pub added: Vec<AddedState>,
+    /// The names of added folders `use_root` just removed because they
+    /// overlap the new Library (the UI shows the re-point notice).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AddedState {
+    /// Canonical when available, else as stored.
+    pub path: String,
+    /// False when its folder is missing or unreachable.
     pub available: bool,
 }
 
@@ -49,33 +64,78 @@ fn data_dir(app: &AppHandle) -> Result<PathBuf, FileError> {
 }
 
 /// Grants the stored root if its folder is there and it still leads to the
-/// folder that was chosen (not a link put in its place). Never creates
+/// folder that was chosen (not a link put in its place), then the stored
+/// added folders the same way. Entries that overlap the Library or an
+/// earlier entry are dropped, and the cleaned list saved. Never creates
 /// anything.
 pub(crate) fn root_state(g: &Grants, data: &Path) -> RootState {
-    let Some(stored) = root::load_root(data) else {
-        return RootState {
-            root: None,
-            available: false,
-        };
-    };
-    match g.load_root(&stored).and_then(|c| path_string(&c)) {
-        Ok(root) => RootState {
-            root: Some(root),
-            available: true,
-        },
-        Err(_) => {
-            // Unavailable: its paths still count as Library paths.
-            g.set_root_hint(&stored);
-            RootState {
-                root: stored.to_str().map(str::to_owned),
-                available: false,
+    let (root, available) = match root::load_root(data) {
+        None => (None, false),
+        Some(stored) => match g.load_root(&stored).and_then(|c| path_string(&c)) {
+            Ok(root) => (Some(root), true),
+            Err(_) => {
+                // Unavailable: its paths still count as Library paths.
+                g.set_root_hint(&stored);
+                (stored.to_str().map(str::to_owned), false)
             }
-        }
+        },
+    };
+    let stored = root::load_added(data);
+    let count = stored.len();
+    let cleaned = added::clean_added(root.as_deref().map(Path::new), stored);
+    if cleaned.len() != count
+        && let Err(e) = root::save_added(data, &cleaned)
+    {
+        eprintln!("zukai: couldn't save the cleaned added folders: {e}");
+    }
+    let added = g
+        .load_added(&cleaned)
+        .into_iter()
+        .filter_map(|(p, available)| {
+            Some(AddedState {
+                path: p.to_str()?.to_owned(),
+                available,
+            })
+        })
+        .collect();
+    RootState {
+        root,
+        available,
+        added,
+        removed: Vec::new(),
+    }
+}
+
+/// The canonical paths of the `open` Files (paths the UI holds) lexically
+/// under `base` that are provably inside the root they sit in now, so they
+/// can be granted as Files once that root is gone. A path through a link
+/// out of the root is never one of them.
+fn inside_of(g: &Grants, base: &Path, open: &[String]) -> Vec<PathBuf> {
+    open.iter()
+        .filter(|p| suffix_under(Path::new(p), base).is_some())
+        .filter_map(|p| g.in_root(Path::new(p)).ok())
+        .collect()
+}
+
+/// Forgets the added folder at `base` (as `Grants::added` names it),
+/// keeping `open` Files under it granted as Files.
+fn drop_added(g: &Grants, base: &Path, open: &[String]) {
+    let keep = inside_of(g, base, open);
+    g.remove_root(base);
+    for p in keep {
+        let _ = g.grant(&p);
     }
 }
 
 /// Saves `dir` as the root and grants it. `dir` must be an existing folder.
-pub(crate) fn use_root(g: &Grants, data: &Path, dir: &Path) -> Result<RootState, FileError> {
+/// Every added folder that overlaps it is removed (the Library wins), its
+/// `open` Files kept granted as `remove_folder` does; `removed` names them.
+pub(crate) fn use_root(
+    g: &Grants,
+    data: &Path,
+    dir: &Path,
+    open: &[String],
+) -> Result<RootState, FileError> {
     if !dir.is_absolute() {
         return Err(FileError::NotGranted);
     }
@@ -84,11 +144,72 @@ pub(crate) fn use_root(g: &Grants, data: &Path, dir: &Path) -> Result<RootState,
         return Err(other("not a folder"));
     }
     root::save_root(data, &canon)?;
-    let granted = g.set_root(&canon)?;
-    Ok(RootState {
-        root: Some(path_string(&granted)?),
-        available: true,
-    })
+    let overlapping: Vec<PathBuf> = g
+        .added()
+        .into_iter()
+        .filter(|a| added::refusal(a, Some(&canon), &[], None).is_some())
+        .collect();
+    // Judged by their own roots before the Library changes.
+    let keep: Vec<PathBuf> = overlapping
+        .iter()
+        .flat_map(|a| inside_of(g, a, open))
+        .collect();
+    g.set_root(&canon)?;
+    for a in &overlapping {
+        g.remove_root(a);
+    }
+    for p in keep {
+        let _ = g.grant(&p);
+    }
+    if !overlapping.is_empty() {
+        root::save_added(data, &g.added())?;
+    }
+    let mut state = root_state(g, data);
+    state.removed = overlapping
+        .iter()
+        .map(|a| {
+            a.file_name()
+                .map_or_else(|| a.to_string_lossy(), |n| n.to_string_lossy())
+                .into_owned()
+        })
+        .collect();
+    Ok(state)
+}
+
+/// Adds the folder `dir` beside the Library, last, and saves the list.
+pub(crate) fn add_folder(g: &Grants, data: &Path, dir: &Path) -> Result<RootState, FileError> {
+    g.add_root(dir)?;
+    root::save_added(data, &g.added())?;
+    Ok(root_state(g, data))
+}
+
+/// Points the added folder `old` at `dir` instead, in the same place.
+pub(crate) fn locate_folder(
+    g: &Grants,
+    data: &Path,
+    old: &str,
+    dir: &Path,
+) -> Result<RootState, FileError> {
+    g.replace_root(Path::new(old), dir)?;
+    root::save_added(data, &g.added())?;
+    Ok(root_state(g, data))
+}
+
+/// Removes the added folder `path` from the sidebar. Each of the `open`
+/// Files (paths the UI holds) that was inside it stays granted as a File.
+pub(crate) fn remove_folder(
+    g: &Grants,
+    data: &Path,
+    path: &str,
+    open: &[String],
+) -> Result<RootState, FileError> {
+    let base = Path::new(path);
+    if !g.added().iter().any(|a| key(a) == key(base)) {
+        return Err(FileError::NotGranted);
+    }
+    drop_added(g, base, open);
+    root::save_added(data, &g.added())?;
+    Ok(root_state(g, data))
 }
 
 /// "Create it again": makes the stored root's folder again (it was deleted
@@ -96,10 +217,10 @@ pub(crate) fn use_root(g: &Grants, data: &Path, dir: &Path) -> Result<RootState,
 pub(crate) fn recreate_root(g: &Grants, data: &Path) -> Result<RootState, FileError> {
     let stored = root::load_root(data).ok_or_else(|| other("no Library folder chosen"))?;
     fs::create_dir_all(&stored)?;
-    use_root(g, data, &stored)
+    use_root(g, data, &stored, &[])
 }
 
-/// A folder inside the root (or the root itself).
+/// A folder inside a granted root (or a root itself).
 fn folder(g: &Grants, p: &str) -> Result<PathBuf, FileError> {
     let dir = g.in_root(Path::new(p))?;
     if dir.is_dir() {
@@ -109,7 +230,8 @@ fn folder(g: &Grants, p: &str) -> Result<PathBuf, FileError> {
     }
 }
 
-/// An existing item strictly inside the root, as the item itself: its folder
+/// An existing item strictly inside a granted root (the Library or an added
+/// folder; never a root itself), as the item itself: its folder
 /// is resolved, but a link in the last place is the link, not its target, so
 /// renaming, moving or trashing a link never touches what it points at. A
 /// non-link is canonical (so its case matches the disk).
@@ -134,11 +256,17 @@ fn entry(g: &Grants, p: &str) -> Result<PathBuf, FileError> {
     } else {
         dunce::canonicalize(&path)?
     };
-    let root = g.root().ok_or(FileError::NotGranted)?;
+    let root = g.root_of(&item).ok_or(FileError::NotGranted)?;
+    let is_a_root = g
+        .root()
+        .into_iter()
+        .chain(g.added())
+        .chain([root])
+        .any(|r| key(&r) == key(&item));
     let same_name = item
         .file_name()
         .is_some_and(|n| key(Path::new(n)) == key(Path::new(name)));
-    if item == root || item.parent() != Some(parent.as_path()) || !same_name {
+    if is_a_root || item.parent() != Some(parent.as_path()) || !same_name {
         return Err(FileError::NotGranted);
     }
     Ok(item)
@@ -146,7 +274,8 @@ fn entry(g: &Grants, p: &str) -> Result<PathBuf, FileError> {
 
 pub(crate) fn list(g: &Grants, dir: &str) -> Result<Vec<ops::Entry>, FileError> {
     let dir = folder(g, dir)?;
-    let root = g.root().ok_or(FileError::NotGranted)?;
+    // Links are classified against the root this folder is in.
+    let root = g.root_of(&dir).ok_or(FileError::NotGranted)?;
     Ok(ops::list_dir(&dir, &root)?)
 }
 
@@ -183,9 +312,15 @@ pub(crate) fn rename(g: &Grants, path: &str, new_name: &str) -> Result<String, F
     path_string(&ops::rename_entry(&movable(g, path)?, new_name)?)
 }
 
+/// Moves never cross roots: the UI copies instead (`copy_to`).
 pub(crate) fn move_to(g: &Grants, path: &str, dest_dir: &str) -> Result<String, FileError> {
     let src = movable(g, path)?;
-    path_string(&ops::move_entry(&src, &folder(g, dest_dir)?)?)
+    let dest = folder(g, dest_dir)?;
+    let from = g.root_of(&src).ok_or(FileError::NotGranted)?;
+    if Some(from) != g.root_of(&dest) {
+        return Err(FileError::NotGranted);
+    }
+    path_string(&ops::move_entry(&src, &dest)?)
 }
 
 /// Each source must already be granted (a File the user opened, or anything
@@ -272,7 +407,7 @@ pub(crate) fn retry_released<T>(
 }
 
 /// `op` (a rename, move or trash): if a handle is held open in the folder,
-/// the File and Library watchers are dropped and it retries for up to 2 s
+/// the File, Library and added-folder watchers are dropped and it retries for up to 2 s
 /// while the folder is still held open (`retry_released`); the watchers
 /// are started again afterwards either way (the UI then replaces the File
 /// set with the paths that moved).
@@ -284,6 +419,7 @@ fn with_watchers_released<T>(
     let mut paused = None;
     let out = retry_released(op, || {
         let library_was_running = app.state::<LibraryWatcher>().pause();
+        app.state::<AddedWatchers>().pause_all();
         paused = Some((app.state::<FileWatcher>().suspend(), library_was_running));
     });
     if let Some((files, library_was_running)) = paused {
@@ -292,6 +428,7 @@ fn with_watchers_released<T>(
             let ticket = app.state::<LibraryWatcher>().ticket();
             let _ = watch_root(app, ticket, g.root());
         }
+        app.state::<AddedWatchers>().resume_all(&library_sink(app));
     }
     out
 }
@@ -423,8 +560,8 @@ pub(crate) fn trash(g: &Grants, path: &str) -> Result<(), FileError> {
     ops::trash_entry(&entry(g, path)?)
 }
 
-/// What "Show in Explorer / Finder" may reveal: an item in the Library (a
-/// link only if it points inside it), or the root itself.
+/// What "Show in Explorer / Finder" may reveal: an item in a granted root (a
+/// link only if it points inside that root), or a root itself.
 pub(crate) fn reveal_target(g: &Grants, path: &str) -> Result<PathBuf, FileError> {
     match entry(g, path) {
         Ok(item) => {
@@ -435,7 +572,7 @@ pub(crate) fn reveal_target(g: &Grants, path: &str) -> Result<PathBuf, FileError
         }
         Err(e) => {
             let target = g.in_root(Path::new(path))?;
-            if Some(&target) == g.root().as_ref() {
+            if g.root_of(&target).as_ref() == Some(&target) {
                 Ok(target)
             } else {
                 Err(e)
@@ -458,7 +595,7 @@ pub async fn library_use_default(app: AppHandle) -> Result<RootState, FileError>
         let data = data_dir(&handle)?;
         let dir = root::default_root().ok_or_else(|| other("no Documents folder"))?;
         fs::create_dir_all(&dir)?;
-        use_root(g, &data, &dir)
+        use_root(g, &data, &dir, &[])
     })
     .await
 }
@@ -470,20 +607,93 @@ pub async fn library_recreate(app: AppHandle) -> Result<RootState, FileError> {
 }
 
 /// The native folder dialog. It only points Zukai at the chosen folder;
-/// cancelling leaves the root as it was.
+/// cancelling leaves the root as it was. Added folders that overlap the
+/// new root are removed; `open_paths` (the Files the UI holds) under them
+/// stay granted.
 #[tauri::command]
-pub async fn library_choose(app: AppHandle, window: WebviewWindow) -> Result<RootState, FileError> {
+pub async fn library_choose(
+    app: AppHandle,
+    window: WebviewWindow,
+    open_paths: Vec<String>,
+) -> Result<RootState, FileError> {
     let handle = app.clone();
     let dialog = window.dialog().file().set_parent(&window);
     blocking(app, move |g| {
         let data = data_dir(&handle)?;
-        match dialog.blocking_pick_folder() {
+        let state = match dialog.blocking_pick_folder() {
             Some(picked) => {
                 let dir = picked.into_path().map_err(|e| other(&e.to_string()))?;
-                use_root(g, &data, &dir)
+                use_root(g, &data, &dir, &open_paths)?
             }
-            None => Ok(root_state(g, &data)),
-        }
+            None => root_state(g, &data),
+        };
+        sync_added_watchers(&handle, g);
+        Ok(state)
+    })
+    .await
+}
+
+/// The native folder dialog, then `add_folder`. Cancelling changes nothing.
+/// The folder only ever comes from the dialog, never from the webview.
+#[tauri::command]
+pub async fn library_add_folder(
+    app: AppHandle,
+    window: WebviewWindow,
+) -> Result<RootState, FileError> {
+    let handle = app.clone();
+    let dialog = window.dialog().file().set_parent(&window);
+    blocking(app, move |g| {
+        let data = data_dir(&handle)?;
+        let state = match dialog.blocking_pick_folder() {
+            Some(picked) => {
+                let dir = picked.into_path().map_err(|e| other(&e.to_string()))?;
+                add_folder(g, &data, &dir)?
+            }
+            None => root_state(g, &data),
+        };
+        sync_added_watchers(&handle, g);
+        Ok(state)
+    })
+    .await
+}
+
+/// "Locate...": the native folder dialog, then `locate_folder` for the
+/// added folder `path`. Cancelling changes nothing.
+#[tauri::command]
+pub async fn library_locate_folder(
+    app: AppHandle,
+    path: String,
+    window: WebviewWindow,
+) -> Result<RootState, FileError> {
+    let handle = app.clone();
+    let dialog = window.dialog().file().set_parent(&window);
+    blocking(app, move |g| {
+        let data = data_dir(&handle)?;
+        let state = match dialog.blocking_pick_folder() {
+            Some(picked) => {
+                let dir = picked.into_path().map_err(|e| other(&e.to_string()))?;
+                locate_folder(g, &data, &path, &dir)?
+            }
+            None => root_state(g, &data),
+        };
+        sync_added_watchers(&handle, g);
+        Ok(state)
+    })
+    .await
+}
+
+/// "Remove from sidebar": see `remove_folder`. Nothing on disk changes.
+#[tauri::command]
+pub async fn library_remove_folder(
+    app: AppHandle,
+    path: String,
+    open_paths: Vec<String>,
+) -> Result<RootState, FileError> {
+    let handle = app.clone();
+    blocking(app, move |g| {
+        let state = remove_folder(g, &data_dir(&handle)?, &path, &open_paths)?;
+        sync_added_watchers(&handle, g);
+        Ok(state)
     })
     .await
 }
@@ -574,7 +784,11 @@ pub const RESYNC_AGE: Duration = Duration::from_secs(30);
 /// Returns whether a rebuild started.
 #[tauri::command]
 pub fn library_resync(app: AppHandle) -> bool {
-    app.state::<NameIndex>().rebuild_if_older(RESYNC_AGE)
+    let mut rebuilt = app.state::<NameIndex>().rebuild_if_older(RESYNC_AGE);
+    for index in app.state::<AddedWatchers>().indexes() {
+        rebuilt |= index.rebuild_if_older(RESYNC_AGE);
+    }
+    rebuilt
 }
 
 #[tauri::command]
@@ -611,33 +825,76 @@ pub async fn library_reveal(app: AppHandle, path: String) -> Result<(), FileErro
     .await
 }
 
+/// Where every root's watcher reports: `zukai://library-changed`.
+fn library_sink(app: &AppHandle) -> Sink {
+    let app = app.clone();
+    Arc::new(move |change| {
+        let _ = app.emit(LIBRARY_CHANGED_EVENT, change);
+    })
+}
+
 /// (Re)starts the Library watcher and the name index for `root` (`None`
 /// stops both). Blocking: setting up a recursive watch walks the tree on
 /// some platforms.
 fn watch_root(app: &AppHandle, ticket: u64, root: Option<PathBuf>) -> Result<(), FileError> {
-    let sink: Sink = {
-        let app = app.clone();
-        Arc::new(move |change| {
-            let _ = app.emit(LIBRARY_CHANGED_EVENT, change);
-        })
+    app.state::<LibraryWatcher>().set_ordered(
+        ticket,
+        root,
+        &app.state::<NameIndex>(),
+        library_sink(app),
+    )
+}
+
+/// The added folders that are available now (granted roots), in order.
+fn available_added(g: &Grants) -> Vec<PathBuf> {
+    g.added()
+        .into_iter()
+        .filter(|a| g.root_of(a).as_ref() == Some(a))
+        .collect()
+}
+
+/// Watches and indexes exactly the available added folders: new ones
+/// start, removed ones stop, unchanged ones keep running. Blocking.
+fn sync_added_watchers(app: &AppHandle, g: &Grants) {
+    app.state::<AddedWatchers>()
+        .sync(&available_added(g), &library_sink(app));
+}
+
+/// Up to `limit` matches for `query`: the first index's (the Library's)
+/// first, then each next one's in order. `ready` only once every index is.
+pub(crate) fn search_all(indexes: &[NameIndex], query: &str, limit: usize) -> SearchResult {
+    let mut out = SearchResult {
+        entries: Vec::new(),
+        ready: true,
     };
-    app.state::<LibraryWatcher>()
-        .set_ordered(ticket, root, &app.state::<NameIndex>(), sink)
+    for index in indexes {
+        let left = limit - out.entries.len();
+        let found = index.search(query, left);
+        out.ready &= found.ready;
+        out.entries.extend(found.entries);
+    }
+    out
 }
 
 /// Watches and indexes the current root, replacing any earlier watcher and
-/// index. The UI calls it after `library_root`, `library_use_default` and
-/// `library_choose`.
+/// index, and syncs the added folders' watchers and indexes to the ones
+/// available now. The UI calls it after `library_root`,
+/// `library_use_default` and `library_choose`.
 #[tauri::command]
 pub async fn library_watch(app: AppHandle) -> Result<(), FileError> {
     let ticket = app.state::<LibraryWatcher>().ticket();
     let handle = app.clone();
-    blocking(app, move |g| watch_root(&handle, ticket, g.root())).await
+    blocking(app, move |g| {
+        sync_added_watchers(&handle, g);
+        watch_root(&handle, ticket, g.root())
+    })
+    .await
 }
 
-/// Files and folders anywhere in the Library whose name contains `query`.
-/// The first search for a root starts the index (and its watcher); until
-/// the walk is done the result is partial, with `ready: false`.
+/// Files and folders anywhere in the Library and the available added
+/// folders whose name contains `query`, the Library's first (`search_all`).
+/// The first search for a root starts its index (and its watcher); until
+/// every walk is done the result is partial, with `ready: false`.
 #[tauri::command]
 pub async fn library_search(app: AppHandle, query: String) -> Result<SearchResult, FileError> {
     let handle = app.clone();
@@ -648,7 +905,14 @@ pub async fn library_search(app: AppHandle, query: String) -> Result<SearchResul
             let ticket = handle.state::<LibraryWatcher>().ticket();
             watch_root(&handle, ticket, root)?;
         }
-        Ok(index.search(&query, SEARCH_LIMIT))
+        let added = handle.state::<AddedWatchers>();
+        let roots = available_added(g);
+        if added.roots() != roots {
+            added.sync(&roots, &library_sink(&handle));
+        }
+        let mut indexes = vec![index.inner().clone()];
+        indexes.extend(added.indexes());
+        Ok(search_all(&indexes, &query, SEARCH_LIMIT))
     })
     .await
 }
@@ -819,10 +1083,12 @@ mod tests {
             root_state(&fresh, data.path()),
             RootState {
                 root: None,
-                available: false
+                available: false,
+                added: Vec::new(),
+                removed: Vec::new(),
             }
         );
-        let state = use_root(&fresh, data.path(), &root).unwrap();
+        let state = use_root(&fresh, data.path(), &root, &[]).unwrap();
         assert_eq!(state.root.as_deref(), Some(s(&root)));
         assert!(state.available);
 
@@ -834,7 +1100,7 @@ mod tests {
         // A vanished root is reported, not recreated.
         let gone = outside.join("gone");
         fs::create_dir(&gone).unwrap();
-        use_root(&g, data.path(), &gone).unwrap();
+        use_root(&g, data.path(), &gone, &[]).unwrap();
         fs::remove_dir(&gone).unwrap();
         let state = root_state(&Grants::default(), data.path());
         assert_eq!(state.root.as_deref(), Some(s(&gone)));
@@ -1025,7 +1291,7 @@ mod tests {
     fn session_grants_never_follow_a_link_out_after_a_relaunch() {
         let (_tmp, g, root, outside) = library();
         let data = tempfile::tempdir().unwrap();
-        use_root(&g, data.path(), &root).unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
         let p = root.join("p");
         let x = p.join("sub").join("lnk").join("x.txt");
         let stale = root.join("sub").join("lnk").join("x.txt");
@@ -1109,7 +1375,7 @@ mod tests {
         use crate::files::grants::{check_session, filter_exact, grant_session};
         let (tmp, g, root, _outside) = library();
         let data = tempfile::tempdir().unwrap();
-        use_root(&g, data.path(), &root).unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
         fs::write(root.join("a.md"), "a").unwrap();
         let a = s(&root.join("a.md")).to_owned();
         let m = s(&root.join("m").join("x.txt")).to_owned();
@@ -1380,7 +1646,7 @@ mod tests {
         assert!(recreate_root(&g, data.path()).is_err(), "nothing stored");
         let lib = outside.join("lib");
         fs::create_dir(&lib).unwrap();
-        use_root(&g, data.path(), &lib).unwrap();
+        use_root(&g, data.path(), &lib, &[]).unwrap();
         fs::remove_dir(&lib).unwrap();
         let state = recreate_root(&Grants::default(), data.path()).unwrap();
         assert!(state.available);
@@ -1415,7 +1681,7 @@ mod tests {
         use crate::files::grants::{check_session, filter_exact, grant_session};
         let (_tmp, g, root, outside) = library();
         let data = tempfile::tempdir().unwrap();
-        use_root(&g, data.path(), &root).unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
         fs::write(root.join("real.md"), "r").unwrap();
         fs::write(outside.join("secret.md"), "s").unwrap();
         let link = root.join("link.md");
@@ -1475,7 +1741,7 @@ mod tests {
         use crate::files::grants::{check_session, filter_exact, grant_session};
         let (tmp, g, root, _outside) = library();
         let data = tempfile::tempdir().unwrap();
-        use_root(&g, data.path(), &root).unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
         let paths: Vec<String> = (0..20)
             .map(|i| s(&root.join(format!("f{i}.md"))).to_owned())
             .collect();
@@ -1505,7 +1771,7 @@ mod tests {
     fn a_stored_root_that_became_a_link_elsewhere_is_refused() {
         let (tmp, g, root, outside) = library();
         let data = tempfile::tempdir().unwrap();
-        use_root(&g, data.path(), &root).unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
         fs::write(outside.join("secret.md"), "s").unwrap();
         fs::rename(&root, tmp.path().join("away")).unwrap();
         link_dir(&root, &outside);
@@ -1521,5 +1787,337 @@ mod tests {
         let _ = next.grant(&root.join("secret.md"));
         assert!(next.check(s(&root.join("secret.md"))).is_err());
         assert_eq!(next.root(), None, "recovery refuses it too");
+    }
+
+    // ---- Added folders ----
+
+    fn added_states(st: &RootState) -> Vec<(String, bool)> {
+        st.added
+            .iter()
+            .map(|a| (a.path.clone(), a.available))
+            .collect()
+    }
+
+    /// The message of an `Io` error, or a note saying what it was instead.
+    fn message<T: std::fmt::Debug>(r: Result<T, FileError>) -> String {
+        match r {
+            Err(FileError::Io(e)) => e.to_string(),
+            other => format!("not an Io error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn root_state_lists_added_with_availability() {
+        let (_tmp, g, root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
+        let a = outside.join("a");
+        fs::create_dir(&a).unwrap();
+        let missing = outside.join("missing");
+        root::save_added(data.path(), &[a.clone(), missing.clone()]).unwrap();
+
+        let next = Grants::default();
+        let st = root_state(&next, data.path());
+        assert_eq!(st.root.as_deref(), Some(s(&root)));
+        assert!(st.available);
+        assert_eq!(
+            added_states(&st),
+            [(s(&a).to_owned(), true), (s(&missing).to_owned(), false)]
+        );
+        assert!(st.removed.is_empty());
+        assert!(next.in_root(&a.join("x.md")).is_ok());
+        let v = serde_json::to_value(&st).unwrap();
+        assert_eq!(v["added"][0]["path"], s(&a));
+        assert_eq!(v["added"][1]["available"], false);
+        assert!(v.get("removed").is_none(), "{v}");
+
+        // No Library chosen: the added folders still load.
+        let bare = tempfile::tempdir().unwrap();
+        root::save_added(bare.path(), std::slice::from_ref(&a)).unwrap();
+        let st = root_state(&Grants::default(), bare.path());
+        assert_eq!(st.root, None);
+        assert_eq!(added_states(&st), [(s(&a).to_owned(), true)]);
+    }
+
+    #[test]
+    fn root_state_drops_overlapping_entries_and_saves() {
+        let (_tmp, g, root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
+        let a = outside.join("a");
+        fs::create_dir_all(a.join("x")).unwrap();
+        fs::create_dir(root.join("sub")).unwrap();
+        root::save_added(data.path(), &[root.join("sub"), a.clone(), a.join("x")]).unwrap();
+
+        let st = root_state(&Grants::default(), data.path());
+        assert_eq!(added_states(&st), [(s(&a).to_owned(), true)]);
+        assert_eq!(root::load_added(data.path()), [a]);
+        assert_eq!(root::load_root(data.path()), Some(root.clone()));
+    }
+
+    #[test]
+    fn add_folder_saves_and_refuses_overlap() {
+        use crate::library::added::Refusal;
+        let (_tmp, g, root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
+        let (a, b) = (outside.join("a"), outside.join("b"));
+        fs::create_dir(&a).unwrap();
+        fs::create_dir(&b).unwrap();
+        fs::create_dir(root.join("sub")).unwrap();
+
+        let st = add_folder(&g, data.path(), &a).unwrap();
+        assert_eq!(added_states(&st), [(s(&a).to_owned(), true)]);
+        let st = add_folder(&g, data.path(), &b).unwrap();
+        assert_eq!(
+            added_states(&st),
+            [(s(&a).to_owned(), true), (s(&b).to_owned(), true)]
+        );
+        assert_eq!(root::load_added(data.path()), [a.clone(), b.clone()]);
+        assert_eq!(root::load_root(data.path()), Some(root.clone()));
+
+        assert_eq!(
+            message(add_folder(&g, data.path(), &root.join("sub"))),
+            Refusal::InLibrary.message()
+        );
+        assert_eq!(
+            message(add_folder(&g, data.path(), &a)),
+            Refusal::AlreadyAdded.message()
+        );
+        assert_eq!(
+            message(add_folder(&g, data.path(), &outside)),
+            Refusal::ContainsAdded.message()
+        );
+        assert_eq!(root::load_added(data.path()), [a, b]);
+    }
+
+    #[test]
+    fn locate_replaces_in_place() {
+        use crate::library::added::Refusal;
+        let (_tmp, g, root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
+        let (a, b, c) = (outside.join("a"), outside.join("b"), outside.join("c"));
+        for d in [&a, &b, &c] {
+            fs::create_dir(d).unwrap();
+        }
+        fs::create_dir(b.join("sub")).unwrap();
+        add_folder(&g, data.path(), &a).unwrap();
+        add_folder(&g, data.path(), &b).unwrap();
+
+        let st = locate_folder(&g, data.path(), s(&a), &c).unwrap();
+        assert_eq!(
+            added_states(&st),
+            [(s(&c).to_owned(), true), (s(&b).to_owned(), true)]
+        );
+        assert_eq!(root::load_added(data.path()), [c.clone(), b.clone()]);
+
+        // Refused: nothing changes.
+        assert_eq!(
+            message(locate_folder(&g, data.path(), s(&c), &b.join("sub"))),
+            Refusal::AlreadyAdded.message()
+        );
+        assert!(matches!(
+            locate_folder(&g, data.path(), s(&a), &a),
+            Err(FileError::NotGranted)
+        ));
+        assert_eq!(root::load_added(data.path()), [c.clone(), b.clone()]);
+        assert_eq!(g.added(), [c.clone(), b]);
+        // Its own place doesn't count against it.
+        fs::create_dir(c.join("deeper")).unwrap();
+        let st = locate_folder(&g, data.path(), s(&c), &c.join("deeper")).unwrap();
+        assert_eq!(st.added[0].path, s(&c.join("deeper")));
+    }
+
+    #[test]
+    fn remove_folder_keeps_open_files_granted() {
+        let (_tmp, g, root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
+        let proj = outside.join("proj");
+        fs::create_dir(&proj).unwrap();
+        add_folder(&g, data.path(), &proj).unwrap();
+        let note = proj.join("note.md");
+        fs::write(&note, "n").unwrap();
+        let secret_dir = outside.join("secret");
+        fs::create_dir(&secret_dir).unwrap();
+        let secret = secret_dir.join("s.md");
+        fs::write(&secret, "s").unwrap();
+        link_dir(&proj.join("out"), &secret_dir);
+        let stray = outside.join("stray.md");
+        fs::write(&stray, "x").unwrap();
+        let open = [
+            s(&note).to_owned(),
+            s(&proj.join("out").join("s.md")).to_owned(),
+            s(&stray).to_owned(),
+        ];
+
+        // Not an added folder: refused, and nothing is granted.
+        assert!(matches!(
+            remove_folder(&g, data.path(), s(&outside), &[s(&stray).to_owned()]),
+            Err(FileError::NotGranted)
+        ));
+        assert!(g.check(s(&stray)).is_err());
+
+        let st = remove_folder(&g, data.path(), s(&proj), &open).unwrap();
+        assert!(st.added.is_empty());
+        assert!(root::load_added(data.path()).is_empty());
+        assert_eq!(g.check(s(&note)).unwrap(), note);
+        assert!(g.check(s(&proj.join("other.md"))).is_err());
+        // Only what was inside the removed root: never through a link out.
+        assert!(g.check(s(&secret)).is_err());
+        assert!(g.check(s(&proj.join("out").join("s.md"))).is_err());
+        assert!(g.check(s(&stray)).is_err());
+    }
+
+    #[test]
+    fn use_root_over_added_removes_it_and_names_it() {
+        let (_tmp, g, root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
+        let (proj, keep, big) = (
+            outside.join("proj"),
+            root.with_file_name("keep"),
+            root.with_file_name("big"),
+        );
+        for d in [&proj, &keep, &big] {
+            fs::create_dir(d).unwrap();
+        }
+        fs::create_dir(big.join("lib")).unwrap();
+        for d in [&proj, &keep, &big] {
+            add_folder(&g, data.path(), d).unwrap();
+        }
+
+        // The new Library holds `proj`.
+        let st = use_root(&g, data.path(), &outside, &[]).unwrap();
+        assert_eq!(st.root.as_deref(), Some(s(&outside)));
+        assert_eq!(st.removed, ["proj"]);
+        assert_eq!(
+            added_states(&st),
+            [(s(&keep).to_owned(), true), (s(&big).to_owned(), true)]
+        );
+        assert_eq!(root::load_added(data.path()), [keep.clone(), big.clone()]);
+        let v = serde_json::to_value(&st).unwrap();
+        assert_eq!(v["removed"][0], "proj");
+
+        // The new Library sits inside `big`: its open Files outside the
+        // Library stay granted.
+        let note = big.join("note.md");
+        fs::write(&note, "n").unwrap();
+        let st = use_root(&g, data.path(), &big.join("lib"), &[s(&note).to_owned()]).unwrap();
+        assert_eq!(st.removed, ["big"]);
+        assert_eq!(added_states(&st), [(s(&keep).to_owned(), true)]);
+        assert_eq!(g.added(), [keep]);
+        assert_eq!(g.check(s(&note)).unwrap(), note);
+        assert!(g.check(s(&big.join("other.md"))).is_err());
+    }
+
+    #[test]
+    fn list_in_added_classifies_links_by_its_root() {
+        use crate::library::ops::LinkKind;
+        let (_tmp, g, root, added, _outside) = crate::library::tests::library_with_added();
+        fs::create_dir(added.join("real")).unwrap();
+        link_dir(&added.join("inner"), &added.join("real"));
+        link_dir(&added.join("tolib"), &root);
+        let entries = list(&g, s(&added)).unwrap();
+        let kind = |name: &str| entries.iter().find(|e| e.name == name).unwrap().link;
+        assert_eq!(kind("inner"), Some(LinkKind::Inside));
+        assert_eq!(kind("tolib"), Some(LinkKind::Outside));
+        assert_eq!(kind("real"), None);
+    }
+
+    #[test]
+    fn move_across_roots_refused() {
+        let (_tmp, g, root, added, _outside) = crate::library::tests::library_with_added();
+        let a = root.join("a.md");
+        fs::write(&a, "a").unwrap();
+        fs::create_dir(added.join("sub")).unwrap();
+        assert!(matches!(
+            move_to(&g, s(&a), s(&added)),
+            Err(FileError::NotGranted)
+        ));
+        assert!(matches!(
+            move_to(&g, s(&a), s(&added.join("sub"))),
+            Err(FileError::NotGranted)
+        ));
+        assert!(a.exists());
+        // Copying across works, with ` (2)` on a clash.
+        let out = copy_to(&g, &[s(&a).to_owned()], s(&added));
+        assert_eq!(out[0].path.as_deref(), Some(s(&added.join("a.md"))));
+        let out = copy_to(&g, &[s(&a).to_owned()], s(&added));
+        assert_eq!(out[0].path.as_deref(), Some(s(&added.join("a (2).md"))));
+        // Within one added root a move still works.
+        let b = added.join("a.md");
+        assert_eq!(
+            move_to(&g, s(&b), s(&added.join("sub"))).unwrap(),
+            s(&added.join("sub").join("a.md"))
+        );
+    }
+
+    #[test]
+    fn entry_refuses_an_added_root_itself() {
+        let (_tmp, g, root, added, _outside) = crate::library::tests::library_with_added();
+        let no = |r: Result<String, FileError>| matches!(r, Err(FileError::NotGranted));
+        assert!(matches!(trash(&g, s(&added)), Err(FileError::NotGranted)));
+        assert!(no(rename(&g, s(&added), "y")));
+        assert!(no(move_to(&g, s(&added), s(&root))));
+        assert!(added.is_dir());
+        // The root itself may still be revealed, like the Library's.
+        assert_eq!(reveal_target(&g, s(&added)).unwrap(), added);
+        fs::write(added.join("b.md"), "b").unwrap();
+        assert_eq!(
+            reveal_target(&g, s(&added.join("b.md"))).unwrap(),
+            added.join("b.md")
+        );
+    }
+
+    #[test]
+    fn release_pauses_every_root_watcher() {
+        use crate::library::watch::AddedWatchers;
+        let (_tmp, _g, root, outside) = library();
+        let w = AddedWatchers::default();
+        let sink: Sink = Arc::new(|_| {});
+        w.sync(&[root.clone(), outside.clone()], &sink);
+        assert_eq!(w.running(), [true, true]);
+        assert_eq!(w.roots(), [root.clone(), outside.clone()]);
+
+        assert!(w.pause_all());
+        assert_eq!(w.running(), [false, false]);
+        w.resume_all(&sink);
+        assert_eq!(w.running(), [true, true]);
+
+        // Removed roots are dropped, unchanged ones kept running.
+        w.sync(std::slice::from_ref(&outside), &sink);
+        assert_eq!(w.roots(), [outside]);
+        assert_eq!(w.running(), [true]);
+        w.sync(&[], &sink);
+        assert!(w.roots().is_empty());
+    }
+
+    #[test]
+    fn search_merges_library_then_added() {
+        use crate::library::index::tests::wait_ready;
+        let (_tmp, _g, root, added, _outside) = crate::library::tests::library_with_added();
+        fs::write(root.join("note-lib.md"), "").unwrap();
+        fs::write(added.join("note-add.md"), "").unwrap();
+        fs::write(added.join("note-add2.md"), "").unwrap();
+        let (lib, add) = (NameIndex::default(), NameIndex::default());
+        lib.start_build(root.clone());
+        add.start_build(added.clone());
+        wait_ready(&lib);
+        wait_ready(&add);
+        let indexes = [lib, add];
+
+        let found = search_all(&indexes, "note", SEARCH_LIMIT);
+        assert!(found.ready);
+        let names: Vec<&str> = found.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names[0], "note-lib.md");
+        let mut rest = names[1..].to_vec();
+        rest.sort_unstable();
+        assert_eq!(rest, ["note-add.md", "note-add2.md"]);
+        assert_eq!(search_all(&indexes, "note", 2).entries.len(), 2);
+        let one = search_all(&indexes, "note", 1);
+        assert_eq!(one.entries.len(), 1);
+        assert_eq!(one.entries[0].name, "note-lib.md");
     }
 }
