@@ -5,6 +5,7 @@ import type { Row, TreeState } from "../library/tree";
 import { detectPlatform, type Platform } from "../app/shortcuts";
 import { PlusIcon, SearchIcon } from "./icons";
 import { Inbox, type InboxItem } from "./Inbox";
+import { Pinned, type PinnedItem } from "./Pinned";
 import { LibraryTree, type PendingTrash } from "./LibraryTree";
 import { Menu, type MenuItem } from "./Menu";
 import { entryBlocked, revealLabel } from "./libraryEntries";
@@ -16,6 +17,7 @@ import {
 } from "../model/session";
 
 export type { InboxItem } from "./Inbox";
+export type { PinnedItem } from "./Pinned";
 
 export type NewItem = "folder" | "note" | "text" | "canvas";
 
@@ -59,6 +61,11 @@ export interface SidebarProps {
   onInboxActivate(id: string): void;
   /** `destDir` null: Move to Library… through the save dialog. */
   onInboxMove(id: string, destDir: string | null): void;
+  /** Pinned Tabs, open ones first. */
+  pinned: PinnedItem[];
+  /** Activates an open pinned Tab, or reopens a closed one. */
+  onPinnedOpen(id: string): void;
+  onUnpin(id: string): void;
   /** Esc: give the keyboard back to the editor. */
   onLeave(): void;
   /** Decides the Windows-only name rule and the "Show in …" label. */
@@ -122,6 +129,9 @@ function SidebarPanel({
   onRecreateRoot,
   onInboxActivate,
   onInboxMove,
+  pinned,
+  onPinnedOpen,
+  onUnpin,
   onLeave,
   platform: platformProp,
 }: SidebarProps) {
@@ -328,6 +338,22 @@ function SidebarPanel({
       from,
     );
 
+  const showPinnedMenu = (
+    id: string,
+    x: number,
+    y: number,
+    from: HTMLElement,
+  ) =>
+    openMenu(
+      {
+        label: "Pinned",
+        x,
+        y,
+        items: [{ label: "Unpin", onSelect: () => onUnpin(id) }],
+      },
+      from,
+    );
+
   const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
     e.stopPropagation(); // keep app shortcuts out of the field
     if (e.key === "Escape") {
@@ -369,6 +395,13 @@ function SidebarPanel({
           className="min-w-0 flex-1 bg-transparent text-text outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:hidden"
         />
       </label>
+
+      <Pinned
+        items={pinned}
+        activeId={activeId}
+        onOpen={onPinnedOpen}
+        onContextMenu={showPinnedMenu}
+      />
 
       <div className="flex shrink-0 items-center px-2 pt-2.5 pb-1 text-[10.5px] tracking-[0.02em] text-faint">
         <span className="flex-1">LIBRARY</span>

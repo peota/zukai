@@ -11,7 +11,8 @@ export type IconName =
   | "text"
   | "other"
   | "scratchpad"
-  | "link";
+  | "link"
+  | "pin";
 
 const DATA_EXTS = [
   ".json",
@@ -38,6 +39,7 @@ export function fileIcon(name: string): IconName {
 }
 
 const PATHS: Record<IconName, ReactNode> = {
+  pin: <path d="M5 1.8h4M5.6 1.8v3.6L3.8 7.6h6.4L8.4 5.4V1.8M7 7.6v4.6" />,
   folder: (
     <path d="M1.5 4.5v7a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1H7L5.5 3h-3a1 1 0 0 0-1 1z" />
   ),

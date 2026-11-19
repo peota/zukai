@@ -22,6 +22,7 @@ function setup(
     onMove: vi.fn(),
     onRename: vi.fn(),
     onContextMenu: vi.fn(),
+    onUnpin: vi.fn(),
     ...over,
   };
   render(<TabBar {...props} />);
@@ -63,6 +64,27 @@ function layOut() {
 }
 
 describe("TabBar", () => {
+  it("a pinned Tab shows a pin instead of the close button; the pin unpins", () => {
+    const p = setup([
+      { id: "a", title: "First", active: true, pinned: true },
+      { id: "b", title: "Second", active: false },
+    ]);
+    expect(screen.queryByRole("button", { name: "Close First" })).toBeNull();
+    const pin = screen.getByRole("button", { name: "Unpin First" });
+    // Shown even when the pinned Tab isn't active or hovered.
+    expect(pin.className).not.toContain("invisible");
+    fireEvent.click(pin);
+    expect(p.onUnpin).toHaveBeenCalledWith("a");
+    expect(p.onClose).not.toHaveBeenCalled();
+    expect(p.onActivate).not.toHaveBeenCalled();
+    // Middle-click still closes it (it stays under Pinned).
+    fireEvent(
+      screen.getAllByRole("tab")[0],
+      new MouseEvent("auxclick", { bubbles: true, button: 1 }),
+    );
+    expect(p.onClose).toHaveBeenCalledWith("a");
+  });
+
   it("clicking a Tab calls onActivate", () => {
     const p = setup();
     fireEvent.click(screen.getByText("Second"));

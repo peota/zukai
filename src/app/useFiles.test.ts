@@ -667,6 +667,20 @@ describe("useFiles save and save as", () => {
     expect(f.filePickSave).not.toHaveBeenCalled();
   });
 
+  it("reopening a File whose closed Tab was pinned keeps the pin", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    act(() => result.current.setPinned(id, true));
+    await act(() => result.current.closeTab(id));
+    await openP(result);
+    const tab = fileTabOf(result)!;
+    expect(tab.pinned).toBe(true);
+    expect(result.current.state.tabs[0].id).toBe(tab.id);
+    expect(
+      result.current.state.closed.some((e) => e.tab.file?.path === P),
+    ).toBe(false);
+  });
+
   it("renameFileUpdatesPathAndTitle", async () => {
     const { result } = await mount();
     const id = await openP(result);

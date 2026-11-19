@@ -34,13 +34,20 @@ function entry(n: number, path?: string): ClosedEntry {
   return { tab, index: 0, closedAt: 1000 - n };
 }
 
-function setup(tabId: string | null, closed: ClosedEntry[], tabCount = 2) {
+function setup(
+  tabId: string | null,
+  closed: ClosedEntry[],
+  tabCount = 2,
+  pinned = false,
+) {
   const props = {
     x: 10,
     y: 20,
     tabId,
     tabCount,
     closed,
+    pinned,
+    onTogglePin: vi.fn(),
     onClose: vi.fn(),
     onCloseOthers: vi.fn(),
     onReopen: vi.fn(),
@@ -64,6 +71,20 @@ describe("TabContextMenu", () => {
     expect(p.onDismiss).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("menuitem", { name: "Close other tabs" }));
     expect(p.onCloseOthers).toHaveBeenCalledWith("a");
+  });
+
+  it("Pin tab pins the right-clicked Tab; on a pinned one it reads Unpin tab", () => {
+    const p = setup("a", []);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pin tab" }));
+    expect(p.onTogglePin).toHaveBeenCalledWith("a");
+    expect(p.onDismiss).toHaveBeenCalled();
+  });
+
+  it("a pinned Tab's menu offers Unpin tab", () => {
+    const p = setup("a", [], 2, true);
+    expect(screen.queryByRole("menuitem", { name: "Pin tab" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Unpin tab" }));
+    expect(p.onTogglePin).toHaveBeenCalledWith("a");
   });
 
   it("on the empty bar, the close items are disabled", () => {

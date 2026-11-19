@@ -66,6 +66,11 @@ export interface TabState {
   viewport?: Viewport;
   /** Absent for a Scratchpad. */
   file?: FileInfo;
+  /**
+   * Kept at the start of the tab bar and in the sidebar's Pinned list; a
+   * closed pinned Tab stays there (and in Recently Closed) to reopen.
+   */
+  pinned?: boolean;
 }
 
 /** What the status bar shows for an Image Tab once its image has loaded. */

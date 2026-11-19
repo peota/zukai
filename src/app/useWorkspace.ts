@@ -126,6 +126,8 @@ export interface Workspace extends FilesApi {
   fontSize: number;
   /** 1 bigger, -1 smaller, 0 back to the default (Mod+wheel, Mod+=/-/0). */
   zoomEditor(dir: 1 | -1 | 0): void;
+  /** Pins or unpins a Tab, open or in Recently Closed. */
+  setPinned(id: string, pinned: boolean): void;
 }
 
 export function useWorkspace(): Workspace {
@@ -345,6 +347,12 @@ export function useWorkspace(): Workspace {
     [patchSidebar],
   );
 
+  const setPinned = useCallback(
+    (id: string, pinned: boolean) =>
+      commit(ws.setPinned(stateRef.current, id, pinned)),
+    [commit],
+  );
+
   const zoomEditor = useCallback((dir: 1 | -1 | 0) => {
     const next =
       dir === 0 ? DEFAULT_FONT_SIZE : clampFontSize(fontSizeRef.current + dir);
@@ -431,8 +439,10 @@ export function useWorkspace(): Workspace {
           }
           disk = latest;
         }
-        const isFile = !!stateRef.current.tabs.find((t) => t.id === id)?.file;
-        const isEmpty = !isFile && disk === "";
+        const tab = stateRef.current.tabs.find((t) => t.id === id);
+        const isFile = !!tab?.file;
+        // A pinned Scratchpad is kept even empty: the Pinned list shows it.
+        const isEmpty = !isFile && !tab?.pinned && disk === "";
         try {
           if (isFile) await closeFile(id);
           else await (isEmpty ? deleteScratchpad(id) : closeScratchpad(id));
@@ -678,5 +688,6 @@ export function useWorkspace(): Workspace {
     newCanvas,
     fontSize,
     zoomEditor,
+    setPinned,
   };
 }

@@ -15,6 +15,9 @@ export interface TabContextMenuProps {
   closed: ClosedEntry[];
   /** Shown next to "Reopen closed tab", e.g. "Ctrl+Shift+T". */
   reopenHint?: string;
+  /** The right-clicked Tab is pinned: the item reads "Unpin tab". */
+  pinned?: boolean;
+  onTogglePin(id: string): void;
   onClose(id: string): void;
   onCloseOthers(id: string): void;
   onReopen(): void;
@@ -31,6 +34,8 @@ export function TabContextMenu({
   tabCount,
   closed,
   reopenHint,
+  pinned = false,
+  onTogglePin,
   onClose,
   onCloseOthers,
   onReopen,
@@ -44,7 +49,13 @@ export function TabContextMenu({
   }));
   const items: MenuItem[] = [
     {
+      label: pinned ? "Unpin tab" : "Pin tab",
+      disabled: tabId === null,
+      onSelect: () => tabId !== null && onTogglePin(tabId),
+    },
+    {
       label: "Close tab",
+      separated: true,
       disabled: tabId === null,
       onSelect: () => tabId !== null && onClose(tabId),
     },

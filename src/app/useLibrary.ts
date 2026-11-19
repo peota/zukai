@@ -756,7 +756,8 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   const inbox = useMemo(
     () =>
       tabs
-        .filter((t) => !t.file)
+        // A pinned Scratchpad is listed under Pinned instead.
+        .filter((t) => !t.file && !t.pinned)
         .map((t) => ({ id: t.id, title: t.title, kind: t.kind })),
     [tabs],
   );
