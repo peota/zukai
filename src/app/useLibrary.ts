@@ -141,8 +141,23 @@ const EMPTY_TREE: TreeState = {
 const NO_ADDED: AddedState[] = [];
 
 /** The re-point notice, one per added folder the new Library overlaps. */
-const removedNotice = (name: string) =>
-  `Removed ${name} from the sidebar: it overlaps the new Library folder.`;
+const removedNotice = (names: string[]) =>
+  names.length === 1
+    ? `Removed ${names[0]} from the sidebar: it overlaps the new Library folder.`
+    : `Removed ${names.join(", ")} from the sidebar: they overlap the new Library folder.`;
+
+/** The same root, availability and added list (`removed` is a one-off). */
+function sameRootState(a: RootState, b: RootState): boolean {
+  return (
+    a.root === b.root &&
+    a.available === b.available &&
+    a.added.length === b.added.length &&
+    a.added.every(
+      (x, i) =>
+        x.path === b.added[i].path && x.available === b.added[i].available,
+    )
+  );
+}
 
 /** The Library root and every added folder, available or not. */
 function rootsOf(rs: RootState | null): string[] {
@@ -298,6 +313,10 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   const applyRoot = useCallback(
     (rs: RootState, keepExpanded: boolean) => {
       const prev = rootRef.current;
+      // Nothing changed: keep the state object, so nothing lists again (a
+      // folder that can't be listed but is still reported available would
+      // otherwise be asked for in a loop).
+      if (prev !== null && sameRootState(prev, rs)) return;
       rootRef.current = rs;
       setRootStateRaw(rs);
       const libraryChanged =
@@ -328,9 +347,42 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     [setTree, sidebarRef],
   );
 
+  /** Commands that change the roots, still running (most run a dialog). */
+  const rootChanging = useRef(0);
+  /** Bumped as each such command starts and ends. */
+  const rootEpoch = useRef(0);
+
+  /**
+   * Runs a command that changes the roots and applies its answer. A
+   * `libraryRoot` asked meanwhile (on the focus a dialog gives back) may
+   * read the state from before it: `refreshRoot` drops that answer.
+   */
+  const changeRoot = useCallback(
+    async (
+      command: () => Promise<RootState>,
+      keepExpanded: boolean,
+    ): Promise<RootState> => {
+      rootChanging.current++;
+      rootEpoch.current++;
+      try {
+        const rs = await command();
+        applyRoot(rs, keepExpanded);
+        return rs;
+      } finally {
+        rootChanging.current--;
+        rootEpoch.current++;
+      }
+    },
+    [applyRoot],
+  );
+
+  /** Asks the roots again; skipped, or dropped, if a change overlaps it. */
   const refreshRoot = useCallback(async () => {
+    if (rootChanging.current > 0) return;
+    const epoch = rootEpoch.current;
     try {
-      applyRoot(await libraryRoot(), true);
+      const rs = await libraryRoot();
+      if (epoch === rootEpoch.current) applyRoot(rs, true);
     } catch (err) {
       logError("library root")(err);
     }
@@ -346,18 +398,20 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
       } catch (err) {
         logError("list library folder")(err);
         if (dir === root) return refreshRoot();
+        // An added folder that can't be listed may have gone missing: it
+        // stays expanded (to show again as it was once it's back), its
+        // listing dropped so it's listed afresh then.
+        const addedRoot = treeRef.current.added.some((a) => a.path === dir);
         setTree((t) => {
           if (t.root !== root) return t;
           const children = { ...t.children };
           delete children[dir];
+          if (addedRoot) return { ...t, children };
           const expanded = new Set(t.expanded);
           expanded.delete(dir);
           return { ...t, children, expanded };
         });
-        // An added folder that can't be listed may have gone missing.
-        if (treeRef.current.added.some((a) => a.path === dir)) {
-          return refreshRoot();
-        }
+        if (addedRoot) return refreshRoot();
       }
     },
     [refreshRoot, setTree],
@@ -406,8 +460,8 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   // The stored root, once the Session is restored.
   useEffect(() => {
     if (!ready) return;
-    libraryRoot().then((rs) => applyRoot(rs, true), logError("library root"));
-  }, [ready, applyRoot]);
+    void refreshRoot();
+  }, [ready, refreshRoot]);
 
   // The expanded folders go back to the Session whenever they change.
   const { expanded } = tree;
@@ -425,14 +479,11 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     if (rootState.root === null) {
       if (creatingDefault.current) return;
       creatingDefault.current = true;
-      void libraryUseDefault()
-        .then(
-          (rs) => applyRoot(rs, false),
-          (err: unknown) => {
-            logError("create library")(err);
-            setDefaultFailed(true);
-          },
-        )
+      void changeRoot(libraryUseDefault, false)
+        .catch((err: unknown) => {
+          logError("create library")(err);
+          setDefaultFailed(true);
+        })
         .finally(() => (creatingDefault.current = false));
       return;
     }
@@ -442,7 +493,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
       if (key !== "") libraryWatch().catch(logError("watch library"));
     }
     void listMissing();
-  }, [ready, open, rootState, applyRoot, listMissing]);
+  }, [ready, open, rootState, changeRoot, listMissing]);
 
   // --- Search --------------------------------------------------------------
 
@@ -870,21 +921,22 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   const chooseRoot = useCallback(async () => {
     let rs: RootState;
     try {
-      rs = await libraryChoose(allHeldPaths());
+      rs = await changeRoot(() => libraryChoose(allHeldPaths()), false);
     } catch (err) {
       return showNotice(`Can't use that folder: ${asFileError(err).message}`);
     }
-    applyRoot(rs, false);
-    for (const name of rs.removed ?? []) showNotice(removedNotice(name));
-  }, [allHeldPaths, applyRoot, showNotice]);
+    // One notice: a second would replace the first.
+    const removed = rs.removed ?? [];
+    if (removed.length > 0) showNotice(removedNotice(removed));
+  }, [allHeldPaths, changeRoot, showNotice]);
 
   const addFolder = useCallback(async () => {
     try {
-      applyRoot(await libraryAddFolder(), true);
+      await changeRoot(libraryAddFolder, true);
     } catch (err) {
       showNotice(asFileError(err).message);
     }
-  }, [applyRoot, showNotice]);
+  }, [changeRoot, showNotice]);
 
   /** Treated as the folder having moved: held Files follow, as on a rename. */
   const locateFolder = useCallback(
@@ -894,41 +946,40 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
       );
       let rs: RootState;
       try {
-        rs = await libraryLocateFolder(path);
+        rs = await changeRoot(() => libraryLocateFolder(path), true);
       } catch (err) {
         return showNotice(asFileError(err).message);
       }
-      applyRoot(rs, true);
       // Rust replaces the entry in place; cancelling leaves it as it was.
       if (at < 0 || at >= rs.added.length) return;
       const to = rs.added[at].path;
       if (to !== path) await relocated(path, to);
     },
-    [applyRoot, relocated, showNotice],
+    [changeRoot, relocated, showNotice],
   );
 
   const removeFolder = useCallback(
     async (path: string) => {
       try {
-        applyRoot(await libraryRemoveFolder(path, allHeldPaths()), true);
+        await changeRoot(() => libraryRemoveFolder(path, allHeldPaths()), true);
       } catch (err) {
         showNotice(
           `Can't remove ${baseName(path)} from the sidebar: ${asFileError(err).message}`,
         );
       }
     },
-    [allHeldPaths, applyRoot, showNotice],
+    [allHeldPaths, changeRoot, showNotice],
   );
 
   const recreateRoot = useCallback(async () => {
     try {
-      applyRoot(await libraryRecreate(), true);
+      await changeRoot(libraryRecreate, true);
     } catch (err) {
       showNotice(
         `Can't create the Library folder: ${asFileError(err).message}`,
       );
     }
-  }, [applyRoot, showNotice]);
+  }, [changeRoot, showNotice]);
 
   const tabOf = useCallback(
     (id: string): TabState | undefined =>
