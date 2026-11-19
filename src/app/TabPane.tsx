@@ -75,6 +75,7 @@ export function TabPane(p: TabPaneProps) {
     <div
       className="flex size-full flex-col"
       onPointerDownCapture={focused ? undefined : onFocus}
+      onFocusCapture={focused ? undefined : onFocus}
     >
       <FileBar
         key={id}

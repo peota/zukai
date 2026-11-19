@@ -82,6 +82,21 @@ describe("Split rules", () => {
     expect(ids(r)).toEqual(["a", "x"]);
   });
 
+  it("closingTheFocusedRightMemberActivatesTheOther", () => {
+    const s = pair(["a", "b", "x"], "b");
+    expect(s.activeId).toBe("b");
+    const r = closeTab(s, "b", false, 0, same).state;
+    expect(r.splits).toEqual([]);
+    expect(r.activeId).toBe("a");
+  });
+
+  it("splittingAnUnpinnedWithAPinnedSharesThePin", () => {
+    const s = setPinned(ws(["a", "x", "b"]), "b", true);
+    const r = makeSplit(s, "a", "b");
+    expect(ids(r)).toEqual(["a", "b", "x"]);
+    expect(r.tabs.map((t) => !!t.pinned)).toEqual([true, true, false]);
+  });
+
   it("movingAMemberMovesThePair", () => {
     const s = pair(["a", "b", "x", "y"]);
     expect(ids(moveTab(s, "b", 2))).toEqual(["x", "y", "a", "b"]);

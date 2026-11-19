@@ -77,11 +77,12 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
         stateRef.current.closed.findIndex((e) => e.tab.id === id);
       if (open) {
         const s = stateRef.current;
-        commit({
-          ...s,
-          activeId: open.id,
-          closed: s.closed.filter((e) => e.tab.id !== id),
-        });
+        commit(
+          ws.activate(
+            { ...s, closed: s.closed.filter((e) => e.tab.id !== id) },
+            open.id,
+          ),
+        );
         return true;
       }
       let text: string | null = null;
