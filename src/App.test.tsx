@@ -329,6 +329,17 @@ describe("App", () => {
     expect(r.getByTestId("editor").closest(".hidden")).not.toBeNull();
     act(() => v());
     expect(r.queryByRole("article", { name: "Markdown preview" })).toBeNull();
+    // Back in Split, the divider resizes the editor's share.
+    act(() => v());
+    const handle = r.getByRole("separator", { name: "Resize preview" });
+    const editorPane = () =>
+      r.getByTestId("editor").parentElement as HTMLElement;
+    expect(editorPane().style.flexBasis).toBe("50%");
+    fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    expect(editorPane().style.flexBasis).toBe("45%");
+    expect(handle).toHaveAttribute("aria-valuenow", "45");
+    act(() => v());
+    act(() => v());
     // The status bar switch does the same.
     fireEvent.click(r.getByRole("radio", { name: "Preview" }));
     expect(

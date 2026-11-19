@@ -64,6 +64,7 @@ describe("session file", () => {
       theme: "dark" as const,
       wrapNewTabs: true,
       lineNumbers: false,
+      previewSplit: 0.3,
     };
     const json = JSON.stringify(
       toSessionFile(ws, DEFAULT_SIDEBAR, 13, settings),

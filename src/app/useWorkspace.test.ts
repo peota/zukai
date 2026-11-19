@@ -420,6 +420,7 @@ describe("useWorkspace settings", () => {
       theme: "system",
       wrapNewTabs: false,
       lineNumbers: true,
+      previewSplit: 0.5,
     });
     act(() =>
       result.current.setSettings({ theme: "dark", lineNumbers: false }),
