@@ -4,22 +4,31 @@
 
 ## 1. Overview
 
-Zukai is a lightweight, fast desktop productivity application that combines the simplicity of Notepad, the flexibility of an infinite canvas like Excalidraw, and the practicality of a spreadsheet viewer.
+> **Reframed 2026-11-19.** Zukai is a notebook for engineers, not a Notepad replacement. The sections below were updated to match. The milestones and ADRs are unchanged for now.
 
-The core idea is simple: one lightweight workspace for capturing thoughts, writing text, sketching ideas, and inspecting structured data — without switching between multiple applications.
+Zukai is a small, efficient notebook for engineers. It is a fast desktop app where one engineer keeps what comes up while working:
 
-Zukai should feel like a native desktop utility rather than a complex productivity platform. It should launch quickly, stay out of the user's way, and make it effortless to create, access, and manage temporary notes, code snippets, diagrams, and data files.
+- **Working notes:** what was tried, what broke, decisions, TODOs.
+- **Snippets and commands:** shell one-liners, queries, config fragments, the regex that finally worked.
+- **Sketches and diagrams:** architecture, flows, whiteboard thinking on a Canvas.
+- **Data and artifacts:** CSV exports, JSON payloads, logs and screenshots, kept next to the notes about them.
 
-The application is designed primarily for desktop users, especially developers, technical professionals, and people who frequently switch between writing, brainstorming, and working with data.
+It is not a Notepad replacement. Zukai opens files from anywhere and edits them well (Notepad++ is the bar for the text editor), but that is in service of the notebook: things you write down while working and come back to later.
+
+Zukai should feel like a native desktop utility rather than a complex productivity platform. It should launch quickly, stay out of the way, and make it effortless to write something down and find it again.
+
+It is one engineer's own notebook: personal, local-first, and kept as plain files on their own disk. A folder can be put in git or a sync service like any other folder, but Zukai itself has no accounts, sharing or collaboration.
+
+How far the notebook idea goes is deliberately left open. The framing is set; the feature list will follow it.
 
 ## 2. Product Philosophy
 
 Zukai should follow five core principles:
 
 - **Speed first:** Opening the application, creating a new tab, and capturing a thought should require minimal effort.
-- **Simplicity:** The default interface should resemble a clean, modern Notepad with tabs at the top.
-- **Flexible workspaces:** Users can work with plain text, code, drawings, and tabular data in the same application.
-- **Local-first:** User content should be stored locally by default, without requiring an account or cloud connection.
+- **Simplicity:** The default interface should be a clean, modern editor with tabs at the top. The notebook should never feel like a productivity system.
+- **An engineer's material:** Notes, code, drawings and data sit side by side in the same notebook, each shown in the way that suits it.
+- **Local-first, plain files:** Everything is stored locally as ordinary files, readable without Zukai, with no account or cloud connection.
 - **Frictionless workflow:** Automatic saving, keyboard shortcuts, and session restoration should make the application feel seamless.
 
 Avoid unnecessary features, complicated navigation, excessive configuration, and productivity-system complexity.
@@ -185,8 +194,8 @@ Defer cloud synchronization, user accounts, collaboration, AI features, plugins,
 
 ## 7. Definition of Success
 
-Zukai succeeds when users naturally reach for it whenever they need to quickly write something, inspect a data file, or sketch an idea.
+Zukai succeeds when an engineer naturally reaches for it whenever they need to write something down while working, whether it's a note, a command, a sketch or a data file, and finds it there again later.
 
-It should be fast enough to replace Notepad for quick tasks, capable enough to handle everyday code snippets and CSV files, and flexible enough to serve as a personal scratchpad for visual thinking.
+It should be fast enough that writing something down costs nothing, capable enough for everyday code and CSV files, and small enough to stay a notebook rather than become a platform.
 
 The guiding principle: **Open it instantly. Capture anything. Keep moving.**

@@ -2,7 +2,7 @@
 
 The shared language for Zukai. When code, docs or conversation use one of these words, it means exactly what is written here.
 
-When the vision says "replace Notepad", it means Notepad++. Notepad++ is the benchmark for what the text editor should do.
+Zukai is a small, efficient notebook for engineers, not a Notepad replacement (see the [vision](docs/vision.md)). Notepad++ is still the benchmark for what the text editor should do.
 
 `Mod` means Ctrl on Windows and Linux and Cmd on macOS (see [ADR 0006](docs/adr/0006-v1-ships-on-all-three-platforms.md)).
 
