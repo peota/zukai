@@ -54,6 +54,7 @@ function setup(
     onCloseOthers: vi.fn(),
     canCloseAll,
     onCloseAll: vi.fn(),
+    onSaveAll: vi.fn(),
     onReopen: vi.fn(),
     onReopenEntry: vi.fn(),
     onDismiss: vi.fn(),
@@ -101,13 +102,35 @@ describe("TabContextMenu", () => {
   it("Close all tabs closes them all, from a Tab or the empty bar", () => {
     const p = setup("a", []);
     const items = screen.getAllByRole("menuitem").map((el) => el.textContent);
-    // Right after Close other tabs.
+    // After Close other tabs, with Save all between them.
     expect(items.indexOf("Close all tabs")).toBe(
-      items.indexOf("Close other tabs") + 1,
+      items.indexOf("Close other tabs") + 2,
     );
     fireEvent.click(screen.getByRole("menuitem", { name: "Close all tabs" }));
     expect(p.onCloseAll).toHaveBeenCalledTimes(1);
     expect(p.onDismiss).toHaveBeenCalled();
+  });
+
+  it("Save all calls onSaveAll", () => {
+    const p = setup("a", [], 2, false, true, {
+      canSaveAll: true,
+      onSaveAll: vi.fn(),
+    });
+    const items = screen.getAllByRole("menuitem").map((el) => el.textContent);
+    expect(items.indexOf("Save all")).toBe(items.indexOf("Close all tabs") - 1);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Save all" }));
+    expect(p.onSaveAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("Save all is disabled when nothing is unsaved", () => {
+    const p = setup("a", [], 2, false, true, {
+      canSaveAll: false,
+      onSaveAll: vi.fn(),
+    });
+    const item = screen.getByRole("menuitem", { name: "Save all" });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(item);
+    expect(p.onSaveAll).not.toHaveBeenCalled();
   });
 
   it("Close all tabs works on the empty bar", () => {

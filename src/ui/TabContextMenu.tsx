@@ -23,6 +23,9 @@ export interface TabContextMenuProps {
   /** False when every open Tab is pinned (pins stay open). */
   canCloseAll?: boolean;
   onCloseAll(): void;
+  /** False when no open File has unsaved changes. */
+  canSaveAll?: boolean;
+  onSaveAll(): void;
   onReopen(): void;
   /** The entry's Tab id: the list may change before the click lands. */
   onReopenEntry(id: string): void;
@@ -52,6 +55,8 @@ export function TabContextMenu({
   onCloseOthers,
   canCloseAll = true,
   onCloseAll,
+  canSaveAll = true,
+  onSaveAll,
   onReopen,
   onReopenEntry,
   onDismiss,
@@ -108,6 +113,11 @@ export function TabContextMenu({
             onSelect: () => tabId !== null && onCloseOthers(tabId),
           },
         ]),
+    {
+      label: "Save all",
+      disabled: !canSaveAll,
+      onSelect: onSaveAll,
+    },
     {
       label: "Close all tabs",
       disabled: !canCloseAll,

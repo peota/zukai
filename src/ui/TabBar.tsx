@@ -22,6 +22,19 @@ export interface TabBarItem {
   pinned?: boolean;
   /** A Scratchpad's Kind picks its icon (a File's comes from its name). */
   kind?: "text" | "canvas" | "image";
+  /** A File with changes not yet written to disk: shows a dot. */
+  unsaved?: boolean;
+}
+
+/** The quiet mark of an unsaved Tab. */
+function UnsavedDot({ className = "" }: { className?: string }) {
+  return (
+    <span
+      data-testid="unsaved-dot"
+      aria-hidden="true"
+      className={"size-2 shrink-0 rounded-full bg-muted " + className}
+    />
+  );
 }
 
 /** A File's icon follows its name; a Scratchpad's its Kind. */
@@ -305,6 +318,8 @@ export function TabBar({
         const closeItem = () =>
           joined ? onCloseSplit(tab.id) : onClose(tab.id);
         const shift = shiftOf(index);
+        const unsaved = item.members.some((m) => m.unsaved);
+        const note = unsaved ? " (unsaved)" : "";
         const lifted = dragView?.moving && dragView.from === index;
         return (
           <div
@@ -313,7 +328,9 @@ export function TabBar({
             role="tab"
             aria-selected={active}
             aria-label={joined ? label : undefined}
-            title={joined ? label : tab.file ? tab.file.path : tab.title}
+            title={
+              (joined ? label : tab.file ? tab.file.path : tab.title) + note
+            }
             onClick={(e) => {
               if (swallowClick.current) {
                 swallowClick.current = false;
@@ -404,37 +421,45 @@ export function TabBar({
               </>
             )}
             {tab.pinned ? (
-              <button
-                type="button"
-                aria-label={`Unpin ${joined ? label : tab.title}`}
-                title="Unpin"
-                tabIndex={-1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUnpin(tab.id);
-                }}
-                onDoubleClick={(e) => e.stopPropagation()}
-                className="flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-sel hover:text-text"
-              >
-                <Icon name="pin" size={13} />
-              </button>
+              <>
+                {unsaved && <UnsavedDot />}
+                <button
+                  type="button"
+                  aria-label={`Unpin ${joined ? label : tab.title}${note}`}
+                  title="Unpin"
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUnpin(tab.id);
+                  }}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  className="flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-sel hover:text-text"
+                >
+                  <Icon name="pin" size={13} />
+                </button>
+              </>
             ) : (
-              <button
-                type="button"
-                aria-label={`Close ${joined ? label : tab.title}`}
-                tabIndex={-1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeItem();
-                }}
-                onDoubleClick={(e) => e.stopPropagation()}
-                className={
-                  "flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-sel hover:text-text " +
-                  (active ? "" : "invisible group-hover:visible")
-                }
-              >
-                <CloseIcon />
-              </button>
+              <span className="relative flex size-6 shrink-0 items-center justify-center">
+                {unsaved && (
+                  <UnsavedDot className="absolute group-hover:invisible" />
+                )}
+                <button
+                  type="button"
+                  aria-label={`Close ${joined ? label : tab.title}${note}`}
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeItem();
+                  }}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  className={
+                    "flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-sel hover:text-text " +
+                    (active && !unsaved ? "" : "invisible group-hover:visible")
+                  }
+                >
+                  <CloseIcon />
+                </button>
+              </span>
             )}
           </div>
         );

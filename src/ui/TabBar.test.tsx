@@ -86,6 +86,49 @@ describe("TabBar", () => {
     expect(p.onClose).toHaveBeenCalledWith("a");
   });
 
+  it("shows a dot for an unsaved Tab and names it in the close button", () => {
+    setup([
+      {
+        id: "a",
+        title: "a.json",
+        active: false,
+        file: { missing: false, path: "C:/d/a.json" },
+        unsaved: true,
+      },
+    ]);
+    expect(
+      screen.getByRole("button", { name: "Close a.json (unsaved)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("unsaved-dot")).toBeInTheDocument();
+    expect(screen.getByRole("tab")).toHaveAttribute(
+      "title",
+      "C:/d/a.json (unsaved)",
+    );
+  });
+
+  it("a pinned unsaved Tab shows the dot beside the pin", () => {
+    setup([
+      {
+        id: "a",
+        title: "a.json",
+        active: true,
+        pinned: true,
+        file: { missing: false, path: "C:/d/a.json" },
+        unsaved: true,
+      },
+    ]);
+    expect(screen.getByTestId("unsaved-dot")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Unpin a.json (unsaved)" }),
+    ).toBeInTheDocument();
+  });
+
+  it("a clean Tab shows no dot", () => {
+    setup();
+    expect(screen.queryByTestId("unsaved-dot")).toBeNull();
+    expect(screen.getByRole("button", { name: "Close First" })).toBeVisible();
+  });
+
   it("clicking a Tab calls onActivate", () => {
     const p = setup();
     fireEvent.click(screen.getByText("Second"));
