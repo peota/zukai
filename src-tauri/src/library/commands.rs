@@ -1903,7 +1903,7 @@ mod tests {
         let st = root_state(&g, data.path());
         assert_eq!(st, held);
         assert_eq!(g.root(), Some(root.clone()));
-        assert_eq!(g.added(), [added.clone()]);
+        assert_eq!(g.added(), std::slice::from_ref(&added));
         assert!(file.is_dir(), "never rewritten");
 
         // Removing and re-pointing refuse to write without the other key,
@@ -1984,11 +1984,11 @@ mod tests {
         fs::write(other.join("x.md"), "x").unwrap();
 
         assert!(add_folder(&g, data.path(), &other).is_err());
-        assert_eq!(g.added(), [added.clone()]);
+        assert_eq!(g.added(), std::slice::from_ref(&added));
         assert!(g.in_root(&other.join("x.md")).is_err());
 
         assert!(locate_folder(&g, data.path(), s(&added), &other).is_err());
-        assert_eq!(g.added(), [added.clone()]);
+        assert_eq!(g.added(), std::slice::from_ref(&added));
         assert!(g.in_root(&other.join("x.md")).is_err());
         assert_eq!(g.root_of(&added.join("a.md")), Some(added));
     }
