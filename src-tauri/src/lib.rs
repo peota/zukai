@@ -166,7 +166,11 @@ pub fn run() {
         // show it early (that would flash a blank frame).
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
+                // Decorations come from the config (Zukai draws its own
+                // title bar), never from a saved state.
+                .with_state_flags(
+                    StateFlags::all() & !StateFlags::VISIBLE & !StateFlags::DECORATIONS,
+                )
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())

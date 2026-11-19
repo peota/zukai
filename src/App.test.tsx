@@ -124,6 +124,8 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     show: () => Promise.resolve(),
     setTitle: () => Promise.resolve(),
+    isMaximized: () => Promise.resolve(false),
+    onResized: () => Promise.resolve(() => {}),
   }),
 }));
 
@@ -192,7 +194,10 @@ describe("App", () => {
       expect(root.querySelector("[data-z-sidebar]")).toBeNull();
       expect([...root.children]).toEqual([workspace]);
       expect(workspace.className).toContain("flex-1");
-      expect(workspace.firstElementChild?.getAttribute("role")).toBe("tablist");
+      // The title bar row leads: the tabs, then the window controls.
+      const titleBar = workspace.firstElementChild!;
+      expect(titleBar.hasAttribute("data-tauri-drag-region")).toBe(true);
+      expect(titleBar.firstElementChild?.getAttribute("role")).toBe("tablist");
     };
     hidden();
 
