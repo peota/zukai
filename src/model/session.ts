@@ -5,11 +5,18 @@ import type {
   Fingerprint,
   LanguageId,
   SidebarState,
+  Split,
   TabState,
   WorkspaceState,
 } from "./types";
 import { ensureOneTab, newTabState } from "./workspace";
-import { DEFAULT_SETTINGS, parseSettings, type Settings } from "./settings";
+import { normalizeSplits } from "./split";
+import {
+  clampSplit,
+  DEFAULT_SETTINGS,
+  parseSettings,
+  type Settings,
+} from "./settings";
 
 export const SESSION_VERSION = 3;
 export const CLOSED_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -51,6 +58,8 @@ export interface SessionFile {
   tabs: TabState[];
   activeId: string;
   closed: ClosedEntry[];
+  /** Absent in older Sessions. */
+  splits: Split[];
   sidebar: SidebarState;
   /** The editor's text size in px. */
   fontSize: number;
@@ -153,6 +162,30 @@ function parseSidebar(v: unknown): SidebarState {
   };
 }
 
+/** A malformed Split is dropped alone; a bad ratio is clamped. */
+function parseSplits(v: unknown): Split[] {
+  if (!Array.isArray(v)) return [];
+  const out: Split[] = [];
+  for (const x of v) {
+    if (
+      isObject(x) &&
+      typeof x.a === "string" &&
+      typeof x.b === "string" &&
+      (x.orientation === "row" || x.orientation === "column") &&
+      isNum(x.ratio)
+    ) {
+      out.push({
+        a: x.a,
+        b: x.b,
+        orientation: x.orientation,
+        ratio: clampSplit(x.ratio),
+        focus: x.focus === "b" ? "b" : "a",
+      });
+    }
+  }
+  return out;
+}
+
 export function toSessionFile(
   s: WorkspaceState,
   sidebar: SidebarState = defaultSidebar(),
@@ -164,6 +197,7 @@ export function toSessionFile(
     tabs: s.tabs,
     activeId: s.activeId,
     closed: s.closed,
+    splits: s.splits ?? [],
     sidebar,
     fontSize,
     settings,
@@ -245,6 +279,7 @@ export function parseSessionFile(json: string | null): SessionFile | null {
     tabs: tabs.filter(isTabState),
     activeId: data.activeId,
     closed: closed.filter(isClosedEntry),
+    splits: parseSplits(data.splits),
     sidebar: migrate ? defaultSidebar() : parseSidebar(data.sidebar),
     fontSize: isNum(data.fontSize)
       ? clampFontSize(data.fontSize)
@@ -306,7 +341,7 @@ export function restoreWorkspace(
   grantedPaths: ReadonlySet<string> | null,
   keyOf: (path: string) => string,
 ): { state: WorkspaceState; expired: ClosedEntry[] } {
-  const raw = file ?? { tabs: [], activeId: "", closed: [] };
+  const raw = file ?? { tabs: [], activeId: "", closed: [], splits: [] };
   // Rust refuses to save a Session naming a File it hasn't granted.
   const granted = (t: TabState) =>
     !t.file || grantedPaths === null || grantedPaths.has(t.file.path);
@@ -371,6 +406,9 @@ export function restoreWorkspace(
     open.add(e.tab.id);
     return true;
   });
-  const state = ensureOneTab({ tabs, activeId, closed }, freshId());
+  const state = ensureOneTab(
+    normalizeSplits({ tabs, activeId, closed, splits: raw.splits }),
+    freshId(),
+  );
   return { state, expired };
 }

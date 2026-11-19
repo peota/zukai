@@ -96,9 +96,25 @@ export interface ClosedEntry {
   closedAt: number;
 }
 
-/** closed is ordered newest first. */
+export type SplitOrientation = "row" | "column";
+
+/**
+ * Two Tabs shown as one joined tab: b sits right after a in `tabs`, they share
+ * the pin, and `focus` is the member that is `activeId` while it is shown.
+ * `ratio` is a's share, 0.2-0.8.
+ */
+export interface Split {
+  a: string;
+  b: string;
+  orientation: SplitOrientation;
+  ratio: number;
+  focus: "a" | "b";
+}
+
+/** closed is ordered newest first; an absent `splits` means none. */
 export interface WorkspaceState {
   tabs: TabState[];
   activeId: string;
   closed: ClosedEntry[];
+  splits?: Split[];
 }
