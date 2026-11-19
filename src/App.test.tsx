@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   /** The text the mocked editor host's bridge holds, by Tab id. */
   texts: {} as Record<string, string>,
   clearHistory: [] as string[],
+  /** Each text the rich editor wrote through the bridge, by Tab id. */
+  replaced: [] as [string, string][],
 }));
 
 vi.mock("./app/shortcuts", async (orig) => ({
@@ -33,6 +35,7 @@ vi.mock("./editor/EditorHost", async () => {
       const [bridge] = useState(() => ({
         text: (id: string) => h.texts[id] ?? null,
         replace: (id: string, text: string) => {
+          h.replaced.push([id, text]);
           h.texts[id] = text;
         },
         onOutsideChange: () => () => {},
@@ -144,6 +147,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.texts = {};
   h.clearHistory = [];
+  h.replaced = [];
   Element.prototype.scrollIntoView = vi.fn();
   s.listScratchpads.mockResolvedValue([{ id: "a", ext: "txt" }]);
   s.listClosedScratchpads.mockResolvedValue([]);
@@ -477,6 +481,78 @@ describe("App", () => {
     // Nothing was written: the note is as it was.
     expect(h.texts.a).toBe("# Hello");
     expect(s.writeScratchpad).not.toHaveBeenCalled();
+  });
+
+  it("an edit in Rich reaches Markdown when switched within the debounce, and switching back keeps it", async () => {
+    s.readScratchpad.mockResolvedValue("# Hello\n\n- a\n");
+    h.texts.a = "# Hello\n\n- a\n";
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile({
+          tabs: [
+            {
+              ...newTabState("a"),
+              title: "Hello",
+              language: "markdown",
+              languagePicked: true,
+            },
+          ],
+          activeId: "a",
+          closed: [],
+        }),
+      ),
+    );
+    const r = render(<App />);
+    const rich = await waitFor(
+      () => {
+        const el = r.container.querySelector<HTMLElement>(".ProseMirror");
+        expect(el?.textContent).toBe("Helloa");
+        return el!;
+      },
+      { timeout: 5000 },
+    );
+    // An edit (the cursor is in the heading), then Ctrl+Shift+M at once:
+    // well within the debounce, nothing written yet.
+    fireEvent.click(r.getByRole("button", { name: "Heading 2" }));
+    expect(h.replaced).toEqual([]);
+    act(() => {
+      fireEvent.keyDown(rich, {
+        key: "M",
+        code: "KeyM",
+        ctrlKey: true,
+        shiftKey: true,
+      });
+    });
+    await waitFor(() =>
+      expect(r.getByRole("radio", { name: "Markdown" })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      ),
+    );
+    // The plain editor's text has the edit.
+    expect(h.texts.a).toBe("## Hello\n\n- a\n");
+    expect(h.replaced).toEqual([["a", "## Hello\n\n- a\n"]]);
+    expect(r.container.querySelector(".ProseMirror")).toBeNull();
+
+    // Back to Rich: shown as it is, and nothing more is written.
+    act(() => {
+      fireEvent.keyDown(window, {
+        key: "M",
+        code: "KeyM",
+        ctrlKey: true,
+        shiftKey: true,
+      });
+    });
+    await waitFor(
+      () => {
+        const h2 = r.container.querySelector(".ProseMirror h2");
+        expect(h2?.textContent).toBe("Hello");
+      },
+      { timeout: 5000 },
+    );
+    await act(() => new Promise((done) => setTimeout(done, 450)));
+    expect(h.texts.a).toBe("## Hello\n\n- a\n");
+    expect(h.replaced).toHaveLength(1);
   });
 
   /** A Session with a text Tab "t" and a canvas "c" in one Split. */
