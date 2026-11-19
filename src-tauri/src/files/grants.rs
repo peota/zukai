@@ -24,7 +24,7 @@ pub struct Grants {
     probes: std::sync::atomic::AtomicUsize,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct RootSlot {
     /// The canonical root, set only by Rust (`library.json` or the folder
     /// dialog).
@@ -114,6 +114,10 @@ fn slot_of(slots: &[RootSlot], p: &Path) -> Option<usize> {
         .max()
         .map(|(_, std::cmp::Reverse(i))| i)
 }
+
+/// A copy of one added folder's entry, to put back with
+/// `Grants::restore_added` (undoing a `replace_root`).
+pub struct AddedSlot(RootSlot);
 
 /// Why `candidate` (canonical) may not join the added folders, judged
 /// against the Library and every added slot but `except`.
@@ -464,6 +468,22 @@ impl Grants {
         }
         slots[i] = RootSlot::granted(canon.clone(), &canon);
         Ok(canon)
+    }
+
+    /// A copy of the entry of the added folder `p` names (its root, hint or
+    /// stored path), if any.
+    pub fn added_slot(&self, p: &Path) -> Option<AddedSlot> {
+        let slots = self.slots();
+        added_index(&slots, p).map(|i| AddedSlot(slots[i].clone()))
+    }
+
+    /// Puts `slot` back in the place of the added folder `current` names.
+    /// Nothing happens if none does (the list changed meanwhile).
+    pub fn restore_added(&self, current: &Path, slot: AddedSlot) {
+        let mut slots = self.slots();
+        if let Some(i) = added_index(&slots, current) {
+            slots[i] = slot.0;
+        }
     }
 
     /// Forgets the added folder `path` (its root, hint or stored path). The
