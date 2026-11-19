@@ -106,25 +106,27 @@ pub(crate) fn root_state(g: &Grants, data: &Path) -> RootState {
     }
 }
 
-/// The canonical paths of the `open` Files (paths the UI holds) lexically
-/// under `base` that are provably inside the root they sit in now, so they
-/// can be granted as Files once that root is gone. A path through a link
-/// out of the root is never one of them.
-fn inside_of(g: &Grants, base: &Path, open: &[String]) -> Vec<PathBuf> {
-    open.iter()
-        .filter(|p| suffix_under(Path::new(p), base).is_some())
-        .filter_map(|p| g.in_root(Path::new(p)).ok())
-        .collect()
+/// Before the added folder at `base` (as `Grants::added` names it) is
+/// forgotten: the File grants under it are dropped, then each of the `open`
+/// Files (paths the UI holds, open or Recently Closed) lexically under it
+/// is granted again while it is still judged by that root (`Grants::grant`):
+/// as its canonical path if provably inside, or, while the folder is
+/// offline, as given (a plain absolute path; nothing is followed). A path
+/// through a link out of the root is never granted.
+fn keep_open_under(g: &Grants, base: &Path, open: &[String]) {
+    g.forget_under(base);
+    for p in open {
+        if suffix_under(Path::new(p), base).is_some() {
+            let _ = g.grant(Path::new(p));
+        }
+    }
 }
 
 /// Forgets the added folder at `base` (as `Grants::added` names it),
-/// keeping `open` Files under it granted as Files.
+/// keeping `open` Files under it granted as Files (`keep_open_under`).
 fn drop_added(g: &Grants, base: &Path, open: &[String]) {
-    let keep = inside_of(g, base, open);
+    keep_open_under(g, base, open);
     g.remove_root(base);
-    for p in keep {
-        let _ = g.grant(&p);
-    }
 }
 
 /// Saves `dir` as the root and grants it. `dir` must be an existing folder.
@@ -150,16 +152,12 @@ pub(crate) fn use_root(
         .filter(|a| added::refusal(a, Some(&canon), &[], None).is_some())
         .collect();
     // Judged by their own roots before the Library changes.
-    let keep: Vec<PathBuf> = overlapping
-        .iter()
-        .flat_map(|a| inside_of(g, a, open))
-        .collect();
+    for a in &overlapping {
+        keep_open_under(g, a, open);
+    }
     g.set_root(&canon)?;
     for a in &overlapping {
         g.remove_root(a);
-    }
-    for p in keep {
-        let _ = g.grant(&p);
     }
     if !overlapping.is_empty() {
         root::save_added(data, &g.added())?;
@@ -362,7 +360,10 @@ pub(crate) fn reserve(
     stem: &str,
     ext: &str,
 ) -> Result<String, FileError> {
-    path_string(&ops::reserve_file(&folder(g, parent)?, stem, ext)?)
+    let file = ops::reserve_file(&folder(g, parent)?, stem, ext)?;
+    // It becomes a Tab's File: granted like one opened (see `resolve`).
+    let _ = g.grant_in_root(&file);
+    path_string(&file)
 }
 
 /// True for the error Windows gives when a folder can't be renamed or moved
@@ -548,12 +549,16 @@ pub fn copy_dropped(app: &AppHandle, dir: String, paths: Vec<PathBuf>) {
 /// spelling `check_session` accepts; the link stays the tree row for
 /// rename, trash and reveal. A link out of the root (or dangling) is
 /// refused like any path outside it.
+///
+/// The target is granted as a File (a stored grant, re-checked on every use
+/// while it lies in a root), so the Session can still name it while its
+/// root is offline or after an added folder is removed from the sidebar.
 pub(crate) fn resolve(g: &Grants, path: &str) -> Result<String, FileError> {
     let target = g.in_root(Path::new(path))?;
     if target.is_dir() {
         return Err(FileError::NotAFile);
     }
-    path_string(&target)
+    path_string(&g.grant(&target)?)
 }
 
 pub(crate) fn trash(g: &Grants, path: &str) -> Result<(), FileError> {
@@ -1968,6 +1973,85 @@ mod tests {
         assert!(g.check(s(&secret)).is_err());
         assert!(g.check(s(&proj.join("out").join("s.md"))).is_err());
         assert!(g.check(s(&stray)).is_err());
+    }
+
+    /// A Session with `open` as a Tab and `closed` as Recently Closed.
+    fn session_of(open: &str, closed: &str) -> String {
+        serde_json::json!({
+            "version": 3,
+            "tabs": [{ "id": "t", "file": { "path": open } }],
+            "closed": [{ "tab": { "id": "c", "file": { "path": closed } } }],
+        })
+        .to_string()
+    }
+
+    /// Opens two Files in the added folder the way the UI does from the
+    /// tree: `a.md` read as a plain file, `b.md` resolved (an inside link
+    /// opens as its target). Returns their paths as the UI holds them.
+    fn open_from_tree(g: &Grants, added: &Path) -> (String, String) {
+        fs::write(added.join("a.md"), "a").unwrap();
+        fs::write(added.join("b.md"), "b").unwrap();
+        let a = s(&added.join("a.md")).to_owned();
+        crate::files::commands::read_opened(g, &a).unwrap();
+        let b = resolve(g, s(&added.join("b.md"))).unwrap();
+        (a, b)
+    }
+
+    #[test]
+    fn an_offline_added_folder_does_not_block_the_session() {
+        use crate::files::grants::check_session;
+        let (_tmp, g, _root, added, outside) = crate::library::tests::library_with_added();
+        let (a, b) = open_from_tree(&g, &added);
+        let json = session_of(&a, &b);
+        check_session(&g, &json).unwrap();
+        fs::rename(&added, outside.join("away")).unwrap();
+        check_session(&g, &json).unwrap();
+        assert!(g.check(&a).is_err(), "no I/O while offline");
+    }
+
+    #[test]
+    fn removing_an_offline_added_folder_keeps_its_open_files_saveable() {
+        use crate::files::grants::check_session;
+        let (_tmp, g, _root, added, outside) = crate::library::tests::library_with_added();
+        let data = tempfile::tempdir().unwrap();
+        root::save_added(data.path(), &g.added()).unwrap();
+        let (a, b) = open_from_tree(&g, &added);
+        // Opened once, then closed for good: not kept past the removal.
+        fs::write(added.join("other.md"), "o").unwrap();
+        crate::files::commands::read_opened(&g, s(&added.join("other.md"))).unwrap();
+        let json = session_of(&a, &b);
+        let away = outside.join("away");
+        fs::rename(&added, &away).unwrap();
+
+        let st = remove_folder(&g, data.path(), s(&added), &[a.clone(), b.clone()]).unwrap();
+        assert!(st.added.is_empty());
+        check_session(&g, &json).unwrap();
+        // The drive comes back.
+        fs::rename(&away, &added).unwrap();
+        check_session(&g, &json).unwrap();
+        assert_eq!(g.check(&a).unwrap(), added.join("a.md"));
+        assert!(g.check(s(&added.join("other.md"))).is_err());
+    }
+
+    #[test]
+    fn re_pointing_over_an_offline_added_folder_keeps_its_open_files_saveable() {
+        use crate::files::grants::check_session;
+        let (_tmp, g, root, added, outside) = crate::library::tests::library_with_added();
+        let data = tempfile::tempdir().unwrap();
+        root::save_added(data.path(), &g.added()).unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
+        let (a, b) = open_from_tree(&g, &added);
+        let json = session_of(&a, &b);
+        let away = outside.join("away");
+        fs::rename(&added, &away).unwrap();
+
+        // The new Library holds the (offline) added folder.
+        let base = root.parent().unwrap();
+        let st = use_root(&g, data.path(), base, &[a.clone(), b.clone()]).unwrap();
+        assert_eq!(st.removed, ["added"]);
+        check_session(&g, &json).unwrap();
+        fs::rename(&away, &added).unwrap();
+        check_session(&g, &json).unwrap();
     }
 
     #[test]

@@ -469,6 +469,21 @@ impl Grants {
         }
     }
 
+    /// Drops every File grant lexically under `base`, compared by key, and
+    /// under the other spellings of the added folder `base` names, if any.
+    pub fn forget_under(&self, base: &Path) {
+        let mut bases = vec![base.to_path_buf()];
+        {
+            let slots = self.slots();
+            if let Some(i) = added_index(&slots, base) {
+                let s = &slots[i];
+                bases.extend([&s.root, &s.hint, &s.stored].into_iter().flatten().cloned());
+            }
+        }
+        self.map()
+            .retain(|_, p| !bases.iter().any(|b| under_by_key(p, b)));
+    }
+
     /// The added folders in order: each one's root, or its stored path
     /// while it is unavailable.
     pub fn added(&self) -> Vec<PathBuf> {
