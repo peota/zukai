@@ -391,6 +391,8 @@ function CanvasTab({
       onChange={onSceneChange}
       theme={p.theme}
       viewModeEnabled={readOnly}
+      // Its own keys only while it has focus (the other half may be text).
+      handleKeyboardGlobally={false}
       // No network: no collaboration, AI, embeds or online library.
       isCollaborating={false}
       aiEnabled={false}

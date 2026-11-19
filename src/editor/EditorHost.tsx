@@ -761,27 +761,34 @@ export function EditorHost(props: EditorHostProps) {
     }
   }, [fontSize]);
 
-  // Mod+wheel zooms the text; the page itself never zooms. Small deltas
-  // (a trackpad pinch) add up to one step per notch's worth.
+  // Mod+wheel zooms the text, here or in a slot; the page itself never
+  // zooms. Small deltas (a trackpad pinch) add up to one step per notch's
+  // worth.
   const outer = useRef<HTMLDivElement>(null);
+  const wheelSum = useRef(0);
+  const { slots } = props;
   useEffect(() => {
-    const el = outer.current;
-    if (!el) return;
-    let sum = 0;
+    const els = [outer.current, ...(slots?.values() ?? [])].filter(
+      (el): el is HTMLElement => !!el,
+    );
     const onWheel = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       // A wheel in lines or pages counts as whole notches.
-      sum +=
+      wheelSum.current +=
         e.deltaMode === 0 ? e.deltaY : Math.sign(e.deltaY) * ZOOM_WHEEL_STEP;
-      if (Math.abs(sum) < ZOOM_WHEEL_STEP) return;
-      const dir = sum < 0 ? 1 : -1;
-      sum = 0;
+      if (Math.abs(wheelSum.current) < ZOOM_WHEEL_STEP) return;
+      const dir = wheelSum.current < 0 ? 1 : -1;
+      wheelSum.current = 0;
       latest.current.onZoom?.(dir);
     };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+    for (const el of els) {
+      el.addEventListener("wheel", onWheel, { passive: false });
+    }
+    return () => {
+      for (const el of els) el.removeEventListener("wheel", onWheel);
+    };
+  }, [slots]);
 
   const showBar =
     bar && bar.tabId === activeId && tabs.some((t) => t.id === bar.tabId);

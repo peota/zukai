@@ -290,6 +290,18 @@ describe("ImageHost", () => {
     });
   });
 
+  it("zoomKeysOnlyWhenFocused", async () => {
+    const { img, view, props } = await setup({ keys: false });
+    loaded(img, 800, 600);
+    key("=", "Equal");
+    expect(viewport()).toHaveAttribute("data-fit", "true");
+    expect(num("data-zoom")).toBeCloseTo(0.5);
+    // Focused again, the keys are its own.
+    view.rerender(<ImageHost {...props} keys />);
+    key("=", "Equal");
+    expect(num("data-zoom")).toBeCloseTo(0.625);
+  });
+
   it("zoom keys typed in a field are left to the field", async () => {
     const { img } = await setup();
     loaded(img, 800, 600);

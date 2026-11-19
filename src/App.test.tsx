@@ -6,6 +6,9 @@ import * as lib from "./library/api";
 import App from "./App";
 import { toSessionFile } from "./model/session";
 import { newTabState } from "./model/workspace";
+import type { EditorHostProps } from "./editor/EditorHost";
+import type { CanvasHostProps } from "./canvas/CanvasHost";
+import type { SplitOrientation } from "./model/types";
 
 const h = vi.hoisted(() => ({
   flushAll: null as null | (() => Promise<void>),
@@ -16,9 +19,29 @@ vi.mock("./app/shortcuts", async (orig) => ({
   detectPlatform: () => "windows",
 }));
 
-// The editor itself has its own tests; here only the layout around it.
-vi.mock("./editor/EditorHost", () => ({
-  EditorHost: () => <div data-testid="editor" />,
+// The editor itself has its own tests; here only the layout around it: a
+// shown Tab's view sits in the slot App gives it.
+vi.mock("./editor/EditorHost", async () => {
+  const { createPortal } = await import("react-dom");
+  return {
+    EditorHost: (p: EditorHostProps) => {
+      const ids = new Set(p.shown ?? []);
+      if (p.activeId) ids.add(p.activeId);
+      return [...ids].map((id) => {
+        const slot = p.slots?.get(id);
+        return slot
+          ? createPortal(<div data-testid="editor" data-id={id} />, slot, id)
+          : null;
+      });
+    },
+  };
+});
+
+vi.mock("./canvas/CanvasHost", () => ({
+  CanvasHost: (p: CanvasHostProps) =>
+    p.tabs.find((t) => t.id === p.activeId)?.kind === "canvas" ? (
+      <div data-testid="canvas" data-id={p.activeId} />
+    ) : null,
 }));
 
 vi.mock("./storage/api", () => ({
@@ -345,5 +368,54 @@ describe("App", () => {
     expect(
       r.getByRole("article", { name: "Markdown preview" }),
     ).toBeInTheDocument();
+  });
+  /** A Session with a text Tab "t" and a canvas "c" in one Split. */
+  const splitSession = (orientation: SplitOrientation = "row") => {
+    s.listScratchpads.mockResolvedValue([
+      { id: "t", ext: "txt" },
+      { id: "c", ext: "excalidraw" },
+    ]);
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile({
+          tabs: [
+            { ...newTabState("t"), title: "notes" },
+            { ...newTabState("c", "canvas"), title: "drawing" },
+          ],
+          activeId: "t",
+          closed: [],
+          splits: [{ a: "t", b: "c", orientation, ratio: 0.5, focus: "a" }],
+        }),
+      ),
+    );
+  };
+
+  it("aCanvasBesideText", async () => {
+    splitSession();
+    const r = render(<App />);
+    const editor = await waitFor(() => r.getByTestId("editor"));
+    const canvas = r.getByTestId("canvas");
+    expect(editor).toHaveAttribute("data-id", "t");
+    expect(canvas).toHaveAttribute("data-id", "c");
+    expect(editor.closest(".hidden")).toBeNull();
+    const halves = r.container.querySelectorAll("[data-split-view] > div");
+    expect(halves[0]).toHaveAttribute("data-focused");
+    expect(r.queryByText("Canvas")).toBeNull();
+
+    fireEvent.pointerDown(canvas);
+    await waitFor(() => expect(r.getByText("Canvas")).toBeInTheDocument());
+    // The text half stays shown beside it, and the focus line moves.
+    expect(r.getByTestId("editor")).toHaveAttribute("data-id", "t");
+    expect(halves[0]).not.toHaveAttribute("data-focused");
+    expect(halves[2]).toHaveAttribute("data-focused");
+  });
+
+  it("topAndBottom", async () => {
+    splitSession("column");
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("canvas"));
+    const view = r.container.querySelector<HTMLElement>("[data-split-view]")!;
+    expect(view.className).toContain("flex-col");
+    expect(view.className).not.toContain("flex-row");
   });
 });
