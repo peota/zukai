@@ -133,26 +133,15 @@ fn held_state(g: &Grants) -> RootState {
     }
 }
 
-/// Before the added folder at `base` (as `Grants::added` names it) is
-/// forgotten: the File grants under it are dropped, then each of the `open`
-/// Files (paths the UI holds, open or Recently Closed) lexically under it
-/// is granted again while it is still judged by that root (`Grants::grant`):
-/// as its canonical path if provably inside, or, while the folder is
-/// offline, as given (a plain absolute path; nothing is followed). A path
-/// through a link out of the root is never granted.
-fn keep_open_under(g: &Grants, base: &Path, open: &[String]) {
-    g.forget_under(base);
-    for p in open {
-        if suffix_under(Path::new(p), base).is_some() {
-            let _ = g.grant(Path::new(p));
-        }
-    }
-}
-
-/// Forgets the added folder at `base` (as `Grants::added` names it),
-/// keeping `open` Files under it granted as Files (`keep_open_under`).
+/// Forgets the added folder at `base` (as `Grants::added` names it). Of
+/// the File grants under it, only those exactly named in `open` (the paths
+/// the UI holds, open or Recently Closed) stay: those Files were granted
+/// while the folder was there (opened from the tree, or read from the
+/// Session). Nothing is granted from `open` itself: it comes from the
+/// webview, and a path granted as given while the folder is offline would
+/// never be re-checked once the folder is gone.
 fn drop_added(g: &Grants, base: &Path, open: &[String]) {
-    keep_open_under(g, base, open);
+    g.forget_added(base, open);
     g.remove_root(base);
 }
 
@@ -178,9 +167,14 @@ pub(crate) fn use_root(
         .into_iter()
         .filter(|a| added::refusal(a, Some(&canon), &[], None, false).is_some())
         .collect();
-    // Judged by their own roots before the Library changes.
+    // Judged by their own roots before the Library changes. The old
+    // Library's grants would no longer be re-checked either: only the ones
+    // the UI holds stay (as `drop_added`).
     for a in &overlapping {
-        keep_open_under(g, a, open);
+        g.forget_added(a, open);
+    }
+    if g.root_place().is_some_and(|old| key(&old) != key(&canon)) {
+        g.forget_library(open);
     }
     g.set_root(&canon)?;
     for a in &overlapping {
@@ -2047,6 +2041,7 @@ mod tests {
         add_folder(&g, data.path(), &proj).unwrap();
         let note = proj.join("note.md");
         fs::write(&note, "n").unwrap();
+        crate::files::commands::read_opened(&g, s(&note)).unwrap();
         let secret_dir = outside.join("secret");
         fs::create_dir(&secret_dir).unwrap();
         let secret = secret_dir.join("s.md");
@@ -2157,6 +2152,68 @@ mod tests {
         check_session(&g, &json).unwrap();
     }
 
+    /// `open` comes from the webview: removing a folder keeps only grants
+    /// that already exist, never mints one from it. Offline, a grant minted
+    /// as given would follow a link put on its way once the drive is back.
+    #[test]
+    fn removing_an_added_folder_never_grants_a_path_it_was_handed() {
+        for offline in [true, false] {
+            let (_tmp, g, _root, added, outside) = crate::library::tests::library_with_added();
+            let data = tempfile::tempdir().unwrap();
+            root::save_added(data.path(), &g.added()).unwrap();
+            let never = added.join("never_opened.md");
+            fs::write(&never, "n").unwrap();
+            let (a, _b) = open_from_tree(&g, &added);
+            let away = outside.join("away");
+            if offline {
+                fs::rename(&added, &away).unwrap();
+            }
+            let open = [s(&never).to_owned(), a.clone()];
+            remove_folder(&g, data.path(), s(&added), &open).unwrap();
+            if offline {
+                fs::rename(&away, &added).unwrap();
+            }
+            assert!(g.check(s(&never)).is_err(), "offline: {offline}");
+            assert!(
+                g.check_exact_stored(s(&never)).is_err(),
+                "offline: {offline}"
+            );
+            assert_eq!(
+                g.check(&a).unwrap(),
+                added.join("a.md"),
+                "offline: {offline}"
+            );
+        }
+    }
+
+    /// Re-pointing the Library drops the old Library's File grants but the
+    /// ones the UI holds: the others would no longer be re-checked.
+    #[test]
+    fn re_pointing_drops_old_library_grants_but_open_ones() {
+        let (_tmp, g, root, outside) = library();
+        let data = tempfile::tempdir().unwrap();
+        use_root(&g, data.path(), &root, &[]).unwrap();
+        let (kept, closed) = (root.join("kept.md"), root.join("closed.md"));
+        fs::write(&kept, "k").unwrap();
+        fs::write(&closed, "c").unwrap();
+        crate::files::commands::read_opened(&g, s(&kept)).unwrap();
+        crate::files::commands::read_opened(&g, s(&closed)).unwrap();
+        let never = root.join("never_opened.md");
+        fs::write(&never, "n").unwrap();
+
+        let open = [s(&kept).to_owned(), s(&never).to_owned()];
+        use_root(&g, data.path(), &outside, &open).unwrap();
+        assert_eq!(g.check(s(&kept)).unwrap(), kept);
+        assert!(g.check(s(&closed)).is_err());
+        assert!(g.check(s(&never)).is_err());
+
+        // Choosing the same Library again drops nothing.
+        fs::write(outside.join("o.md"), "o").unwrap();
+        crate::files::commands::read_opened(&g, s(&outside.join("o.md"))).unwrap();
+        use_root(&g, data.path(), &outside, &[]).unwrap();
+        assert!(g.check_exact_stored(s(&outside.join("o.md"))).is_ok());
+    }
+
     #[test]
     fn use_root_over_added_removes_it_and_names_it() {
         let (_tmp, g, root, outside) = library();
@@ -2194,6 +2251,7 @@ mod tests {
         // Library stay granted.
         let note = big.join("note.md");
         fs::write(&note, "n").unwrap();
+        crate::files::commands::read_opened(&g, s(&note)).unwrap();
         let st = use_root(&g, data.path(), &big.join("lib"), &[s(&note).to_owned()]).unwrap();
         assert_eq!(st.removed, ["big"]);
         assert_eq!(added_states(&st), [(s(&keep).to_owned(), true)]);
