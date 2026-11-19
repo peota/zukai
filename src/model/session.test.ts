@@ -68,6 +68,7 @@ describe("session file", () => {
       accent: "green" as const,
       wrapNewTabs: true,
       lineNumbers: false,
+      autosaveFiles: true,
       previewSplit: 0.3,
       markdownDefault: "markdown" as const,
     };

@@ -473,6 +473,29 @@ function General({
           className="size-4 accent-[var(--z-accent)]"
         />
       </Row>
+      <Row
+        label={
+          <>
+            <label htmlFor="z-autosave-files">Save files automatically</label>
+            <span
+              id="z-autosave-files-hint"
+              className="block text-[11px] text-faint"
+            >
+              Scratchpads always save themselves. When off, a file changes on
+              disk only when you save it.
+            </span>
+          </>
+        }
+      >
+        <input
+          id="z-autosave-files"
+          aria-describedby="z-autosave-files-hint"
+          type="checkbox"
+          checked={settings.autosaveFiles}
+          onChange={(e) => onSettings({ autosaveFiles: e.target.checked })}
+          className="size-4 accent-[var(--z-accent)]"
+        />
+      </Row>
     </div>
   );
 }
