@@ -44,7 +44,7 @@ The owner wants writing Markdown notes to feel like Notion or Confluence. Tables
 - A Markdown Tab is in one of two editor modes: **Rich** or **Markdown**.
   - Markdown mode is today's editor, with its Edit, Split and Preview modes unchanged. Ctrl+Shift+V still cycles those three, and does nothing in Rich.
   - Rich has no preview. It is already the rendered view.
-- **The switch** is a status-bar control on Markdown Tabs, `Rich ▾` / `Markdown ▾`. A shortcut, **Mod+Alt+M**, toggles it. The mode is stored per Tab in the Session.
+- **The switch** is a status-bar control on Markdown Tabs, `Rich ▾` / `Markdown ▾`. A shortcut, **Mod+Shift+M**, toggles it. The mode is stored per Tab in the Session.
 - **The Settings default** (General): "Open Markdown notes in: **Rich editor** / Markdown". The default is Rich.
 - **When the default applies:**
   - It applies to a Tab whose Language is Markdown because it came from a `.md` / `.markdown` File, or because the user picked Markdown in the Language menu.
@@ -106,7 +106,7 @@ The owner wants writing Markdown notes to feel like Notion or Confluence. Tables
   - Rich → Markdown shows the current text, which is exactly what was last serialized.
   - The cursor goes to the nearest equivalent place on a best-effort basis; the start of the document is fine.
   - **Undo doesn't cross a switch.** Each switch starts a fresh history in the mode you switch to, and CodeMirror's history is cleared when Markdown mode is shown again. *(My call: changes Rich wrote bypass CodeMirror's history, so its old entries would no longer line up.)*
-- **Keys while the cursor is in Rich.** Mod+Z/Mod+Shift+Z/Mod+Y go to Rich's own history. Every app Command keeps working as it does elsewhere: save, zoom, Tab switching, close, Split, Settings, Mod+Alt+M, and Mod+F/Mod+H, which switch modes as described below. *(My call.)*
+- **Keys while the cursor is in Rich.** Mod+Z/Mod+Shift+Z/Mod+Y go to Rich's own history. Every app Command keeps working as it does elsewhere: save, zoom, Tab switching, close, Split, Settings, Mod+Shift+M, and Mod+F/Mod+H, which switch modes as described below. *(My call.)*
 - **Outside changes:** when a File's text changes on disk or is reloaded (the existing reload or conflict paths), a Rich Tab re-parses the new text. An unsaved Rich edit follows the existing conflict rules, since the text was already handed to the editor's change path.
 - **Splits:** a Rich Tab can be one half of a Split. Clicking it focuses it like any half.
 - **Find:** Mod+F (and Replace) in a Rich Tab switches it to Markdown mode and opens the find bar there.
@@ -137,7 +137,7 @@ The owner wants writing Markdown notes to feel like Notion or Confluence. Tables
 - **Dependencies:** `@milkdown/kit` only, with a small React host written by hand. `@milkdown/react` isn't used, and the `prosemirror-*` packages come through the kit. *(My call.)*
 
 **Commands and keys**
-- A new Command `toggleRichMarkdown` (Mod+Alt+M) is listed in `SHORTCUTS` under Editing as "Rich / Markdown editor".
+- A new Command `toggleRichMarkdown` (Mod+Shift+M) is listed in `SHORTCUTS` under Editing as "Rich / Markdown editor".
 - `find`/`replace` on a Rich Tab first switches the mode.
 
 **Status bar**
@@ -162,7 +162,7 @@ The owner wants writing Markdown notes to feel like Notion or Confluence. Tables
 - **Switching:**
   - Rich → Markdown shows the serialized text.
   - Markdown → Rich keeps edits.
-  - Mod+Alt+M toggles.
+  - Mod+Shift+M toggles.
   - Mod+F switches to Markdown and opens Find.
   - A note over 1 MB refuses Rich.
 - **A browser check** in light and dark, inside a Split.

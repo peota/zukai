@@ -28,7 +28,7 @@
   - the status-bar switch: `Rich` / `Markdown`
   - the Settings radio: "Open Markdown notes in", with `Rich editor` / `Markdown`
   - the shortcut entry: `Rich / Markdown editor` (Editing group)
-- **Shortcut:** `Mod+Alt+M`.
+- **Shortcut:** `Mod+Shift+M`.
 - **Defaults:** `Settings.markdownDefault` is `"rich"`. `TabState.markdownMode` is `"rich" | "markdown"` and absent until decided.
 
 **Rules**
@@ -71,7 +71,7 @@
     - `export const RICH_MAX_BYTES = 1_048_576`
     - `export function tooLargeForRich(text: string): boolean`, measured in UTF-8 bytes
   - The Session keeps `markdownMode` only when it's `"rich"` or `"markdown"`; anything else is stripped, like `withPreview`.
-  - Command `{ type: "toggleRichMarkdown" }`, bound to `Mod+Alt+M` in `matchShortcut`. A `SHORTCUTS` entry `{ group: "Editing", action: "Rich / Markdown editor", keys: [["Mod","Alt","M"]], command: "toggleRichMarkdown" }`.
+  - Command `{ type: "toggleRichMarkdown" }`, bound to `Mod+Shift+M` in `matchShortcut`. A `SHORTCUTS` entry `{ group: "Editing", action: "Rich / Markdown editor", keys: [["Mod","Shift","M"]], command: "toggleRichMarkdown" }`.
   - SettingsDialog (General) gains a radio group named "Open Markdown notes in" with `Rich editor` / `Markdown`, calling `onSettings({ markdownDefault })`.
 
 - [ ] **Step 1: Write failing tests:**
@@ -79,7 +79,7 @@
   - `tooLargeForRich`: `"a".repeat(1_048_576)` → false, one more byte → true, and `"é".repeat(524_289)` → true (two bytes each).
   - The Session round trip keeps `markdownMode`, and a junk value is stripped.
   - `parseSettings` keeps or defaults `markdownDefault`.
-  - `matchShortcut` of Ctrl+Alt+M (on Windows) and Cmd+Alt+M (on macOS) → `toggleRichMarkdown`. The existing test that every Command is listed still passes.
+  - `matchShortcut` of Ctrl+Shift+M (on Windows) and Cmd+Shift+M (on macOS) → `toggleRichMarkdown`. The existing test that every Command is listed still passes.
   - SettingsDialog shows the radio group and changes the setting.
 - [ ] **Step 2: Run** `pnpm vitest run src/model src/app/shortcuts.test.ts src/ui/SettingsDialog.test.tsx` and confirm they FAIL.
 - [ ] **Step 3: Implement.** Command handling in `useWorkspace` comes in Task 4; give it a no-op case for now so the switch is exhaustive.
@@ -243,7 +243,7 @@
   - `new_table_is_3x2_with_header`
 - [ ] **Step 2: Run** `pnpm vitest run src/rich` and confirm it FAILS.
 - [ ] **Step 3: Implement.** Then the docs:
-  - Add a **Rich editor** entry to `CONTEXT.md`: the two modes, the default and when it applies, never writing on open, the fallback notice, and Mod+Alt+M. Mention it in the **Markdown preview** entry: preview modes apply in Markdown mode only.
+  - Add a **Rich editor** entry to `CONTEXT.md`: the two modes, the default and when it applies, never writing on open, the fallback notice, and Mod+Shift+M. Mention it in the **Markdown preview** entry: preview modes apply in Markdown mode only.
   - Add the new setting to the **Settings** entry.
 - [ ] **Step 4: Run** `pnpm test`, `pnpm typecheck`, `pnpm lint` and `pnpm build`. Expect PASS. Then do a browser check (the controller does this) of the toolbar, the "/" menu and table editing, in light and dark and inside a Split.
 - [ ] **Step 5: Commit.** `feat(rich): toolbar, slash menu and table controls`
