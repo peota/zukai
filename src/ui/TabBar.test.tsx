@@ -23,6 +23,7 @@ function setup(
     onRename: vi.fn(),
     onContextMenu: vi.fn(),
     onUnpin: vi.fn(),
+    onCloseSplit: vi.fn(),
     ...over,
   };
   render(<TabBar {...props} />);
@@ -303,5 +304,50 @@ describe("TabBar", () => {
     ]);
     const tab = screen.getByText("config.json").closest("[role=tab]")!;
     expect(tab).toHaveTextContent("config.json · api");
+  });
+
+  it("rendersAJoinedTab", () => {
+    const p = setup(
+      [
+        { id: "a", title: "First", active: true },
+        { id: "b", title: "Second", active: false },
+        { id: "c", title: "Third", active: false },
+      ],
+      { splits: [{ a: "a", b: "b", focus: "a" }] },
+    );
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    expect(screen.getByRole("tab", { name: "First | Second" })).toBeTruthy();
+    fireEvent.click(screen.getByText("Second"));
+    expect(p.onActivate).toHaveBeenCalledWith("b");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close First | Second" }),
+    );
+    expect(p.onCloseSplit).toHaveBeenCalledWith("a");
+    expect(p.onClose).not.toHaveBeenCalled();
+    fireEvent(
+      screen.getByRole("tab", { name: "First | Second" }),
+      new MouseEvent("auxclick", { bubbles: true, button: 1 }),
+    );
+    expect(p.onCloseSplit).toHaveBeenCalledTimes(2);
+    fireEvent.doubleClick(screen.getByText("First"));
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("dragsAJoinedTabAsOne", () => {
+    const p = setup(
+      [
+        { id: "a", title: "First", active: true },
+        { id: "b", title: "Second", active: false },
+        { id: "c", title: "Third", active: false },
+      ],
+      { splits: [{ a: "a", b: "b", focus: "a" }] },
+    );
+    layOut();
+    const joined = screen.getByRole("tab", { name: "First | Second" });
+    fireEvent.pointerDown(joined, { button: 0, pointerId: 1, clientX: 50 });
+    fireEvent.pointerMove(joined, { pointerId: 1, buttons: 1, clientX: 120 });
+    fireEvent.pointerMove(joined, { pointerId: 1, buttons: 1, clientX: 160 });
+    fireEvent.pointerUp(joined, { pointerId: 1, clientX: 160 });
+    expect(p.onMove).toHaveBeenCalledWith("a", 1);
   });
 });

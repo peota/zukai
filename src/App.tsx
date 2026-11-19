@@ -411,6 +411,8 @@ export default function App() {
           }}
           onContextMenu={(tabId, x, y) => setTabMenu({ tabId, x, y })}
           onUnpin={(id) => w.setPinned(id, false)}
+          splits={w.state.splits}
+          onCloseSplit={w.closeSplit}
         />
         <main className="min-h-0 flex-1 bg-editor">
           {w.ready && (
@@ -555,6 +557,21 @@ export default function App() {
           onReopen={() => void run({ type: "reopenTab" })}
           onReopenEntry={(id) => void w.reopenEntry(id)}
           onDismiss={closeTabMenu}
+          splitCandidates={w.state.tabs
+            .filter((t) => t.id !== tabMenu.tabId && !splitOf(w.state, t.id))
+            .map((t) => ({ id: t.id, title: t.title }))}
+          split={(() => {
+            const sp =
+              tabMenu.tabId === null
+                ? undefined
+                : splitOf(w.state, tabMenu.tabId);
+            return sp && { orientation: sp.orientation };
+          })()}
+          onSplitWith={(id, other) => w.splitWith(id, other)}
+          onUnsplit={w.unsplit}
+          onSwap={w.swapSplit}
+          onOrientation={w.setSplitOrientation}
+          onCloseSplit={w.closeSplit}
         />
       )}
       {formatMenu && active?.file && (

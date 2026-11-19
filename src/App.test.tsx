@@ -418,4 +418,31 @@ describe("App", () => {
     expect(view.className).toContain("flex-col");
     expect(view.className).not.toContain("flex-row");
   });
+
+  it("splitWithFromTheMenu", async () => {
+    s.listScratchpads.mockResolvedValue([
+      { id: "t", ext: "txt" },
+      { id: "u", ext: "txt" },
+    ]);
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile({
+          tabs: [
+            { ...newTabState("t"), title: "alpha" },
+            { ...newTabState("u"), title: "beta" },
+          ],
+          activeId: "t",
+          closed: [],
+        }),
+      ),
+    );
+    const r = render(<App />);
+    await waitFor(() => expect(r.getAllByRole("tab")).toHaveLength(2));
+    fireEvent.contextMenu(r.getAllByRole("tab")[0]);
+    fireEvent.click(r.getByRole("menuitem", { name: /Split with/ }));
+    fireEvent.click(r.getByRole("menuitem", { name: "beta" }));
+    await waitFor(() => expect(r.getAllByRole("tab")).toHaveLength(1));
+    expect(r.getByRole("tab", { name: "alpha | beta" })).toBeTruthy();
+    await waitFor(() => expect(r.getAllByTestId("editor")).toHaveLength(2));
+  });
 });

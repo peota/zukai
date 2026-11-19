@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ClosedEntry, TabState } from "../model/types";
-import { TabContextMenu } from "./TabContextMenu";
+import { TabContextMenu, type TabContextMenuProps } from "./TabContextMenu";
 
 function entry(n: number, path?: string): ClosedEntry {
   const tab: TabState = {
@@ -40,6 +40,7 @@ function setup(
   tabCount = 2,
   pinned = false,
   canCloseAll = true,
+  over: Partial<TabContextMenuProps> = {},
 ) {
   const props = {
     x: 10,
@@ -56,6 +57,13 @@ function setup(
     onReopen: vi.fn(),
     onReopenEntry: vi.fn(),
     onDismiss: vi.fn(),
+    splitCandidates: [{ id: "n", title: "notes" }],
+    onSplitWith: vi.fn(),
+    onUnsplit: vi.fn(),
+    onSwap: vi.fn(),
+    onOrientation: vi.fn(),
+    onCloseSplit: vi.fn(),
+    ...over,
   };
   render(<TabContextMenu {...props} />);
   return props;
@@ -178,5 +186,35 @@ describe("TabContextMenu", () => {
     const p = setup("a", []);
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     expect(p.onDismiss).toHaveBeenCalled();
+  });
+
+  it("splitWithListsCandidates", () => {
+    const p = setup("a", []);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Split with/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "notes" }));
+    expect(p.onSplitWith).toHaveBeenCalledWith("a", "n");
+  });
+
+  it("Split with is disabled without candidates", () => {
+    setup("a", [], 2, false, true, { splitCandidates: [] });
+    expect(
+      screen.getByRole("menuitem", { name: /Split with/ }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("joinedTabMenu", () => {
+    const p = setup("a", [], 2, false, true, {
+      split: { orientation: "row" },
+    });
+    expect(screen.queryByRole("menuitem", { name: "Close tab" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Side by side" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Unsplit" }));
+    expect(p.onUnsplit).toHaveBeenCalledWith("a");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Swap sides" }));
+    expect(p.onSwap).toHaveBeenCalledWith("a");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Top and bottom" }));
+    expect(p.onOrientation).toHaveBeenCalledWith("a", "column");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close split" }));
+    expect(p.onCloseSplit).toHaveBeenCalledWith("a");
   });
 });
