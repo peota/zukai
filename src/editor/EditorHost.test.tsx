@@ -124,6 +124,20 @@ describe("EditorHost", () => {
     expect(onZoom).not.toHaveBeenCalled();
   });
 
+  it("hides and shows line numbers, in open and new views", async () => {
+    const { container, rerender } = setup({ lineNumbers: false });
+    await activeView(container, "text of a");
+    const gutter = () => container.querySelector(".cm-lineNumbers");
+    expect(gutter()).toBeNull();
+    rerender({ lineNumbers: true });
+    expect(gutter()).not.toBeNull();
+    rerender({ lineNumbers: false });
+    expect(gutter()).toBeNull();
+    rerender({ activeId: "b" });
+    await activeView(container, "text of b");
+    expect(container.querySelectorAll(".cm-lineNumbers")).toHaveLength(0);
+  });
+
   it("creates the active view from loaded text and restores selection", async () => {
     const { container } = setup({
       tabs: [tab("a", { selection: { anchor: 2, head: 4 } }), tab("b")],

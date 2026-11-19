@@ -38,6 +38,9 @@ export interface StatusBarProps {
   kindLabel?: string;
   /** An Image Tab: shown in place of `kindLabel` once the image has loaded. */
   image?: ImageInfo;
+  /** The gear at the far left; its tooltip shows `settingsHint`. */
+  onSettings?(): void;
+  settingsHint?: string;
 }
 
 export const LANGUAGE_LABELS: Record<LanguageId, string> = {
@@ -76,6 +79,8 @@ export function StatusBar({
   beautifyHint,
   kindLabel,
   image,
+  onSettings,
+  settingsHint,
 }: StatusBarProps) {
   const [formatAt, setFormatAt] = useState<DOMRect | null>(null);
   const closeFormat = useCallback(() => {
@@ -86,6 +91,32 @@ export function StatusBar({
 
   return (
     <div className="flex h-6 shrink-0 select-none items-center gap-3 bg-chrome px-3 text-[11px] text-faint">
+      {onSettings && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Settings"
+          title={settingsHint ? `Settings (${settingsHint})` : "Settings"}
+          onClick={onSettings}
+          className="-ml-1.5 flex size-5 shrink-0 items-center justify-center rounded-[4px] hover:bg-surface hover:text-muted"
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 14 14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.1"
+            aria-hidden="true"
+          >
+            <circle cx="7" cy="7" r="2" />
+            <path
+              d="M7 1.2v1.6M7 11.2v1.6M1.2 7h1.6M11.2 7h1.6M2.9 2.9l1.1 1.1M10 10l1.1 1.1M2.9 11.1 4 10M10 4l1.1-1.1"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      )}
       {kindLabel === undefined ? (
         <span>{file?.readonly ? "Read-only" : `Ln ${line}, Col ${col}`}</span>
       ) : (

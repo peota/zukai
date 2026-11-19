@@ -40,6 +40,12 @@ describe.each(["mac", "other"] as Platform[])("matchShortcut (%s)", (p) => {
       matchShortcut(ev("Minus", { ...m, key: "-", altKey: true }), p),
     ).toBeNull();
   });
+  it("settings", () => {
+    expect(matchShortcut(ev("Comma", { ...m, key: "," }), p)).toEqual({
+      type: "openSettings",
+    });
+    expect(matchShortcut(ev("Comma", { key: "," }), p)).toBeNull();
+  });
   it("new tab", () =>
     expect(matchShortcut(ev("KeyN", m), p)).toEqual({ type: "newTab" }));
   it("close tab", () =>

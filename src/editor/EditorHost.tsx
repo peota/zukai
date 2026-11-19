@@ -98,6 +98,8 @@ export interface EditorHostProps {
   fontSize?: number;
   /** Mod+wheel over the text: 1 bigger, -1 smaller. */
   onZoom?(dir: 1 | -1): void;
+  /** The line-number gutter (shown when unset). */
+  lineNumbers?: boolean;
 }
 
 /** Wheel distance per zoom step: one mouse notch, or a short pinch. */
@@ -121,12 +123,14 @@ interface Entry {
   wrap: Compartment;
   readOnly: Compartment;
   fontSize: Compartment;
+  gutter: Compartment;
   /** What each compartment currently holds (or is loading, for language). */
   current: {
     language: LanguageId;
     wrap: boolean;
     readOnly: boolean;
     fontSize: number;
+    lineNumbers: boolean;
   };
   /** Guessing is tried at most once per Tab. */
   guessed: boolean;
@@ -165,8 +169,9 @@ function foldMarker(open: boolean): HTMLElement {
   return el;
 }
 
+const lineNumbersExt = (on: boolean): Extension => (on ? lineNumbers() : []);
+
 const baseSetup: Extension = [
-  lineNumbers(),
   foldGutter({ markerDOM: foldMarker }),
   codeFolding(),
   highlightActiveLine(),
@@ -475,11 +480,13 @@ export function EditorHost(props: EditorHostProps) {
       wrap: new Compartment(),
       readOnly: new Compartment(),
       fontSize: new Compartment(),
+      gutter: new Compartment(),
       current: {
         language: "plaintext",
         wrap: tab.wrap,
         readOnly,
         fontSize: latest.current.fontSize ?? DEFAULT_FONT_SIZE,
+        lineNumbers: latest.current.lineNumbers ?? true,
       },
       guessed: tab.languagePicked || tab.languageGuessed,
       pending: {},
@@ -506,6 +513,7 @@ export function EditorHost(props: EditorHostProps) {
           entry.language.of([]),
           entry.wrap.of(wrapExt(tab.wrap)),
           entry.readOnly.of(readOnlyExt(readOnly)),
+          entry.gutter.of(lineNumbersExt(entry.current.lineNumbers)),
           entry.fontSize.of(fontSizeExt(entry.current.fontSize)),
           formatExtension(tab.file?.format ?? null),
           findExtension((mode) => openBar(id, mode)),
@@ -688,6 +696,18 @@ export function EditorHost(props: EditorHostProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Line numbers on or off for every view, hidden ones included.
+  const showNumbers = props.lineNumbers ?? true;
+  useEffect(() => {
+    for (const e of views.current.values()) {
+      if (e.current.lineNumbers === showNumbers) continue;
+      e.current.lineNumbers = showNumbers;
+      e.view.dispatch({
+        effects: e.gutter.reconfigure(lineNumbersExt(showNumbers)),
+      });
+    }
+  }, [showNumbers]);
 
   // A new size for every view, hidden ones included.
   const fontSize = props.fontSize ?? DEFAULT_FONT_SIZE;

@@ -13,6 +13,7 @@ import {
 } from "./session";
 import { pathKey } from "../files/api";
 import { newTabState } from "./workspace";
+import { DEFAULT_SETTINGS } from "./settings";
 import type { ClosedEntry, FileInfo, TabState, WorkspaceState } from "./types";
 
 const ws: WorkspaceState = {
@@ -54,7 +55,25 @@ describe("session file", () => {
       ...ws,
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
+      settings: DEFAULT_SETTINGS,
     });
+  });
+
+  it("keeps the settings, and defaults them in older Sessions", () => {
+    const settings = {
+      theme: "dark" as const,
+      wrapNewTabs: true,
+      lineNumbers: false,
+    };
+    const json = JSON.stringify(
+      toSessionFile(ws, DEFAULT_SIDEBAR, 13, settings),
+    );
+    expect(parseSessionFile(json)!.settings).toEqual(settings);
+    const { settings: _gone, ...old } = toSessionFile(ws);
+    void _gone;
+    expect(parseSessionFile(JSON.stringify(old))!.settings).toEqual(
+      DEFAULT_SETTINGS,
+    );
   });
 
   it("keeps the editor font size, clamped and whole", () => {
@@ -215,6 +234,7 @@ describe("restoreWorkspace", () => {
       closed: [],
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
+      settings: DEFAULT_SETTINGS,
     };
     const withOrphans = restore(file, ["q"], fresh, 0).state;
     expect(withOrphans.tabs.map((t) => t.id)).toEqual(["q"]);
@@ -307,6 +327,7 @@ describe("session v3", () => {
       ...ws,
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
+      settings: DEFAULT_SETTINGS,
     });
     expect(parsed?.tabs.every((t) => t.file === undefined)).toBe(true);
   });
@@ -324,6 +345,7 @@ describe("session v3", () => {
       ...w,
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
+      settings: DEFAULT_SETTINGS,
     });
   });
 
@@ -436,7 +458,13 @@ describe("session v3 migration and sidebar", () => {
       closed: [],
     };
     expect(parseSessionFile(JSON.stringify(toSessionFile(w, sidebar)))).toEqual(
-      { version: 3, ...w, sidebar, fontSize: DEFAULT_FONT_SIZE },
+      {
+        version: 3,
+        ...w,
+        sidebar,
+        fontSize: DEFAULT_FONT_SIZE,
+        settings: DEFAULT_SETTINGS,
+      },
     );
   });
 
@@ -539,6 +567,7 @@ describe("restoreWorkspace with grantedPaths", () => {
       version: 3 as const,
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
+      settings: DEFAULT_SETTINGS,
       tabs: [fileTab("f1", "ok"), fileTab("f2", "bad"), newTabState("a")],
       activeId: "f2",
       closed: [
@@ -568,6 +597,7 @@ describe("restoreWorkspace closed File dedupe", () => {
       version: 3 as const,
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
+      settings: DEFAULT_SETTINGS,
       tabs: [newTabState("a")],
       activeId: "a",
       closed: [

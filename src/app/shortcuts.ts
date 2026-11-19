@@ -18,7 +18,8 @@ export type Command =
   | { type: "focusSidebar" }
   | { type: "newCanvas" }
   /** Editor text size: 1 bigger, -1 smaller, 0 back to the default. */
-  | { type: "zoom"; dir: 1 | -1 | 0 };
+  | { type: "zoom"; dir: 1 | -1 | 0 }
+  | { type: "openSettings" };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -82,6 +83,10 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
     }
     if (!e.shiftKey && (e.key === "0" || e.code === "Numpad0")) {
       return { type: "zoom", dir: 0 };
+    }
+    // Mod+, opens Settings, by the typed comma or the physical key.
+    if (!e.shiftKey && (e.key === "," || e.code === "Comma")) {
+      return { type: "openSettings" };
     }
   }
 
