@@ -19,6 +19,8 @@ export interface ImageHostProps {
   reloadSeq: number;
   /** The loaded image's size and format; null when nothing is shown. */
   onInfo?(info: ImageInfo | null): void;
+  /** Mod+= / Mod+- / Mod+0 are its own (default); off for an unfocused half. */
+  keys?: boolean;
 }
 
 /** MIME type and status-bar name, by extension. */
@@ -107,6 +109,7 @@ export function ImageHost({
   readBytes,
   reloadSeq,
   onInfo,
+  keys = true,
 }: ImageHostProps) {
   const path = tab.file?.path ?? "";
   const missing = tab.file?.held === "missing";
@@ -170,6 +173,7 @@ export function ImageHost({
 
   // Mod+= / Mod+- / Mod+0, wherever the focus is while this Tab is shown.
   useEffect(() => {
+    if (!keys) return;
     const onKey = (e: KeyboardEvent) => {
       // Typing somewhere (a sidebar field, a rename) keeps its own keys.
       if (typesText(e.target)) return;
@@ -191,7 +195,7 @@ export function ImageHost({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [zoomBy]);
+  }, [zoomBy, keys]);
 
   // Mod+wheel zooms toward the cursor; a plain wheel pans. Not passive, so
   // the page itself never scrolls or zooms.

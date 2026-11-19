@@ -257,6 +257,12 @@ describe("CanvasHost", () => {
     expect(fx.props!.theme).toBe("dark");
   });
 
+  it("excalidrawHandlesKeysLocally", async () => {
+    await setup();
+    await mounted();
+    expect(fx.props!.handleKeyboardGlobally).toBe(false);
+  });
+
   it("a read-only canvas shows the drawing and never saves", async () => {
     const { props } = await setup({ isReadOnly: () => true });
     const { change } = await mounted();

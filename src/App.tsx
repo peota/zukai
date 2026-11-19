@@ -6,24 +6,23 @@ import {
   blocksBrowserKey,
   isEditorTarget,
 } from "./app/browserGuard";
-import type { ImageInfo, LanguageId } from "./model/types";
+import type { ImageInfo, LanguageId, TabState } from "./model/types";
+import { splitOf } from "./model/split";
 import { isUnder, revealLabel } from "./ui/libraryEntries";
 import { EditorHost } from "./editor/EditorHost";
-import { CanvasHost } from "./canvas/CanvasHost";
-import { ImageHost } from "./image/ImageHost";
+import { TabPane, useSlots } from "./app/TabPane";
+import { SplitView } from "./ui/SplitView";
 import type { FormatResult } from "./editor/jsonFormat";
 import { TabBar } from "./ui/TabBar";
 import { StatusBar } from "./ui/StatusBar";
 import { LanguagePicker } from "./ui/LanguagePicker";
-import { FileBar } from "./ui/FileBar";
 import { TabContextMenu } from "./ui/TabContextMenu";
 import { FileFormatMenu } from "./ui/FileFormatMenu";
 import { EncodingPicker } from "./ui/EncodingPicker";
 import { convertPatch } from "./ui/encodings";
 import { folderHints } from "./ui/tabFolders";
 import { fileReadBytes, openDefault, openUrl, pathKey } from "./files/api";
-import { createTextFeed, MarkdownPreview } from "./markdown/MarkdownPreview";
-import { SplitHandle } from "./markdown/SplitHandle";
+import { createTextFeed } from "./markdown/MarkdownPreview";
 import { baseName, languageRename } from "./files/paths";
 import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
@@ -126,40 +125,57 @@ export default function App() {
     () => w.state.tabs.filter((t) => t.kind === "text"),
     [w.state.tabs],
   );
-  /** A reload of the Image Tab from disk (a newer replace) reads it again. */
-  const imageReloadSeq = isImage
-    ? w.replaceRequests.reduce(
-        (n, r) => (r.id === activeId && r.seq > n ? r.seq : n),
-        0,
-      )
-    : 0;
-  /**
-   * The Image Tab's size and format, for the image it shows now: a reload
-   * or another Tab starts with none until its image loads.
-   */
-  const [imageInfo, setImageInfo] = useState<{
-    id: string;
-    seq: number;
-    info: ImageInfo | null;
-  } | null>(null);
-  const onImageInfo = useCallback(
-    (info: ImageInfo | null) =>
-      setImageInfo({ id: activeId, seq: imageReloadSeq, info }),
-    [activeId, imageReloadSeq],
+  /** The Split the active Tab is in: both its Tabs are shown. */
+  const split = useMemo(() => splitOf(w.state, activeId), [w.state, activeId]);
+  const visible = useMemo(
+    () =>
+      (split ? [split.a, split.b] : [activeId]).flatMap((id) =>
+        w.state.tabs.filter((t) => t.id === id),
+      ),
+    [split, activeId, w.state.tabs],
   );
+  /** Where the editor puts each shown text Tab's view (its TabPane). */
+  const [slots, slotRef] = useSlots();
+  /** A reload of an Image Tab from disk (a newer replace) reads it again. */
+  const reloadSeqOf = (id: string) =>
+    w.replaceRequests.reduce(
+      (n, r) => (r.id === id && r.seq > n ? r.seq : n),
+      0,
+    );
+  /**
+   * Each Image Tab's size and format, for the image it shows now: a reload
+   * starts with none until its image loads.
+   */
+  const [imageInfo, setImageInfo] = useState<
+    Readonly<Record<string, { seq: number; info: ImageInfo | null }>>
+  >({});
+  const onImageInfo = useCallback(
+    (id: string, seq: number, info: ImageInfo | null) =>
+      setImageInfo((m) =>
+        m[id]?.seq === seq && m[id].info === info
+          ? m
+          : { ...m, [id]: { seq, info } },
+      ),
+    [],
+  );
+  const activeImageInfo = imageInfo[activeId];
   const shownImageInfo =
     isImage &&
     active.file?.held !== "missing" &&
-    imageInfo?.id === activeId &&
-    imageInfo.seq === imageReloadSeq
-      ? (imageInfo.info ?? undefined)
+    activeImageInfo?.seq === reloadSeqOf(activeId)
+      ? (activeImageInfo.info ?? undefined)
       : undefined;
   // An Image Tab's text is never shown, but loading it records the File's
   // fingerprint and state, so disk changes reach it (and it can go Missing).
   const { loadContent } = w;
+  const shownImages = visible
+    .filter((t) => t.kind === "image")
+    .map((t) => t.id)
+    .join("|");
   useEffect(() => {
-    if (isImage) loadContent(activeId).catch(() => {});
-  }, [isImage, activeId, loadContent]);
+    if (!shownImages) return;
+    for (const id of shownImages.split("|")) loadContent(id).catch(() => {});
+  }, [shownImages, loadContent]);
   const here =
     active && cursor?.id === active.id ? cursor : { line: 1, col: 1 };
   const unreadable = !!active && w.shadowUnreadable.has(active.id);
@@ -279,6 +295,51 @@ export default function App() {
 
   const lib = w.library;
 
+  /** One Tab's area, alone or as half of a Split. */
+  const pane = (tab: TabState) => (
+    <TabPane
+      tab={tab}
+      focused={tab.id === activeId}
+      onFocus={() => w.activate(tab.id)}
+      slotRef={slotRef}
+      unreadable={w.shadowUnreadable.has(tab.id)}
+      onKeepMine={() => void w.keepMine(tab.id)}
+      onLoadDisk={() => void w.loadDiskVersion(tab.id)}
+      onSaveAs={() => void w.saveAs(tab.id)}
+      onSaveToOriginal={() => void w.saveToOriginal(tab.id)}
+      onReopenWithEncoding={() => setEncPicker({ mode: "reopen", id: tab.id })}
+      onConvertToUtf8={() =>
+        w.convert(tab.id, { encoding: "utf-8", bom: false })
+      }
+      onOpenDefault={
+        tab.file ? () => void openWithDefault(tab.file!.path) : undefined
+      }
+      onReveal={
+        tab.file && lib.root && isUnder(tab.file.path, lib.root)
+          ? () => lib.reveal(tab.file!.path)
+          : undefined
+      }
+      revealLabel={REVEAL_LABEL}
+      previewSplit={w.settings.previewSplit}
+      onPreviewSplit={(r) => w.setSettings({ previewSplit: r })}
+      feed={feed}
+      onOpenLink={(url) =>
+        void openUrl(url).catch(() => w.showNotice(`Can't open ${url}`))
+      }
+      tabs={w.state.tabs}
+      loadContent={w.loadContent}
+      onChange={w.setContent}
+      onTabPatch={updateTab}
+      replaceRequests={w.replaceRequests}
+      isReadOnly={isReadOnly}
+      theme={theme}
+      onShortcut={onShortcut}
+      readBytes={fileReadBytes}
+      reloadSeq={reloadSeqOf(tab.id)}
+      onImageInfo={onImageInfo}
+    />
+  );
+
   return (
     <div className="relative flex h-full bg-chrome text-text">
       <Sidebar
@@ -351,116 +412,47 @@ export default function App() {
           onContextMenu={(tabId, x, y) => setTabMenu({ tabId, x, y })}
           onUnpin={(id) => w.setPinned(id, false)}
         />
-        {active && (
-          <FileBar
-            key={active.id}
-            tab={active}
-            unreadable={unreadable}
-            onKeepMine={() => void w.keepMine(active.id)}
-            onLoadDisk={() => void w.loadDiskVersion(active.id)}
-            onSaveAs={() => void w.saveAs(active.id)}
-            onSaveToOriginal={() => void w.saveToOriginal(active.id)}
-            onReopenWithEncoding={() =>
-              setEncPicker({ mode: "reopen", id: active.id })
-            }
-            onConvertToUtf8={() =>
-              w.convert(active.id, { encoding: "utf-8", bom: false })
-            }
-            onOpenDefault={
-              active.file
-                ? () => void openWithDefault(active.file!.path)
-                : undefined
-            }
-            onReveal={
-              active.file && lib.root && isUnder(active.file.path, lib.root)
-                ? () => lib.reveal(active.file!.path)
-                : undefined
-            }
-            revealLabel={REVEAL_LABEL}
-          />
-        )}
         <main className="min-h-0 flex-1 bg-editor">
           {w.ready && (
-            <div className={isCanvas || isImage ? "hidden" : "flex size-full"}>
-              <div
-                className={
-                  previewMode === "only"
-                    ? "hidden"
-                    : previewMode === "split"
-                      ? "size-full min-w-0 shrink-0"
-                      : "size-full min-w-0 flex-1"
-                }
-                style={
-                  previewMode === "split"
-                    ? { flexBasis: `${w.settings.previewSplit * 100}%` }
-                    : undefined
-                }
-              >
-                <EditorHost
-                  tabs={editorTabs}
-                  activeId={isCanvas || isImage ? "" : activeId}
-                  loadContent={w.loadContent}
-                  onChange={onEditorChange}
-                  onTabPatch={updateTab}
-                  onCursor={onCursor}
-                  isClosing={w.isClosing}
-                  focusSignal={focusSignal}
-                  findRequest={w.findRequest}
-                  formatRequest={w.formatRequest}
-                  convertRequest={w.convertRequest}
-                  replaceRequests={w.replaceRequests}
-                  shadowUnreadable={w.shadowUnreadable}
-                  onFormatResult={onFormatResult}
-                  fontSize={w.fontSize}
-                  onZoom={w.zoomEditor}
-                  lineNumbers={w.settings.lineNumbers}
-                />
-              </div>
-              {previewMode === "split" && (
-                <SplitHandle
-                  ratio={w.settings.previewSplit}
-                  onRatio={(r) => w.setSettings({ previewSplit: r })}
-                />
-              )}
-              {active && previewMode !== "edit" && (
-                <div className="size-full min-w-0 flex-1 bg-editor">
-                  <MarkdownPreview
-                    key={active.id}
-                    id={active.id}
-                    loadContent={w.loadContent}
-                    feed={feed}
-                    onOpenLink={(url) =>
-                      void openUrl(url).catch(() =>
-                        w.showNotice(`Can't open ${url}`),
-                      )
-                    }
-                  />
-                </div>
-              )}
+            <div className="hidden">
+              <EditorHost
+                tabs={editorTabs}
+                activeId={active?.kind === "text" ? activeId : ""}
+                shown={visible
+                  .filter((t) => t.kind === "text")
+                  .map((t) => t.id)}
+                slots={slots}
+                loadContent={w.loadContent}
+                onChange={onEditorChange}
+                onTabPatch={updateTab}
+                onCursor={onCursor}
+                isClosing={w.isClosing}
+                focusSignal={focusSignal}
+                findRequest={w.findRequest}
+                formatRequest={w.formatRequest}
+                convertRequest={w.convertRequest}
+                replaceRequests={w.replaceRequests}
+                shadowUnreadable={w.shadowUnreadable}
+                onFormatResult={onFormatResult}
+                fontSize={w.fontSize}
+                onZoom={w.zoomEditor}
+                lineNumbers={w.settings.lineNumbers}
+              />
             </div>
           )}
-          {w.ready && (
-            <CanvasHost
-              tabs={w.state.tabs}
-              activeId={activeId}
-              loadContent={w.loadContent}
-              onChange={w.setContent}
-              onTabPatch={updateTab}
-              replaceRequests={w.replaceRequests}
-              isReadOnly={isReadOnly}
-              theme={theme}
-              onShortcut={onShortcut}
-            />
-          )}
-          {w.ready && isImage && active.file && (
-            <ImageHost
-              key={active.id}
-              tab={active}
-              readBytes={fileReadBytes}
-              reloadSeq={imageReloadSeq}
-              onInfo={onImageInfo}
-            />
-          )}
+          {w.ready &&
+            (split && visible.length === 2 ? (
+              <SplitView
+                orientation={split.orientation}
+                ratio={split.ratio}
+                onRatio={(r) => w.setSplitRatio(split.a, r)}
+                focus={split.focus}
+                first={pane(visible[0])}
+                second={pane(visible[1])}
+              />
+            ) : (
+              visible[0] && pane(visible[0])
+            ))}
         </main>
         <StatusBar
           line={here.line}

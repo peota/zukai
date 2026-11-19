@@ -49,4 +49,33 @@ describe("SplitHandle", () => {
     fireEvent.doubleClick(handle);
     expect(onRatio).toHaveBeenLastCalledWith(0.5);
   });
+
+  it("columnHandleUsesHeight", () => {
+    const onRatio = vi.fn();
+    render(
+      <div data-testid="col">
+        <SplitHandle ratio={0.5} onRatio={onRatio} orientation="column" />
+      </div>,
+    );
+    screen.getByTestId("col").getBoundingClientRect = () =>
+      ({ top: 100, height: 1000, bottom: 1100 }) as DOMRect;
+    const handle = screen.getByRole("separator");
+    expect(handle).toHaveAttribute("aria-orientation", "horizontal");
+    expect(handle.className).toContain("cursor-row-resize");
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 600 });
+    fireEvent.pointerMove(handle, {
+      pointerId: 1,
+      buttons: 1,
+      clientX: 900,
+      clientY: 400,
+    });
+    expect(onRatio).toHaveBeenLastCalledWith(0.3);
+    fireEvent.keyDown(handle, { key: "ArrowDown" });
+    expect(onRatio).toHaveBeenLastCalledWith(0.55);
+    fireEvent.keyDown(handle, { key: "ArrowUp" });
+    expect(onRatio).toHaveBeenLastCalledWith(0.45);
+    onRatio.mockClear();
+    fireEvent.keyDown(handle, { key: "ArrowRight" });
+    expect(onRatio).not.toHaveBeenCalled();
+  });
 });

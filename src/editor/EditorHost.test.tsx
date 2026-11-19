@@ -768,4 +768,21 @@ describe("EditorHost with two shown views", () => {
       vi.useRealTimers();
     }
   });
+
+  it("Mod+wheel over a view in its slot asks to zoom", async () => {
+    const sa = slotDiv();
+    const onZoom = vi.fn();
+    setup({ shown: ["a"], slots: new Map([["a", sa]]), onZoom });
+    await waitFor(() => expect(viewsIn(sa)).toHaveLength(1));
+    const e = new WheelEvent("wheel", {
+      deltaY: -100,
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    sa.querySelector(".cm-scroller")!.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(onZoom).toHaveBeenCalledTimes(1);
+    expect(onZoom).toHaveBeenLastCalledWith(1);
+  });
 });
