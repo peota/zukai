@@ -46,6 +46,8 @@ export interface FilesInternals {
    * them, and they can't be moved, until the shadow reads again.
    */
   keptShadows: Set<string>;
+  /** A rich editor holds an edit for the Tab not yet in its text. */
+  richPending?(id: string): boolean;
   /** Tabs being closed: disk checks leave them to the close. */
   closing: { current: ReadonlySet<string> };
 }
@@ -189,9 +191,12 @@ export function useFilesContext(x: FilesInternals) {
   }, []);
 
   /** Edits not yet in the File itself (held text counts). */
+  const { richPending } = x;
   const hasPending = useCallback(
-    (id: string) => contents.has(id) && contents.get(id) !== onDisk.get(id),
-    [contents, onDisk],
+    (id: string) =>
+      (richPending?.(id) ?? false) ||
+      (contents.has(id) && contents.get(id) !== onDisk.get(id)),
+    [contents, onDisk, richPending],
   );
 
   /** Loads a Tab's text; set by useLoading (loadContent is defined there). */

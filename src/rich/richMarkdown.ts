@@ -5,7 +5,7 @@
  * Load this module lazily (`import("./richMarkdown")`): it pulls in
  * Milkdown, ProseMirror and remark, which stay out of the main bundle.
  */
-import type { MilkdownPlugin } from "@milkdown/kit/ctx";
+import type { MilkdownPlugin, SliceType } from "@milkdown/kit/ctx";
 import {
   Editor,
   defaultValueCtx,
@@ -13,10 +13,15 @@ import {
   rootCtx,
 } from "@milkdown/kit/core";
 import {
+  bulletListKeymap,
+  codeBlockKeymap,
   commonmark,
+  headingKeymap,
+  orderedListKeymap,
+  paragraphKeymap,
   remarkPreserveEmptyLinePlugin,
 } from "@milkdown/kit/preset/commonmark";
-import { gfm } from "@milkdown/kit/preset/gfm";
+import { gfm, strikethroughKeymap } from "@milkdown/kit/preset/gfm";
 import { history } from "@milkdown/kit/plugin/history";
 import { listener } from "@milkdown/kit/plugin/listener";
 import { clipboard } from "@milkdown/kit/plugin/clipboard";
@@ -161,6 +166,41 @@ const stringifyOptions: MilkdownPlugin = (ctx) => () => {
 };
 
 /**
+ * Milkdown's Mod-Alt keys (paragraph, headings, lists, code block,
+ * strikethrough) go: Ctrl+Alt is AltGr on Windows and Linux, so they would
+ * turn typed characters ("{", "[", "ć") into blocks and marks.
+ */
+const ALTGR_KEYMAPS = [
+  paragraphKeymap,
+  headingKeymap,
+  orderedListKeymap,
+  bulletListKeymap,
+  codeBlockKeymap,
+  strikethroughKeymap,
+];
+type KeymapConfig = Record<
+  string,
+  { shortcuts: string | string[]; priority?: number }
+>;
+const noAltGrKeys: MilkdownPlugin = (ctx) => () => {
+  for (const keymap of ALTGR_KEYMAPS) {
+    ctx.update(keymap.key as unknown as SliceType<KeymapConfig>, (items) =>
+      Object.fromEntries(
+        Object.entries(items).map(([name, item]) => [
+          name,
+          {
+            ...item,
+            shortcuts: [item.shortcuts]
+              .flat()
+              .filter((k) => !/^Mod-Alt-/.test(k)),
+          },
+        ]),
+      ),
+    );
+  }
+};
+
+/**
  * The commonmark preset without its empty-line placeholder: it writes an
  * empty paragraph as `<br />` into the note, and would read a block `<br>`
  * back as an empty paragraph rather than the raw HTML it is.
@@ -174,6 +214,7 @@ const commonmarkPlugins = (): MilkdownPlugin[] => {
 export function richPlugins(): MilkdownPlugin[] {
   return [
     stringifyOptions,
+    noAltGrKeys,
     frontMatterRemark,
     rawBlockSchema,
     commonmarkPlugins(),

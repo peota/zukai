@@ -4,6 +4,22 @@ import type { EditorView } from "@milkdown/kit/prose/view";
 import type { TextBridge } from "../editor/EditorHost";
 import RichEditor, { useRich, type RichEditorProps } from "./RichEditor";
 
+const hook = vi.hoisted(() => ({
+  /** Runs as the editor is being built (after its last text check). */
+  building: null as null | (() => void),
+}));
+
+vi.mock("./richMarkdown", async (orig) => {
+  const m = await orig<typeof import("./richMarkdown")>();
+  return {
+    ...m,
+    richPlugins: () => {
+      hook.building?.();
+      return m.richPlugins();
+    },
+  };
+});
+
 /** A TextBridge over plain strings, with a way to change a text "outside". */
 function fakeBridge(texts: Record<string, string>) {
   const listeners = new Map<string, Set<(text: string) => void>>();
@@ -72,7 +88,10 @@ async function viewOf(id = "a"): Promise<EditorView> {
 const settle = () => new Promise((r) => setTimeout(r, 450));
 
 describe("RichEditor", () => {
-  beforeEach(() => views.clear());
+  beforeEach(() => {
+    views.clear();
+    hook.building = null;
+  });
 
   it("opening_does_not_write", async () => {
     const bridge = fakeBridge({ a: "# Hi\n\n* a\n" });
@@ -195,5 +214,112 @@ describe("RichEditor", () => {
     act(() => bridge.outside("a", "# Changed\n"));
     await waitFor(() => expect(va.state.doc.textContent).toBe("Changed"));
     expect(vb.state.doc.textContent).toBe("Second Two");
+  });
+
+  it("outside_change_during_create_is_shown_and_not_reverted", async () => {
+    const bridge = fakeBridge({ a: "# Before\n" });
+    hook.building = () => {
+      hook.building = null;
+      bridge.outside("a", "# After\n");
+    };
+    mount(bridge);
+    const view = await viewOf();
+    await waitFor(() => expect(view.state.doc.textContent).toBe("After"));
+    await act(settle);
+    expect(bridge.replace).not.toHaveBeenCalled();
+    expect(bridge.text("a")).toBe("# After\n");
+  });
+
+  it("altgr_keys_do_nothing_structural", async () => {
+    const bridge = fakeBridge({ a: "Hi\n" });
+    mount(bridge);
+    const view = await viewOf();
+    // AltGr+7 is "{" on a German layout; AltGr+C is "ć" in Polish.
+    for (const [key, code, keyCode] of [
+      ["{", "Digit7", 55],
+      ["[", "Digit8", 56],
+      ["}", "Digit0", 48],
+      ["²", "Digit2", 50],
+      ["ć", "KeyC", 67],
+      ["ź", "KeyX", 88],
+    ] as const) {
+      fireEvent.keyDown(view.dom, {
+        key,
+        code,
+        keyCode,
+        ctrlKey: true,
+        altKey: true,
+      });
+    }
+    expect(view.state.doc.childCount).toBe(1);
+    expect(view.state.doc.firstChild!.type.name).toBe("paragraph");
+    view.state.doc.descendants((n) => {
+      expect(n.marks.map((m) => m.type.name)).toEqual([]);
+    });
+  });
+
+  it("mod_wheel_zooms", async () => {
+    const bridge = fakeBridge({ a: "Hi\n" });
+    const onZoom = vi.fn();
+    mount(bridge, { onZoom });
+    const view = await viewOf();
+    fireEvent.wheel(view.dom, { deltaY: -100, ctrlKey: true });
+    expect(onZoom).toHaveBeenCalledWith(1);
+    fireEvent.wheel(view.dom, { deltaY: 100, ctrlKey: true });
+    expect(onZoom).toHaveBeenLastCalledWith(-1);
+    // A plain wheel just scrolls.
+    fireEvent.wheel(view.dom, { deltaY: 100 });
+    expect(onZoom).toHaveBeenCalledTimes(2);
+  });
+
+  it("a_pending_edit_is_registered_and_flushed_on_request", async () => {
+    const bridge = fakeBridge({ a: "# Hi\n" });
+    type Sync = { pending(): boolean; flush(): void };
+    let sync: Sync | null = null;
+    const off = vi.fn();
+    const register = vi.fn((_id: string, s: Sync) => {
+      sync = s;
+      return off;
+    });
+    const r = mount(bridge, { register });
+    const view = await viewOf();
+    expect(register).toHaveBeenCalledWith("a", expect.anything());
+    expect(sync!.pending()).toBe(false);
+    act(() => view.dispatch(view.state.tr.insertText("Oh ", 1)));
+    expect(sync!.pending()).toBe(true);
+    sync!.flush();
+    expect(sync!.pending()).toBe(false);
+    expect(bridge.replace).toHaveBeenCalledWith("a", "# Oh Hi\n");
+    r.unmount();
+    expect(off).toHaveBeenCalled();
+  });
+
+  it("turning_read_only_keeps_a_pending_edit", async () => {
+    const bridge = fakeBridge({ a: "# Hi\n" });
+    const r = mount(bridge);
+    const view = await viewOf();
+    act(() => view.dispatch(view.state.tr.insertText("Oh ", 1)));
+    r.rerender(
+      <RichEditor {...r.props} readOnly>
+        <Grab id="a" />
+      </RichEditor>,
+    );
+    // Written if the Tab's text still takes it; never silently dropped.
+    await waitFor(() =>
+      expect(bridge.replace).toHaveBeenCalledWith("a", "# Oh Hi\n"),
+    );
+  });
+
+  it("an_outside_change_never_drops_a_pending_edit", async () => {
+    const bridge = fakeBridge({ a: "# Hi\n" });
+    mount(bridge);
+    const view = await viewOf();
+    act(() => view.dispatch(view.state.tr.insertText("Oh ", 1)));
+    act(() => bridge.outside("a", "# Other\n"));
+    // The edit is written (it wins), not cleared.
+    await waitFor(() =>
+      expect(bridge.replace).toHaveBeenCalledWith("a", "# Oh Hi\n"),
+    );
+    expect(view.state.doc.textContent).toBe("Oh Hi");
   });
 });
