@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as storage from "../storage/api";
 import * as files from "../files/api";
 import * as lib from "../library/api";
-import type { Entry } from "../library/api";
+import type { Entry, RootState } from "../library/api";
 import { useWorkspace } from "./useWorkspace";
 import { newTabState } from "../model/workspace";
 import { toSessionFile } from "../model/session";
@@ -815,6 +815,127 @@ describe("useLibrary", () => {
         `${R2}\\x.md`,
       ]),
     );
+  });
+
+  it("choose_root_notices_several_removed_folders_once", async () => {
+    const R2 = "D:\\Other";
+    listings[R2] = [];
+    l.libraryRoot.mockResolvedValue({
+      root: R,
+      available: true,
+      added: [
+        { path: `${R2}\\proj`, available: true },
+        { path: `${R2}\\big`, available: true },
+      ],
+    });
+    l.libraryChoose.mockResolvedValue({
+      root: R2,
+      available: true,
+      added: [],
+      removed: ["proj", "big"],
+    });
+    const { result } = await mount();
+    await act(() => result.current.library.chooseRoot());
+    expect(result.current.notice).toBe(
+      "Removed proj, big from the sidebar: they overlap the new Library folder.",
+    );
+  });
+
+  it("a_stale_root_state_never_overwrites_a_change", async () => {
+    const X = "D:\\Work";
+    listings[X] = [file(`${X}\\n.md`)];
+    const ADDED: RootState = {
+      root: R,
+      available: true,
+      added: [{ path: X, available: true }],
+    };
+    const { result } = await mount();
+    // A focus asks the roots; its answer is slow (a disconnected share).
+    let answerStale!: (rs: RootState) => void;
+    l.libraryRoot.mockImplementation(
+      () => new Promise<RootState>((res) => (answerStale = res)),
+    );
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    // Add folder… runs its dialog meanwhile.
+    let answerAdd!: (rs: RootState) => void;
+    l.libraryAddFolder.mockImplementation(
+      () => new Promise<RootState>((res) => (answerAdd = res)),
+    );
+    let adding!: Promise<void>;
+    act(() => {
+      adding = result.current.library.addFolder();
+    });
+    // The dialog closing gives the focus back: no new ask while it runs.
+    const asked = l.libraryRoot.mock.calls.length;
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(l.libraryRoot.mock.calls.length).toBe(asked);
+    await act(async () => {
+      answerAdd(ADDED);
+      await adding;
+    });
+    // The answer from before the add lands last, and is dropped.
+    await act(async () => {
+      answerStale({ root: R, available: true, added: [] });
+    });
+    expect(result.current.library.added).toEqual(ADDED.added);
+    expect(result.current.library.tree.expanded.has(X)).toBe(true);
+    await waitFor(() =>
+      expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
+        `${X}\\n.md`,
+      ),
+    );
+  });
+
+  it("unplugged_on_focus_keeps_expanded", async () => {
+    const X = "D:\\Work";
+    const XF = `${X}\\n.md`;
+    listings[X] = [file(XF)];
+    const state = (available: boolean): RootState => ({
+      root: R,
+      available: true,
+      added: [{ path: X, available }],
+    });
+    l.libraryRoot.mockResolvedValue(state(true));
+    const { result } = await mount(undefined, [], {
+      ...OPEN,
+      expanded: [PROJ, X],
+    });
+    await waitFor(() =>
+      expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
+        XF,
+      ),
+    );
+    // The drive is unplugged: listing it fails, and Rust reports it missing.
+    delete listings[X];
+    l.libraryRoot.mockResolvedValue(state(false));
+    l.libraryList.mockClear();
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(l.libraryList).toHaveBeenCalledWith(X));
+    await waitFor(() =>
+      expect(result.current.library.added).toEqual(state(false).added),
+    );
+    expect(result.current.library.tree.expanded.has(X)).toBe(true);
+    expect(result.current.library.rows.map((x) => x.entry.path)).not.toContain(
+      XF,
+    );
+    // Plugged in again: it shows expanded, as it was.
+    listings[X] = [file(XF)];
+    l.libraryRoot.mockResolvedValue(state(true));
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() =>
+      expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
+        XF,
+      ),
+    );
+    expect(result.current.library.tree.expanded.has(X)).toBe(true);
   });
 
   it("focus_rechecks_root_state", async () => {
