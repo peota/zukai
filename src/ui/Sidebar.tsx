@@ -497,7 +497,13 @@ function SidebarPanel({
       aria-label="Library sidebar"
       data-z-sidebar=""
       style={{ width }}
-      className="relative flex h-full shrink-0 flex-col border-r border-hairline bg-side px-2 pt-2.5 text-[14px] select-none"
+      // Its empty top edge moves the window, like the tab bar beside it;
+      // on macOS it also clears room for the traffic lights.
+      data-tauri-drag-region=""
+      className={
+        "relative flex h-full shrink-0 flex-col border-r border-hairline bg-side px-2 text-[14px] select-none " +
+        (platform === "mac" ? "pt-11" : "pt-2.5")
+      }
     >
       <label className="mx-0.5 mb-2 flex h-8 shrink-0 items-center gap-2 rounded-[8px] border border-hairline bg-sunken px-2.5 text-[13px] text-faint focus-within:border-accent">
         <SearchIcon />

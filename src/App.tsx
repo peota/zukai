@@ -21,6 +21,7 @@ import { TabPane, useSlots } from "./app/TabPane";
 import { SplitView } from "./ui/SplitView";
 import { SplitDropZone, dropSide } from "./ui/SplitDropZone";
 import type { FormatResult } from "./editor/jsonFormat";
+import { WindowControls } from "./ui/WindowControls";
 import { TabBar } from "./ui/TabBar";
 import { StatusBar } from "./ui/StatusBar";
 import { LanguagePicker } from "./ui/LanguagePicker";
@@ -427,42 +428,48 @@ export default function App() {
         platform={platform}
       />
       <div className="flex h-full min-w-0 flex-1 flex-col" data-z-workspace="">
-        <TabBar
-          tabs={w.state.tabs.map((t) => ({
-            id: t.id,
-            title: t.title,
-            active: t.id === activeId,
-            file: t.file
-              ? { missing: t.file.held === "missing", path: t.file.path }
-              : undefined,
-            locked: w.shadowUnreadable.has(t.id),
-            folder: folders.get(t.id),
-            pinned: t.pinned,
-            kind: t.kind,
-          }))}
-          onActivate={w.activate}
-          onClose={(id) => void w.closeTab(id)}
-          onNew={() => void run({ type: "newTab" })}
-          onMove={w.moveTab}
-          onRename={(id, name) => {
-            // A File renames on disk and may report why it couldn't.
-            if (w.state.tabs.find((t) => t.id === id)?.file) {
-              return w.renameFile(id, name);
-            }
-            void w.rename(id, name);
-          }}
-          onContextMenu={(tabId, x, y) => setTabMenu({ tabId, x, y })}
-          onUnpin={(id) => w.setPinned(id, false)}
-          splits={w.state.splits}
-          onCloseSplit={w.closeSplit}
-          onDragOut={(id, x, y) => setDropZone(sideAt(id, x, y))}
-          onDropOut={(id, x, y) => {
-            const side = sideAt(id, x, y);
-            setDropZone(null);
-            if (side) w.splitWith(activeId, id, side);
-          }}
-          onDragOutEnd={() => setDropZone(null)}
-        />
+        {/* The title bar: tabs, then the window controls (none on macOS). */}
+        <div className="flex shrink-0 bg-chrome" data-tauri-drag-region="">
+          <TabBar
+            // macOS draws its traffic lights over the bar's left end.
+            inset={platform === "mac" && !w.sidebar.open ? 78 : 0}
+            tabs={w.state.tabs.map((t) => ({
+              id: t.id,
+              title: t.title,
+              active: t.id === activeId,
+              file: t.file
+                ? { missing: t.file.held === "missing", path: t.file.path }
+                : undefined,
+              locked: w.shadowUnreadable.has(t.id),
+              folder: folders.get(t.id),
+              pinned: t.pinned,
+              kind: t.kind,
+            }))}
+            onActivate={w.activate}
+            onClose={(id) => void w.closeTab(id)}
+            onNew={() => void run({ type: "newTab" })}
+            onMove={w.moveTab}
+            onRename={(id, name) => {
+              // A File renames on disk and may report why it couldn't.
+              if (w.state.tabs.find((t) => t.id === id)?.file) {
+                return w.renameFile(id, name);
+              }
+              void w.rename(id, name);
+            }}
+            onContextMenu={(tabId, x, y) => setTabMenu({ tabId, x, y })}
+            onUnpin={(id) => w.setPinned(id, false)}
+            splits={w.state.splits}
+            onCloseSplit={w.closeSplit}
+            onDragOut={(id, x, y) => setDropZone(sideAt(id, x, y))}
+            onDropOut={(id, x, y) => {
+              const side = sideAt(id, x, y);
+              setDropZone(null);
+              if (side) w.splitWith(activeId, id, side);
+            }}
+            onDragOutEnd={() => setDropZone(null)}
+          />
+          <WindowControls platform={platform} />
+        </div>
         <main ref={mainRef} className="relative min-h-0 flex-1 bg-editor">
           {dropZone && <SplitDropZone side={dropZone} />}
           {w.ready && (

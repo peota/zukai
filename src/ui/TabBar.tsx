@@ -31,6 +31,8 @@ function iconFor(tab: TabBarItem): IconName {
 }
 
 export interface TabBarProps {
+  /** Left room in px kept clear for the macOS traffic lights. */
+  inset?: number;
   tabs: TabBarItem[];
   onActivate(id: string): void;
   onClose(id: string): void;
@@ -125,6 +127,7 @@ export function TabBar({
   onDragOut,
   onDropOut,
   onDragOutEnd,
+  inset = 0,
 }: TabBarProps) {
   const items = itemsOf(tabs, splits);
   const barRef = useRef<HTMLDivElement>(null);
@@ -287,7 +290,10 @@ export function TabBar({
     <div
       ref={barRef}
       role="tablist"
-      className="z-no-scrollbar flex h-10 shrink-0 items-end gap-0.5 overflow-x-auto overflow-y-hidden bg-chrome px-2 pt-1.5"
+      // The bar's empty space moves the window; a double-click maximizes.
+      data-tauri-drag-region=""
+      style={inset ? { paddingLeft: inset } : undefined}
+      className="z-no-scrollbar flex h-11 min-w-0 flex-1 items-end gap-0.5 overflow-x-auto overflow-y-hidden bg-chrome px-2 pt-2.5"
       onWheel={onWheel}
       onContextMenu={(e) => openMenu(e, null)}
     >
