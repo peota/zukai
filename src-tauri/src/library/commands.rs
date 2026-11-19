@@ -782,7 +782,8 @@ pub const RESYNC_AGE: Duration = Duration::from_secs(30);
 /// The window regained focus: rebuild the index if its build is older than
 /// `RESYNC_AGE` (Windows drops watcher events when its buffer overflows).
 /// Returns whether a rebuild started.
-#[tauri::command]
+/// Async so it never runs on the main thread.
+#[tauri::command(async)]
 pub fn library_resync(app: AppHandle) -> bool {
     let mut rebuilt = app.state::<NameIndex>().rebuild_if_older(RESYNC_AGE);
     for index in app.state::<AddedWatchers>().indexes() {
@@ -857,7 +858,7 @@ fn available_added(g: &Grants) -> Vec<PathBuf> {
 /// start, removed ones stop, unchanged ones keep running. Blocking.
 fn sync_added_watchers(app: &AppHandle, g: &Grants) {
     app.state::<AddedWatchers>()
-        .sync(&available_added(g), &library_sink(app));
+        .sync_with(|| available_added(g), &library_sink(app));
 }
 
 /// Up to `limit` matches for `query`: the first index's (the Library's)
@@ -906,9 +907,8 @@ pub async fn library_search(app: AppHandle, query: String) -> Result<SearchResul
             watch_root(&handle, ticket, root)?;
         }
         let added = handle.state::<AddedWatchers>();
-        let roots = available_added(g);
-        if added.roots() != roots {
-            added.sync(&roots, &library_sink(&handle));
+        if added.roots() != available_added(g) {
+            sync_added_watchers(&handle, g);
         }
         let mut indexes = vec![index.inner().clone()];
         indexes.extend(added.indexes());
