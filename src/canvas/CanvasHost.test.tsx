@@ -339,5 +339,11 @@ describe("CanvasHost", () => {
     });
     expect(fx.keydown).toHaveBeenCalledTimes(4);
     expect(props.onShortcut).toHaveBeenCalledTimes(1);
+    // Zoom keys are Excalidraw's own zoom on a canvas.
+    fireEvent.keyDown(canvas, { key: "=", code: "Equal", ctrlKey: true });
+    fireEvent.keyDown(canvas, { key: "-", code: "Minus", ctrlKey: true });
+    fireEvent.keyDown(canvas, { key: "0", code: "Digit0", ctrlKey: true });
+    expect(fx.keydown).toHaveBeenCalledTimes(7);
+    expect(props.onShortcut).toHaveBeenCalledTimes(1);
   });
 });

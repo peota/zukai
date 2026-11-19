@@ -82,6 +82,42 @@ describe("EditorHost", () => {
     }
   });
 
+  it("shows the text at fontSize, and Mod+wheel asks to zoom", async () => {
+    const onZoom = vi.fn();
+    const { container, rerender } = setup({ fontSize: 18, onZoom });
+    await activeView(container, "text of a");
+    const host = container.querySelector<HTMLElement>("[data-editor-zoom]")!;
+    expect(host.style.getPropertyValue("--z-editor-font-size")).toBe("18px");
+    rerender({ fontSize: 12 });
+    expect(host.style.getPropertyValue("--z-editor-font-size")).toBe("12px");
+
+    const scroller = container.querySelector(".cm-scroller")!;
+    const wheel = (deltaY: number, ctrlKey = true) => {
+      const e = new WheelEvent("wheel", {
+        deltaY,
+        ctrlKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      scroller.dispatchEvent(e);
+      return e;
+    };
+    expect(wheel(-100).defaultPrevented).toBe(true);
+    expect(onZoom).toHaveBeenLastCalledWith(1);
+    wheel(100);
+    expect(onZoom).toHaveBeenLastCalledWith(-1);
+    // A trackpad pinch sends small steps: one zoom per notch's worth.
+    onZoom.mockClear();
+    for (let i = 0; i < 4; i++) wheel(-20);
+    expect(onZoom).not.toHaveBeenCalled();
+    wheel(-20);
+    expect(onZoom).toHaveBeenCalledTimes(1);
+    // A plain wheel scrolls.
+    onZoom.mockClear();
+    expect(wheel(-100, false).defaultPrevented).toBe(false);
+    expect(onZoom).not.toHaveBeenCalled();
+  });
+
   it("creates the active view from loaded text and restores selection", async () => {
     const { container } = setup({
       tabs: [tab("a", { selection: { anchor: 2, head: 4 } }), tab("b")],

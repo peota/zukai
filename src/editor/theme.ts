@@ -13,7 +13,8 @@ const paper = EditorView.theme({
     backgroundColor: "var(--z-editor)",
     color: "var(--z-text)",
     fontFamily: "var(--z-font-mono)",
-    fontSize: "13px",
+    // Set by EditorHost (Mod+wheel, Mod+= / Mod+-).
+    fontSize: "var(--z-editor-font-size, 13px)",
   },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {

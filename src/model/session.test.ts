@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CLOSED_TTL_MS,
+  DEFAULT_FONT_SIZE,
   DEFAULT_SIDEBAR,
+  MAX_FONT_SIZE,
+  MIN_FONT_SIZE,
   type ScratchFile,
   parseSessionFile,
   purgeExpired,
@@ -50,7 +53,24 @@ describe("session file", () => {
       version: 3,
       ...ws,
       sidebar: DEFAULT_SIDEBAR,
+      fontSize: DEFAULT_FONT_SIZE,
     });
+  });
+
+  it("keeps the editor font size, clamped and whole", () => {
+    const at = (fontSize: unknown) =>
+      parseSessionFile(JSON.stringify({ ...toSessionFile(ws), fontSize }))!
+        .fontSize;
+    expect(at(18)).toBe(18);
+    expect(at(17.6)).toBe(18);
+    expect(at(2)).toBe(MIN_FONT_SIZE);
+    expect(at(500)).toBe(MAX_FONT_SIZE);
+    expect(at("big")).toBe(DEFAULT_FONT_SIZE);
+    expect(at(undefined)).toBe(DEFAULT_FONT_SIZE);
+    expect(
+      parseSessionFile(JSON.stringify(toSessionFile(ws, DEFAULT_SIDEBAR, 21)))!
+        .fontSize,
+    ).toBe(21);
   });
 
   it("returns null for bad input", () => {
@@ -174,6 +194,7 @@ describe("restoreWorkspace", () => {
       activeId: "",
       closed: [],
       sidebar: DEFAULT_SIDEBAR,
+      fontSize: DEFAULT_FONT_SIZE,
     };
     const withOrphans = restore(file, ["q"], fresh, 0).state;
     expect(withOrphans.tabs.map((t) => t.id)).toEqual(["q"]);
@@ -261,7 +282,12 @@ describe("session v3", () => {
   it("v1SessionMigratesToV3AllScratchpads", () => {
     const v1 = JSON.stringify({ ...toSessionFile(ws), version: 1 });
     const parsed = parseSessionFile(v1);
-    expect(parsed).toEqual({ version: 3, ...ws, sidebar: DEFAULT_SIDEBAR });
+    expect(parsed).toEqual({
+      version: 3,
+      ...ws,
+      sidebar: DEFAULT_SIDEBAR,
+      fontSize: DEFAULT_FONT_SIZE,
+    });
     expect(parsed?.tabs.every((t) => t.file === undefined)).toBe(true);
   });
 
@@ -277,6 +303,7 @@ describe("session v3", () => {
       version: 3,
       ...w,
       sidebar: DEFAULT_SIDEBAR,
+      fontSize: DEFAULT_FONT_SIZE,
     });
   });
 
@@ -389,7 +416,7 @@ describe("session v3 migration and sidebar", () => {
       closed: [],
     };
     expect(parseSessionFile(JSON.stringify(toSessionFile(w, sidebar)))).toEqual(
-      { version: 3, ...w, sidebar },
+      { version: 3, ...w, sidebar, fontSize: DEFAULT_FONT_SIZE },
     );
   });
 
@@ -491,6 +518,7 @@ describe("restoreWorkspace with grantedPaths", () => {
     const file = {
       version: 3 as const,
       sidebar: DEFAULT_SIDEBAR,
+      fontSize: DEFAULT_FONT_SIZE,
       tabs: [fileTab("f1", "ok"), fileTab("f2", "bad"), newTabState("a")],
       activeId: "f2",
       closed: [
@@ -519,6 +547,7 @@ describe("restoreWorkspace closed File dedupe", () => {
     const file = {
       version: 3 as const,
       sidebar: DEFAULT_SIDEBAR,
+      fontSize: DEFAULT_FONT_SIZE,
       tabs: [newTabState("a")],
       activeId: "a",
       closed: [

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   Compartment,
   EditorSelection,
@@ -93,7 +94,14 @@ export interface EditorHostProps {
   shadowUnreadable?: ReadonlySet<string>;
   /** The outcome of a format request (the app shows a failure). */
   onFormatResult?(r: FormatResult): void;
+  /** The text size in px (13 when unset). */
+  fontSize?: number;
+  /** Mod+wheel over the text: 1 bigger, -1 smaller. */
+  onZoom?(dir: 1 | -1): void;
 }
+
+/** Wheel distance per zoom step: one mouse notch, or a short pinch. */
+const ZOOM_WHEEL_STEP = 100;
 
 interface OpenBar {
   tabId: string;
@@ -659,10 +667,47 @@ export function EditorHost(props: EditorHostProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A new size changes every line's height: re-measure the views.
+  const { fontSize } = props;
+  useEffect(() => {
+    for (const e of views.current.values()) e.view.requestMeasure();
+  }, [fontSize]);
+
+  // Mod+wheel zooms the text; the page itself never zooms. Small deltas
+  // (a trackpad pinch) add up to one step per notch's worth.
+  const outer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = outer.current;
+    if (!el) return;
+    let sum = 0;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      // A wheel in lines or pages counts as whole notches.
+      sum +=
+        e.deltaMode === 0 ? e.deltaY : Math.sign(e.deltaY) * ZOOM_WHEEL_STEP;
+      if (Math.abs(sum) < ZOOM_WHEEL_STEP) return;
+      const dir = sum < 0 ? 1 : -1;
+      sum = 0;
+      latest.current.onZoom?.(dir);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   const showBar =
     bar && bar.tabId === activeId && tabs.some((t) => t.id === bar.tabId);
   return (
-    <div className="relative size-full">
+    <div
+      ref={outer}
+      data-editor-zoom
+      className="relative size-full"
+      style={
+        {
+          "--z-editor-font-size": `${fontSize ?? 13}px`,
+        } as CSSProperties
+      }
+    >
       <div ref={container} className="size-full" />
       <div ref={barBox} className="contents">
         {showBar && (

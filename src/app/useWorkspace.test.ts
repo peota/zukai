@@ -343,3 +343,45 @@ describe("useWorkspace before restore", () => {
     expect(tabIds(result)).toEqual(["a", "b"]);
   });
 });
+
+describe("useWorkspace editor zoom", () => {
+  it("steps the font size on text Tabs, clamps it, and saves it", async () => {
+    const { result } = await mount();
+    expect(result.current.fontSize).toBe(13);
+    await act(() => result.current.run({ type: "zoom", dir: 1 }));
+    await act(() => result.current.run({ type: "zoom", dir: 1 }));
+    expect(result.current.fontSize).toBe(15);
+    await act(() => h.flushAll?.());
+    const writes = m.writeSession.mock.calls;
+    expect(JSON.parse(writes[writes.length - 1][0]).fontSize).toBe(15);
+    await act(() => result.current.run({ type: "zoom", dir: 0 }));
+    expect(result.current.fontSize).toBe(13);
+    for (let i = 0; i < 20; i++) {
+      await act(() => result.current.run({ type: "zoom", dir: -1 }));
+    }
+    expect(result.current.fontSize).toBe(8);
+    act(() => result.current.zoomEditor(1));
+    expect(result.current.fontSize).toBe(9);
+  });
+
+  it("leaves canvas and image zoom to their own Tabs", async () => {
+    const { result } = await mount();
+    await act(() => result.current.run({ type: "newCanvas" }));
+    await act(() => result.current.run({ type: "zoom", dir: 1 }));
+    expect(result.current.fontSize).toBe(13);
+  });
+
+  it("restores the saved font size", async () => {
+    m.readSession.mockResolvedValue(
+      JSON.stringify({
+        version: 3,
+        tabs: [],
+        activeId: "a",
+        closed: [],
+        fontSize: 20,
+      }),
+    );
+    const { result } = await mount();
+    expect(result.current.fontSize).toBe(20);
+  });
+});

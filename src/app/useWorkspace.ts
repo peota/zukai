@@ -33,7 +33,9 @@ import type { FindRequest } from "../find/findExtension";
 import * as ws from "../model/workspace";
 import { deriveTitle } from "../model/title";
 import {
+  clampFontSize,
   clampSidebarWidth,
+  DEFAULT_FONT_SIZE,
   defaultSidebar,
   toSessionFile,
 } from "../model/session";
@@ -120,6 +122,10 @@ export interface Workspace extends FilesApi {
   focusSidebar(): void;
   /** A new Canvas Scratchpad (Mod+Shift+N). */
   newCanvas(): void;
+  /** The editor's text size in px, for every text Tab; saved in the Session. */
+  fontSize: number;
+  /** 1 bigger, -1 smaller, 0 back to the default (Mod+wheel, Mod+=/-/0). */
+  zoomEditor(dir: 1 | -1 | 0): void;
 }
 
 export function useWorkspace(): Workspace {
@@ -129,6 +135,8 @@ export function useWorkspace(): Workspace {
   const [grantsUnchecked, setGrantsUnchecked] = useState(false);
   const [sidebar, setSidebar] = useState<SidebarState>(defaultSidebar);
   const sidebarRef = useRef(sidebar);
+  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  const fontSizeRef = useRef(fontSize);
   // Contents live in a map: async commands need the latest, and typing must
   // not re-render the App.
   const stateRef = useRef(state);
@@ -151,7 +159,13 @@ export function useWorkspace(): Workspace {
   const scheduleSession = useCallback(() => {
     if (sessionSuspended.current) return;
     sessionSaver.schedule(SESSION_ID, () =>
-      JSON.stringify(toSessionFile(stateRef.current, sidebarRef.current)),
+      JSON.stringify(
+        toSessionFile(
+          stateRef.current,
+          sidebarRef.current,
+          fontSizeRef.current,
+        ),
+      ),
     );
   }, []);
 
@@ -331,6 +345,14 @@ export function useWorkspace(): Workspace {
     [patchSidebar],
   );
 
+  const zoomEditor = useCallback((dir: 1 | -1 | 0) => {
+    const next =
+      dir === 0 ? DEFAULT_FONT_SIZE : clampFontSize(fontSizeRef.current + dir);
+    if (next === fontSizeRef.current) return;
+    fontSizeRef.current = next;
+    setFontSize(next);
+  }, []);
+
   const focusSidebar = useCallback(() => {
     patchSidebar({ open: true });
     // After the (possibly just opened) sidebar has rendered.
@@ -499,6 +521,12 @@ export function useWorkspace(): Workspace {
           return focusSidebar();
         case "newCanvas":
           return newCanvas();
+        case "zoom":
+          // A canvas or an image zooms itself (Excalidraw, the viewer).
+          if (s.tabs.find((t) => t.id === s.activeId)?.kind === "text") {
+            zoomEditor(cmd.dir);
+          }
+          return;
       }
     },
     [
@@ -513,6 +541,7 @@ export function useWorkspace(): Workspace {
       save,
       saveAs,
       toggleSidebar,
+      zoomEditor,
     ],
   );
 
@@ -531,6 +560,10 @@ export function useWorkspace(): Workspace {
             onSidebar: (restored) => {
               sidebarRef.current = restored;
               setSidebar(restored);
+            },
+            onFontSize: (px) => {
+              fontSizeRef.current = px;
+              setFontSize(px);
             },
           }),
         );
@@ -610,7 +643,7 @@ export function useWorkspace(): Workspace {
   // Persist the Session on every state change (debounced by the saver).
   useEffect(() => {
     if (ready) scheduleSession();
-  }, [ready, state, sidebar, scheduleSession]);
+  }, [ready, state, sidebar, fontSize, scheduleSession]);
 
   // The active Tab's text is read lazily when it is first shown.
   useEffect(() => {
@@ -643,5 +676,7 @@ export function useWorkspace(): Workspace {
     toggleSidebar,
     focusSidebar,
     newCanvas,
+    fontSize,
+    zoomEditor,
   };
 }
