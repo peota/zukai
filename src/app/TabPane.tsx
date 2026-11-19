@@ -1,5 +1,6 @@
-import { useCallback, useState } from "react";
-import type { ImageInfo, TabState } from "../model/types";
+import { Suspense, lazy, useCallback, useState } from "react";
+import type { ImageInfo, MarkdownMode, TabState } from "../model/types";
+import type { TextBridge } from "../editor/EditorHost";
 import { FileBar, type FileBarProps } from "../ui/FileBar";
 import { CanvasHost, type CanvasHostProps } from "../canvas/CanvasHost";
 import { ImageHost, type ImageHostProps } from "../image/ImageHost";
@@ -8,6 +9,9 @@ import {
   type MarkdownPreviewProps,
 } from "../markdown/MarkdownPreview";
 import { SplitHandle } from "../markdown/SplitHandle";
+
+/** Milkdown stays out of the main bundle until a note is shown in Rich. */
+const RichEditor = lazy(() => import("../rich/RichEditor"));
 
 export interface TabPaneProps
   extends
@@ -27,6 +31,16 @@ export interface TabPaneProps
   onPreviewSplit(r: number): void;
   /** The image's size and format, for the reload `seq` it was read at. */
   onImageInfo(id: string, seq: number, info: ImageInfo | null): void;
+  /** A Markdown Tab's editor (null for any other Tab). */
+  mode: MarkdownMode | null;
+  /** How the rich editor reaches the Tab's text (null until it exists). */
+  bridge: TextBridge | null;
+  /** The editor's text size in px. */
+  fontSize: number;
+  /** The rich editor couldn't show the Tab (it goes to Markdown). */
+  onRichFallback(notice: string): void;
+  /** Bump to give the keyboard back to the editor. */
+  focusSignal?: number;
 }
 
 /**
@@ -60,8 +74,9 @@ export function TabPane(p: TabPaneProps) {
   const id = tab.id;
   const isText = tab.kind === "text";
   const isMarkdown = isText && tab.language === "markdown";
+  const rich = isMarkdown && p.mode === "rich";
   /** A Markdown Tab's preview; any other Tab is just edited. */
-  const previewMode = (isMarkdown && tab.preview) || "edit";
+  const previewMode = (isMarkdown && !rich && tab.preview) || "edit";
   const slot = useCallback(
     (el: HTMLElement | null) => slotRef(id, el),
     [slotRef, id],
@@ -97,7 +112,7 @@ export function TabPane(p: TabPaneProps) {
             <div
               ref={slot}
               className={
-                previewMode === "only"
+                rich || previewMode === "only"
                   ? "hidden"
                   : previewMode === "split"
                     ? "relative size-full min-w-0 shrink-0"
@@ -109,6 +124,25 @@ export function TabPane(p: TabPaneProps) {
                   : undefined
               }
             />
+            {rich && (
+              <Suspense fallback={<div className="size-full bg-editor" />}>
+                {p.bridge ? (
+                  <RichEditor
+                    key={id}
+                    id={id}
+                    bridge={p.bridge}
+                    readOnly={p.isReadOnly(id)}
+                    focused={focused}
+                    fontSize={p.fontSize}
+                    onOpenLink={p.onOpenLink}
+                    onFallback={p.onRichFallback}
+                    focusSignal={p.focusSignal}
+                  />
+                ) : (
+                  <div className="size-full bg-editor" />
+                )}
+              </Suspense>
+            )}
             {previewMode === "split" && (
               <SplitHandle ratio={p.previewSplit} onRatio={p.onPreviewSplit} />
             )}

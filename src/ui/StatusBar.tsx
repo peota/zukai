@@ -4,6 +4,7 @@ import type {
   FileFormat,
   ImageInfo,
   LanguageId,
+  MarkdownMode,
   PreviewMode,
 } from "../model/types";
 import type { SaveStatus } from "../storage/autosave";
@@ -52,6 +53,15 @@ export interface StatusBarProps {
     onChange(mode: "edit" | PreviewMode): void;
     hint?: string;
   };
+  /**
+   * A Markdown Tab's editor switch (Rich, Markdown); `hint` is its shortcut.
+   * Rich has no preview and no line and column.
+   */
+  markdownMode?: {
+    mode: MarkdownMode;
+    onChange(mode: MarkdownMode): void;
+    hint?: string;
+  };
   /** The gear at the far left; its tooltip shows `settingsHint`. */
   onSettings?(): void;
   settingsHint?: string;
@@ -96,7 +106,9 @@ export function StatusBar({
   onSettings,
   settingsHint,
   preview,
+  markdownMode,
 }: StatusBarProps) {
+  const rich = markdownMode?.mode === "rich";
   const [formatAt, setFormatAt] = useState<DOMRect | null>(null);
   const closeFormat = useCallback(() => {
     setFormatAt(null);
@@ -132,7 +144,7 @@ export function StatusBar({
           </svg>
         </button>
       )}
-      {kindLabel === undefined ? (
+      {kindLabel === undefined && !rich ? (
         <span>{file?.readonly ? "Read-only" : `Ln ${line}, Col ${col}`}</span>
       ) : (
         file?.readonly && <span>Read-only</span>
@@ -157,7 +169,8 @@ export function StatusBar({
         <span className="ml-auto px-1.5 py-0.5">{kindLabel}</span>
       ) : (
         <div className="ml-auto flex items-center gap-1.5">
-          {preview && <PreviewSwitch {...preview} />}
+          {markdownMode && <ModeSwitch {...markdownMode} />}
+          {preview && !rich && <PreviewSwitch {...preview} />}
           {showFormat && (
             <Chip
               anchor="format"
@@ -258,6 +271,71 @@ function Chip({
   );
 }
 
+const MARKDOWN_MODES: { id: MarkdownMode; label: string }[] = [
+  { id: "rich", label: "Rich" },
+  { id: "markdown", label: "Markdown" },
+];
+
+/** The rich editor or the Markdown source, for a Markdown Tab. */
+function ModeSwitch({
+  mode,
+  onChange,
+  hint,
+}: NonNullable<StatusBarProps["markdownMode"]>) {
+  return (
+    <Radios
+      label="Markdown editor"
+      hint={hint}
+      value={mode}
+      options={MARKDOWN_MODES}
+      onChange={onChange}
+    />
+  );
+}
+
+/** A row of chips, one of them chosen. */
+function Radios<T extends string>({
+  label,
+  hint,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: T;
+  options: { id: T; label: string }[];
+  onChange(v: T): void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      title={hint ? `${label} (${hint})` : label}
+      className="flex items-center rounded-[4px]"
+    >
+      {options.map((m) => (
+        <button
+          key={m.id}
+          type="button"
+          role="radio"
+          tabIndex={-1}
+          aria-checked={value === m.id}
+          onClick={() => onChange(m.id)}
+          className={
+            "rounded-[4px] px-1.5 py-0.5 " +
+            (value === m.id
+              ? "bg-surface text-text shadow-float"
+              : "hover:bg-surface hover:text-muted")
+          }
+        >
+          {m.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const PREVIEW_MODES: { id: "edit" | PreviewMode; label: string }[] = [
   { id: "edit", label: "Edit" },
   { id: "split", label: "Split" },
@@ -271,30 +349,12 @@ function PreviewSwitch({
   hint,
 }: NonNullable<StatusBarProps["preview"]>) {
   return (
-    <div
-      role="radiogroup"
-      aria-label="Markdown preview"
-      title={hint ? `Markdown preview (${hint})` : "Markdown preview"}
-      className="flex items-center rounded-[4px]"
-    >
-      {PREVIEW_MODES.map((m) => (
-        <button
-          key={m.id}
-          type="button"
-          role="radio"
-          tabIndex={-1}
-          aria-checked={mode === m.id}
-          onClick={() => onChange(m.id)}
-          className={
-            "rounded-[4px] px-1.5 py-0.5 " +
-            (mode === m.id
-              ? "bg-surface text-text shadow-float"
-              : "hover:bg-surface hover:text-muted")
-          }
-        >
-          {m.label}
-        </button>
-      ))}
-    </div>
+    <Radios
+      label="Markdown preview"
+      hint={hint}
+      value={mode}
+      options={PREVIEW_MODES}
+      onChange={onChange}
+    />
   );
 }

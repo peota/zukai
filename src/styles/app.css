@@ -283,3 +283,43 @@ body {
   color: var(--z-faint);
   font-style: italic;
 }
+
+/* The rich editor: the preview's look (.z-md), editable. */
+.z-rich .milkdown,
+.z-rich .ProseMirror {
+  min-height: 100%;
+}
+.z-rich .ProseMirror {
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  caret-color: var(--z-text);
+}
+.z-rich .ProseMirror > * {
+  max-width: 760px;
+}
+.z-rich .ProseMirror > :first-child {
+  margin-top: 0;
+}
+.z-rich .ProseMirror li > p {
+  margin: 0;
+}
+.z-rich .ProseMirror li[data-item-type="task"] {
+  list-style: none;
+  position: relative;
+}
+.z-rich .ProseMirror li[data-item-type="task"]::before {
+  content: "☐";
+  position: absolute;
+  left: -1.3em;
+  color: var(--z-muted);
+}
+.z-rich .ProseMirror li[data-item-type="task"][data-checked="true"]::before {
+  content: "☑";
+  color: var(--z-accent);
+}
+.z-rich .z-rich-raw {
+  white-space: pre-wrap;
+  font-family: var(--z-font-mono);
+  font-size: 0.86em;
+}

@@ -27,6 +27,19 @@ export function blocksBrowserKey(
 /** The native context menu stays only where text is edited. */
 export function allowsContextMenu(t: EventTarget | null): boolean {
   return (
-    t instanceof Element && t.closest("input, textarea, .cm-editor") !== null
+    t instanceof Element &&
+    t.closest("input, textarea, .cm-editor, [data-rich-editor]") !== null
+  );
+}
+
+/**
+ * A key the rich editor already used (Mod+B is bold there, not the
+ * sidebar): no app Command runs for it.
+ */
+export function richHandled(e: Pick<Event, "defaultPrevented" | "target">) {
+  return (
+    e.defaultPrevented &&
+    e.target instanceof Element &&
+    e.target.closest("[data-rich-editor]") !== null
   );
 }

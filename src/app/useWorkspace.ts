@@ -43,7 +43,13 @@ import {
 } from "../model/session";
 import { focusSidebar as focusSidebarElement } from "../ui/Sidebar";
 import { DEFAULT_SETTINGS, type Settings } from "../model/settings";
-import type { PreviewMode } from "../model/types";
+import type { MarkdownMode, PreviewMode } from "../model/types";
+import {
+  TOO_LARGE_NOTICE,
+  effectiveMode,
+  tooLargeForRich,
+} from "../model/markdownMode";
+import type { TextBridge } from "../editor/EditorHost";
 import { useLibrary, type LibraryApi } from "./useLibrary";
 import {
   closeScratchpad,
@@ -139,6 +145,17 @@ export interface Workspace extends FilesApi {
   setSettings(patch: Partial<Settings>): void;
   /** A Markdown Tab's preview: beside the editor, alone, or off (null). */
   setPreview(id: string, mode: PreviewMode | null): void;
+  /**
+   * A Markdown Tab's editor. Rich is refused (with a notice) for a note too
+   * large for it; leaving Rich starts the plain editor's undo afresh.
+   */
+  setMarkdownMode(id: string, mode: MarkdownMode): Promise<void>;
+  /** The rich editor couldn't show the Tab: Markdown, with `notice`. */
+  richFallback(id: string, notice: string): void;
+  /** The editor host's text bridge, once it has handed it over. */
+  bridge: TextBridge | null;
+  /** Give to the editor host (stable). */
+  bridgeRef(b: TextBridge | null): void;
   /** Joins Tab `b` to Tab `a` in a Split (a no-op if either is in one). */
   splitWith(a: string, b: string, orientation?: SplitOrientation): void;
   /** Ends the Split holding `id`; both Tabs stay open. */
@@ -310,7 +327,20 @@ export function useWorkspace(): Workspace {
     closing,
   });
   const { internal, ...filesApi } = files;
-  const { loadContent, updateTab, afterRestore, closeFile } = internal;
+  const { loadContent, afterRestore, closeFile } = internal;
+  const patchTab = internal.updateTab;
+  /** A new Language decides the Markdown editor afresh (the default). */
+  const updateTab = useCallback(
+    (id: string, patch: Partial<TabState>) => {
+      const tab = stateRef.current.tabs.find((t) => t.id === id);
+      const relanguage =
+        patch.language !== undefined &&
+        tab?.language !== patch.language &&
+        !("markdownMode" in patch);
+      patchTab(id, relanguage ? { ...patch, markdownMode: undefined } : patch);
+    },
+    [patchTab],
+  );
   const { saveTo, rewriteTabPaths, recheckTabs } = internal;
   const { refuseEdit } = internal;
   const { renameFile, reopenEntry, pickAndOpen, save, saveAs } = files;
@@ -441,6 +471,55 @@ export function useWorkspace(): Workspace {
         ws.updateTab(stateRef.current, id, { preview: mode ?? undefined }),
       ),
     [commit],
+  );
+
+  const [bridge, setBridge] = useState<TextBridge | null>(null);
+  const bridgeRef = useRef<TextBridge | null>(null);
+  const takeBridge = useCallback((b: TextBridge | null) => {
+    bridgeRef.current = b;
+    setBridge(b);
+  }, []);
+
+  /** The Tab's text, for the size check (loaded if it isn't yet). */
+  const textOf = useCallback(
+    async (id: string) => contents.get(id) ?? (await loadContent(id)),
+    [contents, loadContent],
+  );
+
+  const setMarkdownMode = useCallback(
+    async (id: string, mode: MarkdownMode) => {
+      const tab = stateRef.current.tabs.find((t) => t.id === id);
+      if (!tab) return;
+      const was = effectiveMode(tab, settingsRef.current);
+      if (was === null || was === mode) return;
+      if (mode === "rich") {
+        let text: string;
+        try {
+          text = await textOf(id);
+        } catch (err) {
+          logError("load for rich")(err);
+          return;
+        }
+        if (tooLargeForRich(text)) {
+          showNotice(TOO_LARGE_NOTICE);
+          return;
+        }
+      } else {
+        // Rich wrote outside the plain editor's history: its old entries no
+        // longer line up.
+        bridgeRef.current?.clearHistory(id);
+      }
+      commit(ws.updateTab(stateRef.current, id, { markdownMode: mode }));
+    },
+    [commit, showNotice, textOf],
+  );
+
+  const richFallback = useCallback(
+    (id: string, notice: string) => {
+      commit(ws.updateTab(stateRef.current, id, { markdownMode: "markdown" }));
+      showNotice(notice);
+    },
+    [commit, showNotice],
   );
 
   const setSettings = useCallback((patch: Partial<Settings>) => {
@@ -612,9 +691,15 @@ export function useWorkspace(): Workspace {
           await emit(BEFORE_EXIT_EVENT);
           return;
         case "find":
-        case "replace":
+        case "replace": {
+          // The find bar is the plain editor's.
+          const tab = s.tabs.find((t) => t.id === s.activeId);
+          if (tab && effectiveMode(tab, settingsRef.current) === "rich") {
+            await setMarkdownMode(tab.id, "markdown");
+          }
           setFindRequest((r) => ({ mode: cmd.type, seq: (r?.seq ?? 0) + 1 }));
           return;
+        }
         case "open":
           return pickAndOpen();
         case "save":
@@ -643,9 +728,12 @@ export function useWorkspace(): Workspace {
           }
           return;
         }
-        case "toggleRichMarkdown":
-          // Task 4 switches the Markdown editor here.
-          return;
+        case "toggleRichMarkdown": {
+          const tab = s.tabs.find((t) => t.id === s.activeId);
+          const mode = tab && effectiveMode(tab, settingsRef.current);
+          if (!tab || !mode) return;
+          return setMarkdownMode(tab.id, mode === "rich" ? "markdown" : "rich");
+        }
         case "zoom":
           // A canvas or an image zooms itself (Excalidraw, the viewer).
           if (s.tabs.find((t) => t.id === s.activeId)?.kind === "text") {
@@ -668,6 +756,7 @@ export function useWorkspace(): Workspace {
       toggleSidebar,
       zoomEditor,
       setPreview,
+      setMarkdownMode,
       splitWith,
       unsplit,
     ],
@@ -789,6 +878,40 @@ export function useWorkspace(): Workspace {
     }
   }, [ready, state.activeId, loadContent]);
 
+  // A Markdown Tab's editor is decided the first time it's shown, so the
+  // Settings default no longer changes it after that.
+  const deciding = useRef(new Set<string>());
+  useEffect(() => {
+    if (!ready) return;
+    const split = sp.splitOf(state, state.activeId);
+    const shown = split ? [split.a, split.b] : [state.activeId];
+    for (const id of shown) {
+      const tab = state.tabs.find((t) => t.id === id);
+      if (!tab || tab.markdownMode || deciding.current.has(id)) continue;
+      const mode = effectiveMode(tab, settingsRef.current);
+      if (!mode) continue;
+      deciding.current.add(id);
+      void (async () => {
+        let decided = mode;
+        if (mode === "rich" && tooLargeForRich(await textOf(id))) {
+          decided = "markdown";
+          showNotice(TOO_LARGE_NOTICE);
+        }
+        const now = stateRef.current.tabs.find((t) => t.id === id);
+        // Not if it was decided meanwhile, or is no longer Markdown.
+        if (
+          now &&
+          !now.markdownMode &&
+          effectiveMode(now, settingsRef.current)
+        ) {
+          commit(ws.updateTab(stateRef.current, id, { markdownMode: decided }));
+        }
+      })()
+        .catch(logError("decide markdown mode"))
+        .finally(() => deciding.current.delete(id));
+    }
+  }, [ready, state, commit, showNotice, textOf]);
+
   const active = state.tabs.find((t) => t.id === state.activeId);
   useWindowTitle(ready && active ? active.title : null);
 
@@ -820,6 +943,10 @@ export function useWorkspace(): Workspace {
     settings,
     setSettings,
     setPreview,
+    setMarkdownMode,
+    richFallback,
+    bridge,
+    bridgeRef: takeBridge,
     splitWith,
     unsplit,
     swapSplit,

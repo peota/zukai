@@ -3,6 +3,7 @@ import {
   allowsContextMenu,
   blocksBrowserKey,
   isEditorTarget,
+  richHandled,
 } from "./browserGuard";
 import type { Platform } from "./shortcuts";
 
@@ -85,6 +86,21 @@ describe("DOM targets", () => {
     expect(allowsContextMenu(root.querySelector("#t"))).toBe(true);
     expect(allowsContextMenu(root.querySelector("#tab"))).toBe(false);
     expect(allowsContextMenu(document)).toBe(false);
+    root.remove();
+  });
+  it("a key the rich editor used is its own", () => {
+    const root = make(
+      '<div data-rich-editor><div class="ProseMirror" id="r"></div></div>' +
+        '<div id="o"></div>',
+    );
+    const at = (id: string, defaultPrevented: boolean) => ({
+      target: root.querySelector(id),
+      defaultPrevented,
+    });
+    expect(richHandled(at("#r", true))).toBe(true);
+    expect(richHandled(at("#r", false))).toBe(false);
+    expect(richHandled(at("#o", true))).toBe(false);
+    expect(allowsContextMenu(root.querySelector("#r"))).toBe(true);
     root.remove();
   });
 });

@@ -12,6 +12,9 @@ import type { SplitOrientation } from "./model/types";
 
 const h = vi.hoisted(() => ({
   flushAll: null as null | (() => Promise<void>),
+  /** The text the mocked editor host's bridge holds, by Tab id. */
+  texts: {} as Record<string, string>,
+  clearHistory: [] as string[],
 }));
 
 vi.mock("./app/shortcuts", async (orig) => ({
@@ -23,8 +26,25 @@ vi.mock("./app/shortcuts", async (orig) => ({
 // shown Tab's view sits in the slot App gives it.
 vi.mock("./editor/EditorHost", async () => {
   const { createPortal } = await import("react-dom");
+  const { useLayoutEffect, useState } = await import("react");
   return {
     EditorHost: (p: EditorHostProps) => {
+      // A bridge over h.texts, for the rich editor.
+      const [bridge] = useState(() => ({
+        text: (id: string) => h.texts[id] ?? null,
+        replace: (id: string, text: string) => {
+          h.texts[id] = text;
+        },
+        onOutsideChange: () => () => {},
+        clearHistory: (id: string) => void h.clearHistory.push(id),
+        readOnly: () => false,
+        ready: async () => {},
+      }));
+      const { bridgeRef } = p;
+      useLayoutEffect(() => {
+        bridgeRef?.(bridge);
+        return () => bridgeRef?.(null);
+      }, [bridgeRef, bridge]);
       const ids = new Set(p.shown ?? []);
       if (p.activeId) ids.add(p.activeId);
       return [...ids].map((id) => {
@@ -122,6 +142,8 @@ const R = "C:\\L";
 
 beforeEach(() => {
   vi.resetAllMocks();
+  h.texts = {};
+  h.clearHistory = [];
   Element.prototype.scrollIntoView = vi.fn();
   s.listScratchpads.mockResolvedValue([{ id: "a", ext: "txt" }]);
   s.listClosedScratchpads.mockResolvedValue([]);
@@ -321,6 +343,7 @@ describe("App", () => {
               title: "Hello",
               language: "markdown",
               languagePicked: true,
+              markdownMode: "markdown",
             },
           ],
           activeId: "a",
@@ -369,6 +392,93 @@ describe("App", () => {
       r.getByRole("article", { name: "Markdown preview" }),
     ).toBeInTheDocument();
   });
+  it("a picked Markdown note opens in Rich, and the switch and keys work", async () => {
+    s.readScratchpad.mockResolvedValue("# Hello");
+    h.texts.a = "# Hello";
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile({
+          tabs: [
+            {
+              ...newTabState("a"),
+              title: "Hello",
+              language: "markdown",
+              languagePicked: true,
+            },
+          ],
+          activeId: "a",
+          closed: [],
+        }),
+      ),
+    );
+    const r = render(<App />);
+    const rich = await waitFor(
+      () => {
+        const el = r.container.querySelector<HTMLElement>(".ProseMirror");
+        expect(el?.textContent).toBe("Hello");
+        return el!;
+      },
+      { timeout: 5000 },
+    );
+    // The plain editor's slot is hidden; there's no preview switch.
+    expect(r.getByTestId("editor").closest(".hidden")).not.toBeNull();
+    expect(r.getByRole("radio", { name: "Rich" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(
+      r.queryByRole("radiogroup", { name: "Markdown preview" }),
+    ).toBeNull();
+
+    // Mod+B in the rich editor is bold there, not the sidebar.
+    const root = r.container.firstElementChild as HTMLElement;
+    act(() => {
+      fireEvent.keyDown(rich, { key: "b", code: "KeyB", ctrlKey: true });
+    });
+    expect(root.querySelector("[data-z-sidebar]")).toBeNull();
+
+    // Ctrl+Shift+M: back to the Markdown source, with a fresh undo.
+    act(() => {
+      fireEvent.keyDown(rich, {
+        key: "M",
+        code: "KeyM",
+        ctrlKey: true,
+        shiftKey: true,
+      });
+    });
+    await waitFor(() =>
+      expect(r.getByRole("radio", { name: "Markdown" })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      ),
+    );
+    expect(h.clearHistory).toEqual(["a"]);
+    expect(r.getByTestId("editor").closest(".hidden")).toBeNull();
+    expect(r.container.querySelector(".ProseMirror")).toBeNull();
+    expect(
+      r.getByRole("radiogroup", { name: "Markdown preview" }),
+    ).toBeInTheDocument();
+
+    // The status bar switch goes back to Rich; Ctrl+F leaves it for find.
+    fireEvent.click(r.getByRole("radio", { name: "Rich" }));
+    await waitFor(
+      () => expect(r.container.querySelector(".ProseMirror")).not.toBeNull(),
+      { timeout: 5000 },
+    );
+    act(() => {
+      fireEvent.keyDown(window, { key: "f", code: "KeyF", ctrlKey: true });
+    });
+    await waitFor(() =>
+      expect(r.getByRole("radio", { name: "Markdown" })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      ),
+    );
+    // Nothing was written: the note is as it was.
+    expect(h.texts.a).toBe("# Hello");
+    expect(s.writeScratchpad).not.toHaveBeenCalled();
+  });
+
   /** A Session with a text Tab "t" and a canvas "c" in one Split. */
   const splitSession = (orientation: SplitOrientation = "row") => {
     s.listScratchpads.mockResolvedValue([
