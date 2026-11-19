@@ -156,6 +156,28 @@ describe("richMarkdown", () => {
     expect(await canKeep(meta)).toBe(false);
   });
 
+  it("source_other_tools_read_is_not_rewritten", async () => {
+    // Wikilinks, tags and entities mean something to other tools (and an
+    // entity can stand for an invisible character): a round trip that
+    // escapes or decodes them would change the note, so it stays Markdown.
+    expect(await canKeep("See [[My Note]] too.")).toBe(false);
+    expect(await canKeep("#project\n\nnotes")).toBe(false);
+    expect(await canKeep("- [ ] #todo\n")).toBe(false);
+    expect(await canKeep("a&nbsp;b")).toBe(false);
+    expect(await canKeep("&lt;div&gt;")).toBe(false);
+    expect(await canKeep("caf&#233; and &#xA0;")).toBe(false);
+    // Other escapes are formatting.
+    expect(await canKeep("2 * 3")).toBe(true);
+    expect(await canKeep("[not a link]")).toBe(true);
+    expect(await canKeep("see https://example.com")).toBe(true);
+    expect(await canKeep("a # b, AT&T")).toBe(true);
+    // Code is exempt: it's kept as written.
+    expect(await canKeep("`&nbsp; [[x]]`")).toBe(true);
+    expect(
+      await canKeep("```\n&nbsp; &lt;\n#x\n[[y]]\n```\n\n    &amp; [[z]]"),
+    ).toBe(true);
+  });
+
   it("pasted_html_serializes_cleanly", async () => {
     await withEditor("", (editor) => {
       const html = [
