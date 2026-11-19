@@ -120,7 +120,10 @@ const rawBlockSchema = $nodeSchema("zukai_raw", () => ({
   marks: "",
   code: true,
   defining: true,
-  attrs: { kind: { default: "html", validate: "string" } },
+  // Required (no default): ProseMirror never picks a node type with a
+  // required attribute as the default block, so Enter, an empty document and
+  // the like make paragraphs; a raw block only comes from parsing.
+  attrs: { kind: { validate: "string" } },
   parseDOM: [
     {
       tag: "pre[data-raw]",

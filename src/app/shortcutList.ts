@@ -115,6 +115,20 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
     keys: [["Mod", "Shift", "M"]],
     command: "toggleRichMarkdown",
   },
+  // The rich editor's own keys (Mod+B is the sidebar toggle elsewhere).
+  { group: "Editing", action: "Bold (rich editor)", keys: [["Mod", "B"]] },
+  { group: "Editing", action: "Italic (rich editor)", keys: [["Mod", "I"]] },
+  {
+    group: "Editing",
+    action: "Strikethrough (rich editor)",
+    keys: [["Mod", "Shift", "X"]],
+  },
+  {
+    group: "Editing",
+    action: "Inline code (rich editor)",
+    keys: [["Mod", "E"]],
+  },
+  { group: "Editing", action: "Link (rich editor)", keys: [["Mod", "K"]] },
   { group: "Find", action: "Find", keys: [["Mod", "F"]], command: "find" },
   {
     group: "Find",

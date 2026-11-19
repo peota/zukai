@@ -56,6 +56,31 @@ describe("the shortcut list", () => {
     });
   });
 
+  it("lists the rich editor's keys", () => {
+    const rich = SHORTCUTS.filter((s) => s.action.endsWith("(rich editor)"));
+    expect(rich.map((s) => [s.action, s.keys])).toEqual([
+      ["Bold (rich editor)", [["Mod", "B"]]],
+      ["Italic (rich editor)", [["Mod", "I"]]],
+      ["Strikethrough (rich editor)", [["Mod", "Shift", "X"]]],
+      ["Inline code (rich editor)", [["Mod", "E"]]],
+      ["Link (rich editor)", [["Mod", "K"]]],
+    ]);
+    for (const s of rich) {
+      expect(s.group).toBe("Editing");
+      expect(s.command).toBeUndefined();
+    }
+    // Only Mod+B is shared: the sidebar toggle outside the rich editor.
+    const key = (k: string[]) => k.join("+");
+    for (const s of rich) {
+      const others = SHORTCUTS.filter(
+        (o) => o !== s && o.keys.some((k) => key(k) === key(s.keys[0])),
+      ).map((o) => o.action);
+      expect(others).toEqual(
+        key(s.keys[0]) === "Mod+B" ? ["Show / hide sidebar"] : [],
+      );
+    }
+  });
+
   it("formats keys per platform", () => {
     expect(formatKeys(["Mod", "Shift", "T"], "windows")).toBe("Ctrl+Shift+T");
     expect(formatKeys(["Mod", "Shift", "T"], "mac")).toBe("⇧⌘T");
