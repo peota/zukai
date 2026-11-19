@@ -35,6 +35,10 @@ export interface FileInfo {
   format: FileFormat;
   fingerprint: Fingerprint | null;
   held: HeldReason | null;
+  /** The Tab's text or format isn't in the File; its text is in its shadow. */
+  unsaved?: true;
+  /** The File's format on disk; present only while a Convert is unsaved. */
+  diskFormat?: FileFormat;
 }
 
 export interface SidebarState {

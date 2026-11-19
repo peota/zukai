@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pathKey } from "./api";
-import { decide, onWriteOutcome } from "./fileState";
+import { decide, inShadow, onWriteOutcome } from "./fileState";
 import type { FileInfo, Fingerprint } from "../model/types";
 
 const fp = (hash: string): Fingerprint => ({ mtimeMs: 1, size: 1, hash });
@@ -119,5 +119,36 @@ describe("pathKey", () => {
     expect(pathKey("C:/A.TXT", "windows")).toBe("c:/a.txt");
     expect(pathKey("/A", "mac")).toBe("/a");
     expect(pathKey("/A", "other")).toBe("/A");
+  });
+});
+
+describe("inShadow", () => {
+  it("is true for an unsaved File and for held reasons other than readonly", () => {
+    expect(inShadow({ ...file(), unsaved: true })).toBe(true);
+    expect(inShadow(file("conflict"))).toBe(true);
+    expect(inShadow(file("missing"))).toBe(true);
+    expect(inShadow(file("unencodable"))).toBe(true);
+  });
+  it("is false for a clean File and for readonly", () => {
+    expect(inShadow(file())).toBe(false);
+    expect(inShadow(file("readonly"))).toBe(false);
+  });
+});
+
+describe("onWriteOutcome unsaved state", () => {
+  it("drops unsaved and diskFormat on written", () => {
+    const f: FileInfo = {
+      ...file(),
+      unsaved: true,
+      diskFormat: {
+        encoding: "utf-16le",
+        bom: true,
+        lineEnding: "crlf",
+        mixed: false,
+      },
+    };
+    const r = onWriteOutcome(f, { kind: "written", fingerprint: fp("z") });
+    expect("unsaved" in r).toBe(false);
+    expect("diskFormat" in r).toBe(false);
   });
 });
