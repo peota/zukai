@@ -11,7 +11,7 @@ We considered the usual editor model (VS Code, Notepad++), where unsaved edits t
 
 ## Decision
 
-Files autosave to disk, just as Scratchpads autosave to Zukai's storage. Users never need to press Ctrl+S, and there is no "unsaved" state for a File.
+Files autosave to disk, just as Scratchpads autosave to Zukai's storage. Users never need to press Ctrl+S, and there is no "unsaved" state for a File (see ADR 0012).
 
 ## Consequences
 

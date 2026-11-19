@@ -211,7 +211,7 @@ Collapsing a region of text (such as a JSON object) behind a marker in the fold 
 ## Closing
 
 **Recently Closed**
-A list of Tabs the user closed. Mod+Shift+T reopens the most recent one, and a small menu lists the rest. Closing a Tab never asks for confirmation.
+A list of Tabs the user closed. Mod+Shift+T reopens the most recent one, and a small menu lists the rest. Closing a Tab asks for confirmation only when it is a File Tab with Unsaved changes (Held Tabs never ask).
 - A Scratchpad that is empty when closed is deleted at once and never appears in Recently Closed.
 - A non-empty Scratchpad is kept in Recently Closed for 30 days, then deleted for good.
 - A closed File appears in Recently Closed as a reference to its path. The content stays on disk. It never expires, unless it carries Shadow file text (unsaved text from being Held); then it is kept for 30 days.
