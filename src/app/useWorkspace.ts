@@ -42,9 +42,11 @@ import {
   toSessionFile,
 } from "../model/session";
 import { focusSidebar as focusSidebarElement } from "../ui/Sidebar";
+import type { CloseChoice } from "../ui/SaveChangesDialog";
 import { DEFAULT_SETTINGS, type Settings } from "../model/settings";
 import type { FileInfo, MarkdownMode, PreviewMode } from "../model/types";
 import { inShadow } from "../files/fileState";
+import { baseName } from "../files/paths";
 import {
   CANT_KEEP_NOTICE,
   TOO_LARGE_NOTICE,
@@ -108,6 +110,12 @@ const NEW_FILE: FileFormat = {
   mixed: false,
 };
 
+/** The close prompt on screen: the File Tab it asks about. */
+export interface ClosePrompt {
+  id: string;
+  name: string;
+}
+
 export interface Workspace extends FilesApi {
   state: WorkspaceState;
   loadContent(id: string): Promise<string>;
@@ -118,6 +126,11 @@ export interface Workspace extends FilesApi {
   /** Tab bar actions that target a specific Tab. */
   activate(id: string): void;
   closeTab(id: string): Promise<void>;
+  /** Closes in order; the first Cancel on a close prompt stops the rest. */
+  closeTabs(ids: string[]): Promise<void>;
+  /** Asking whether to save a File Tab's Unsaved changes before it closes. */
+  closePrompt: ClosePrompt | null;
+  answerClosePrompt(choice: CloseChoice): void;
   moveTab(id: string, toIndex: number): void;
   rename(id: string, name: string): Promise<void>;
   /** True while a close is in progress; the editor should be read-only. */
@@ -418,9 +431,9 @@ export function useWorkspace(): Workspace {
     [patchTab],
   );
   const { saveTo, rewriteTabPaths, recheckTabs } = internal;
-  const { refuseEdit } = internal;
+  const { refuseEdit, discardUnsaved } = internal;
   const { renameFile, reopenEntry, pickAndOpen, save, saveAll, saveAs } = files;
-  const { requestFormat, showNotice } = files;
+  const { requestFormat, showNotice, hasPending } = files;
 
   const setContent = useCallback(
     (id: string, text: string) => {
@@ -659,20 +672,92 @@ export function useWorkspace(): Workspace {
     setClosingIds(new Set(closing.current));
   }, []);
 
+  const [closePrompt, setClosePrompt] = useState<ClosePrompt | null>(null);
+  /** Resolves the open close prompt's wait. */
+  const answerRef = useRef<((c: CloseChoice) => void) | null>(null);
+  /** Close prompts take turns: only one is ever open. */
+  const promptChain = useRef<Promise<unknown>>(Promise.resolve());
+
+  const answerClosePrompt = useCallback((choice: CloseChoice) => {
+    const answer = answerRef.current;
+    answerRef.current = null;
+    setClosePrompt(null);
+    answer?.(choice);
+  }, []);
+
+  /**
+   * Before a File Tab closes: if it has Unsaved changes, asks whether to
+   * save them, then saves or discards them as answered. Resolves to false
+   * when the Tab must stay open (Cancel, or a save that didn't write).
+   * A held Tab never asks: its text stays in its shadow. Neither does one
+   * whose shadow can't be read, nor (autosave on) one whose edits the
+   * close's own write will save.
+   */
+  const confirmClose = useCallback(
+    (id: string): Promise<boolean> => {
+      const turn = promptChain.current.then(async () => {
+        if (closing.current.has(id)) return true;
+        // Its held state and the disk's text are known only once loaded.
+        await loadContent(id);
+        const file = stateRef.current.tabs.find((t) => t.id === id)?.file;
+        if (
+          !file ||
+          file.held !== null ||
+          keptShadows.has(id) ||
+          (settingsRef.current.autosaveFiles && !file.unsaved) ||
+          !hasPending(id)
+        ) {
+          return true;
+        }
+        const choice = await new Promise<CloseChoice>((resolve) => {
+          answerRef.current = resolve;
+          setClosePrompt({ id, name: baseName(file.path) });
+        });
+        switch (choice) {
+          case "cancel":
+            return false;
+          case "save":
+            await save(id);
+            return !hasPending(id);
+          case "discard":
+            await discardUnsaved(id);
+            return true;
+        }
+      });
+      promptChain.current = turn.catch(() => {});
+      return turn;
+    },
+    [discardUnsaved, hasPending, keptShadows, loadContent, save],
+  );
+
   /**
    * Close order: know the content, stop (= final write) its autosave, write
    * anything typed meanwhile, then delete or move the file, then update the
    * Session. Any failure leaves the Tab open so no text is lost; autosave
    * keeps retrying. A File stays on disk; a held one keeps its shadow.
+   * Resolves to false when the owner cancelled or the save failed.
    */
-  const closeTab = useCallback(
-    (id: string): Promise<void> => {
-      if (closing.current.has(id)) return Promise.resolve();
-      if (!stateRef.current.tabs.some((t) => t.id === id)) {
-        return Promise.resolve();
-      }
+  const closeOne = useCallback(
+    async (id: string): Promise<boolean> => {
+      if (closing.current.has(id)) return true;
+      const tab = stateRef.current.tabs.find((t) => t.id === id);
+      if (!tab) return true;
       // While the Tab still takes edits (closing makes it read-only).
       flushRich(id);
+      if (tab.file) {
+        let go: boolean;
+        try {
+          go = await confirmClose(id);
+        } catch (err) {
+          // Its text couldn't be read: it stays open, the others still close.
+          console.error("close tab aborted", err);
+          return true;
+        }
+        if (!go) return false;
+        // Closed meanwhile (asked twice, the first answer closed it).
+        if (closing.current.has(id)) return true;
+        if (!stateRef.current.tabs.some((t) => t.id === id)) return true;
+      }
       setClosing(id, true);
       const work = async () => {
         await loadContent(id);
@@ -713,15 +798,17 @@ export function useWorkspace(): Workspace {
         commit(ws.ensureOneTab(next, freshId()));
         await saveSessionNow();
       };
-      return track(
+      await track(
         work()
           .catch((err) => console.error("close tab aborted", err))
           .finally(() => setClosing(id, false)),
       );
+      return true;
     },
     [
       closeFile,
       commit,
+      confirmClose,
       contents,
       flushRich,
       loadContent,
@@ -734,14 +821,27 @@ export function useWorkspace(): Workspace {
     ],
   );
 
+  const closeTab = useCallback(
+    async (id: string) => {
+      await closeOne(id);
+    },
+    [closeOne],
+  );
+
+  /** Closes `ids` one by one; a Cancel (or a failed save) stops the rest. */
+  const closeTabs = useCallback(
+    async (ids: string[]) => {
+      for (const id of ids) if (!(await closeOne(id))) return;
+    },
+    [closeOne],
+  );
+
   const closeSplit = useCallback(
     async (id: string) => {
       const split = sp.splitOf(stateRef.current, id);
-      if (!split) return;
-      await closeTab(split.a);
-      await closeTab(split.b);
+      if (split) await closeTabs([split.a, split.b]);
     },
-    [closeTab],
+    [closeTabs],
   );
 
   const isClosing = useCallback(
@@ -1020,6 +1120,9 @@ export function useWorkspace(): Workspace {
     run,
     activate,
     closeTab,
+    closeTabs,
+    closePrompt,
+    answerClosePrompt,
     moveTab,
     rename,
     isClosing,

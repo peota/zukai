@@ -37,6 +37,7 @@ import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
 import { pinnedItems } from "./ui/Pinned";
 import { useColorScheme } from "./ui/useColorScheme";
+import { SaveChangesDialog } from "./ui/SaveChangesDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
 import { QuickOpen, type QuickTab } from "./ui/QuickOpen";
 import { fileIcon } from "./ui/icons";
@@ -625,6 +626,15 @@ export default function App() {
           }}
         />
       )}
+      {w.closePrompt && (
+        <SaveChangesDialog
+          name={w.closePrompt.name}
+          onChoose={(choice) => {
+            w.answerClosePrompt(choice);
+            refocus();
+          }}
+        />
+      )}
       {quickOpen && (
         <QuickOpen
           search={libraryQuickOpen}
@@ -667,19 +677,21 @@ export default function App() {
             if (tab) w.setPinned(id, !tab.pinned);
           }}
           onClose={(id) => void w.closeTab(id)}
-          onCloseOthers={(id) => {
+          onCloseOthers={(id) =>
             // Pinned Tabs stay open.
-            for (const t of w.state.tabs) {
-              if (t.id !== id && !t.pinned) void w.closeTab(t.id);
-            }
-          }}
+            void w.closeTabs(
+              w.state.tabs
+                .filter((t) => t.id !== id && !t.pinned)
+                .map((t) => t.id),
+            )
+          }
           canCloseAll={w.state.tabs.some((t) => !t.pinned)}
-          onCloseAll={() => {
+          onCloseAll={() =>
             // Pinned Tabs stay open, as with Close other tabs.
-            for (const t of w.state.tabs) {
-              if (!t.pinned) void w.closeTab(t.id);
-            }
-          }}
+            void w.closeTabs(
+              w.state.tabs.filter((t) => !t.pinned).map((t) => t.id),
+            )
+          }
           onReopen={() => void run({ type: "reopenTab" })}
           onReopenEntry={(id) => void w.reopenEntry(id)}
           onDismiss={closeTabMenu}

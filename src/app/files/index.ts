@@ -1,6 +1,11 @@
 import { useCallback, useEffect } from "react";
 import * as ws from "../../model/workspace";
-import type { FileFormat, TabState, WorkspaceState } from "../../model/types";
+import type {
+  FileFormat,
+  FileInfo,
+  TabState,
+  WorkspaceState,
+} from "../../model/types";
 import { useBarActions } from "./barActions";
 import { useCloseReopen } from "./closeReopen";
 import {
@@ -95,6 +100,11 @@ export interface FilesInternalApi {
   rewriteTabPaths(moved: ReadonlyMap<string, string>): Promise<void>;
   /** Compares each File Tab with the disk now (after a Library trash). */
   recheckTabs(ids: string[]): Promise<void>;
+  /**
+   * Don't save: the Tab's text and format go back to the File's, and its
+   * shadow is dropped (closing it then reopens it from disk).
+   */
+  discardUnsaved(id: string): Promise<void>;
 }
 
 export function useFiles(
@@ -135,6 +145,24 @@ export function useFiles(
       await saveSessionNow();
     },
     [commit, saveSessionNow, stateRef],
+  );
+  const { tabOf, patchFile, replaceText, dropShadow, onDisk } = c;
+  const discardUnsaved = useCallback(
+    async (id: string) => {
+      replaceText(id, onDisk.get(id) ?? "");
+      const file = tabOf(id)?.file;
+      if (file) {
+        const kept: FileInfo = {
+          ...file,
+          format: file.diskFormat ?? file.format,
+        };
+        delete kept.unsaved;
+        delete kept.diskFormat;
+        patchFile(id, kept);
+      }
+      await dropShadow(id);
+    },
+    [dropShadow, onDisk, patchFile, replaceText, tabOf],
   );
   const recheckTabs = useCallback(
     async (ids: string[]) => {
@@ -202,6 +230,7 @@ export function useFiles(
       saveTo,
       rewriteTabPaths,
       recheckTabs,
+      discardUnsaved,
     },
   };
 }
