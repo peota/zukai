@@ -471,6 +471,8 @@ describe("useWorkspace Markdown preview", () => {
       result.current.updateTab("a", {
         language: "markdown",
         languagePicked: true,
+        // The preview belongs to the Markdown source, not Rich.
+        markdownMode: "markdown",
       }),
     );
     await act(() => result.current.run({ type: "togglePreview" }));
@@ -715,5 +717,35 @@ describe("useWorkspace Rich / Markdown editor", () => {
     expect(await result.current.loadContent("a")).toBe("# Hi\n\n* a\n");
     await act(() => h.flushAll!());
     expect(m.writeScratchpad).not.toHaveBeenCalled();
+  });
+});
+
+describe("useWorkspace Rich / Markdown editor, fix round 1", () => {
+  type R = { current: ReturnType<typeof useWorkspace> };
+  const tabA = (r: R) => r.current.state.tabs.find((t) => t.id === "a")!;
+  async function richTab(r: R) {
+    act(() =>
+      r.current.updateTab("a", { language: "markdown", languagePicked: true }),
+    );
+    await waitFor(() => expect(tabA(r).markdownMode).toBe("rich"));
+  }
+
+  it("ctrl_shift_v_does_nothing_in_rich", async () => {
+    const { result } = await mount();
+    await richTab(result);
+    await act(() => result.current.run({ type: "togglePreview" }));
+    expect(tabA(result).preview).toBeUndefined();
+  });
+
+  it("switch_to_rich_is_refused_up_front_for_an_unkeepable_note", async () => {
+    disk.a = "See [the docs][1].\n\n[1]: https://example.com/docs\n";
+    const { result } = await mount();
+    await richTab(result);
+    act(() => result.current.updateTab("a", { markdownMode: "markdown" }));
+    await act(() => result.current.run({ type: "toggleRichMarkdown" }));
+    expect(tabA(result).markdownMode).toBe("markdown");
+    expect(result.current.notice).toBe(
+      "This note uses Markdown the rich editor can't keep",
+    );
   });
 });

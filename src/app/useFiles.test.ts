@@ -1688,3 +1688,62 @@ describe("useFiles interleavings (fix round 1)", () => {
     );
   });
 });
+
+describe("useFiles and a pending rich edit", () => {
+  /**
+   * A rich editor holding an edit not yet written: its flush writes it
+   * through the editor's change path (setContent), as the bridge does.
+   */
+  function richEdit(r: Result, id: string, text: string) {
+    let pending = true;
+    const flush = vi.fn(() => {
+      if (!pending) return;
+      pending = false;
+      r.current.setContent(id, text);
+    });
+    const off = r.current.registerRich(id, { pending: () => pending, flush });
+    return { flush, off };
+  }
+
+  it("reload_during_a_pending_rich_edit_is_a_conflict", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    const rich = richEdit(result, id, "mine");
+    expect(result.current.hasPending(id)).toBe(true);
+    disk[P] = { text: "theirs", hash: "h2" };
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
+    // Held: the edit landed first and is kept aside, not reloaded over.
+    expect(rich.flush).toHaveBeenCalled();
+    await settle();
+    expect(shadows[id]).toBe("mine");
+    expect(disk[P].text).toBe("theirs");
+    expect(await result.current.loadContent(id)).toBe("mine");
+  });
+
+  it("exit_flush_writes_a_pending_rich_edit", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    richEdit(result, id, "mine");
+    await act(() => h.flushAll!());
+    expect(disk[P].text).toBe("mine");
+  });
+
+  it("closing_a_tab_writes_its_pending_rich_edit", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    const rich = richEdit(result, id, "mine");
+    await act(() => result.current.closeTab(id));
+    expect(rich.flush).toHaveBeenCalled();
+    expect(disk[P].text).toBe("mine");
+    expect(fileTabOf(result)).toBeUndefined();
+  });
+
+  it("an_unregistered_rich_editor_is_forgotten", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    const rich = richEdit(result, id, "mine");
+    rich.off();
+    expect(result.current.hasPending(id)).toBe(false);
+  });
+});

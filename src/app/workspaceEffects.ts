@@ -185,10 +185,14 @@ export function useExitHandshake(
   }, []);
 }
 
-/** Write everything as soon as the window loses focus. */
-export function useFlushOnBlur(savers: Saver[]): void {
+/**
+ * Write everything as soon as the window loses focus; `before` hands over
+ * edits held elsewhere (the rich editor's) first.
+ */
+export function useFlushOnBlur(savers: Saver[], before?: () => void): void {
   useEffect(() => {
     const onBlur = () => {
+      before?.();
       for (const s of savers) s.flush().catch(logError("flush on blur"));
     };
     window.addEventListener("blur", onBlur);

@@ -61,12 +61,29 @@ export interface RichEditorProps {
   onFallback(notice: string): void;
   /** Bump to take the keyboard back (e.g. after a popup closed). */
   focusSignal?: number;
+  /** Mod+wheel over the text: 1 bigger, -1 smaller. */
+  onZoom?(dir: 1 | -1): void;
+  /**
+   * Tells the app about an edit not yet written, and lets it write it now
+   * (before a save, close, exit or disk check). Returns the unregister.
+   */
+  register?(id: string, sync: RichSync): () => void;
   /**
    * The editor's own UI (toolbar, menus), shown above the text once the
    * editor exists; it reaches the editor through `useRich`.
    */
   children?: ReactNode;
 }
+
+/** A rich editor's edit not yet in the Tab's text. */
+export interface RichSync {
+  pending(): boolean;
+  /** Write it now (through the Tab's change path). */
+  flush(): void;
+}
+
+/** Wheel distance per zoom step, as in the plain editor. */
+const ZOOM_WHEEL_STEP = 100;
 
 /** The live Milkdown editor and its ProseMirror view. */
 export interface RichHandle {
@@ -104,12 +121,16 @@ export function RichEditor(p: RichEditorProps) {
     readOnly,
     onOpenLink: p.onOpenLink,
     onFallback: p.onFallback,
+    onZoom: p.onZoom,
+    register: p.register,
   });
   useEffect(() => {
     latest.current = {
       readOnly,
       onOpenLink: p.onOpenLink,
       onFallback: p.onFallback,
+      onZoom: p.onZoom,
+      register: p.register,
     };
   });
 
@@ -134,16 +155,20 @@ export function RichEditor(p: RichEditorProps) {
       latest.current.onFallback(notice);
     };
 
-    /** Write a pending user edit, if the text it makes is new. */
+    /**
+     * Write a pending user edit into the Tab's text. It stays pending until
+     * the text has it (a read-only Tab refuses it): never silently dropped.
+     */
     const write = () => {
       clearTimeout(timer);
       timer = undefined;
       if (!dirty || !editor || !view) return;
-      dirty = false;
-      if (latest.current.readOnly) return;
       const md = editor.ctx.get(serializerCtx)(view.state.doc);
-      known = md;
       if (md !== bridge.text(id)) bridge.replace(id, md);
+      if (bridge.text(id) === md) {
+        dirty = false;
+        known = md;
+      }
     };
 
     function dispatchTransaction(this: EditorView, tr: Transaction) {
@@ -172,14 +197,18 @@ export function RichEditor(p: RichEditorProps) {
 
     const onOutside = (text: string) => {
       if (text === known) return;
-      known = text;
-      // The outside text wins over an edit still waiting to be written.
-      clearTimeout(timer);
-      timer = undefined;
-      dirty = false;
       const seq = ++outsideSeq;
+      if (dirty) {
+        // An edit not yet written wins: it is written once the plain
+        // editor's update is over (never from inside it). The app treats
+        // the edit as pending, so a disk change meanwhile is a conflict.
+        queueMicrotask(write);
+        return;
+      }
+      known = text;
       void canKeep(text).then((ok) => {
         if (!live || seq !== outsideSeq) return;
+        if (dirty) return write();
         if (ok) reparse(text);
         else fallBack(CANT_KEEP_NOTICE);
       });
@@ -246,6 +275,12 @@ export function RichEditor(p: RichEditorProps) {
       view = made.ctx.get(editorViewCtx);
       mounted = true;
       const offOutside = bridge.onOutsideChange(id, onOutside);
+      // A change while the editor was being made is shown now.
+      const now = bridge.text(id) ?? "";
+      if (now !== known) onOutside(now);
+      const unregister =
+        latest.current.register?.(id, { pending: () => dirty, flush: write }) ??
+        (() => {});
       // A press anywhere else (a Tab's close button, the status bar) may act
       // on the text without taking the focus first.
       const onPointerDown = (e: PointerEvent) => {
@@ -254,6 +289,7 @@ export function RichEditor(p: RichEditorProps) {
       document.addEventListener("pointerdown", onPointerDown, true);
       off = () => {
         offOutside();
+        unregister();
         document.removeEventListener("pointerdown", onPointerDown, true);
       };
       setHandle({ editor: made, view });
@@ -279,6 +315,26 @@ export function RichEditor(p: RichEditorProps) {
   useEffect(() => {
     if (focused && handle) handle.view.focus();
   }, [focused, handle, focusSignal]);
+
+  // Mod+wheel zooms the text, as in the plain editor; the page never zooms.
+  useEffect(() => {
+    const el = root.current;
+    if (!handle || !el) return;
+    let sum = 0;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      // A wheel in lines or pages counts as whole notches.
+      sum +=
+        e.deltaMode === 0 ? e.deltaY : Math.sign(e.deltaY) * ZOOM_WHEEL_STEP;
+      if (Math.abs(sum) < ZOOM_WHEEL_STEP) return;
+      const dir = sum < 0 ? 1 : -1;
+      sum = 0;
+      latest.current.onZoom?.(dir);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [handle]);
 
   if (fellBack) return null;
   return (

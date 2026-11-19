@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useState } from "react";
 import type { ImageInfo, MarkdownMode, TabState } from "../model/types";
 import type { TextBridge } from "../editor/EditorHost";
+import type { RichSync } from "../rich/RichEditor";
 import { FileBar, type FileBarProps } from "../ui/FileBar";
 import { CanvasHost, type CanvasHostProps } from "../canvas/CanvasHost";
 import { ImageHost, type ImageHostProps } from "../image/ImageHost";
@@ -41,6 +42,10 @@ export interface TabPaneProps
   onRichFallback(notice: string): void;
   /** Bump to give the keyboard back to the editor. */
   focusSignal?: number;
+  /** Mod+wheel over the text: 1 bigger, -1 smaller. */
+  onZoom(dir: 1 | -1): void;
+  /** Where the rich editor reports an edit it hasn't written yet. */
+  registerRich(id: string, sync: RichSync): () => void;
 }
 
 /**
@@ -137,6 +142,8 @@ export function TabPane(p: TabPaneProps) {
                     onOpenLink={p.onOpenLink}
                     onFallback={p.onRichFallback}
                     focusSignal={p.focusSignal}
+                    onZoom={p.onZoom}
+                    register={p.registerRich}
                   />
                 ) : (
                   <div className="size-full bg-editor" />

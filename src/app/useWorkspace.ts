@@ -45,11 +45,13 @@ import { focusSidebar as focusSidebarElement } from "../ui/Sidebar";
 import { DEFAULT_SETTINGS, type Settings } from "../model/settings";
 import type { MarkdownMode, PreviewMode } from "../model/types";
 import {
+  CANT_KEEP_NOTICE,
   TOO_LARGE_NOTICE,
   effectiveMode,
   tooLargeForRich,
 } from "../model/markdownMode";
 import type { TextBridge } from "../editor/EditorHost";
+import type { RichSync } from "../rich/RichEditor";
 import { useLibrary, type LibraryApi } from "./useLibrary";
 import {
   closeScratchpad,
@@ -156,6 +158,12 @@ export interface Workspace extends FilesApi {
   bridge: TextBridge | null;
   /** Give to the editor host (stable). */
   bridgeRef(b: TextBridge | null): void;
+  /**
+   * A rich editor's edit not yet written counts as pending, and is written
+   * first on close, exit, window blur and a Tab becoming held. Returns the
+   * unregister.
+   */
+  registerRich(id: string, sync: RichSync): () => void;
   /** Joins Tab `b` to Tab `a` in a Split (a no-op if either is in one). */
   splitWith(a: string, b: string, orientation?: SplitOrientation): void;
   /** Ends the Split holding `id`; both Tabs stay open. */
@@ -226,8 +234,46 @@ export function useWorkspace(): Workspace {
    * Tab becoming held or released saves the Session at once: its shadow and
    * session.json must agree if Zukai stops right after.
    */
+  /** Each shown rich editor's pending edit, by Tab id. */
+  const [richSyncs] = useState(() => new Map<string, RichSync>());
+  /** Write a rich editor's pending edit now (every Tab's when no id). */
+  const flushRich = useCallback(
+    (id?: string) => {
+      for (const [tid, sync] of richSyncs) {
+        if (id !== undefined && tid !== id) continue;
+        try {
+          sync.flush();
+        } catch (err) {
+          logError("write rich edit")(err);
+        }
+      }
+    },
+    [richSyncs],
+  );
+  const registerRich = useCallback(
+    (id: string, sync: RichSync) => {
+      richSyncs.set(id, sync);
+      return () => {
+        if (richSyncs.get(id) === sync) richSyncs.delete(id);
+      };
+    },
+    [richSyncs],
+  );
+  const richPending = useCallback(
+    (id: string) => richSyncs.get(id)?.pending() ?? false,
+    [richSyncs],
+  );
+
   const commit = useCallback(
     (next: WorkspaceState) => {
+      // A Tab about to be held (read-only, conflict, missing) takes its
+      // rich edit first, while its text still accepts it.
+      for (const t of next.tabs) {
+        const was = stateRef.current.tabs.find((p) => p.id === t.id);
+        if (was?.file && t.file && was.file.held !== t.file.held) {
+          flushRich(t.id);
+        }
+      }
       const prev = stateRef.current;
       stateRef.current = next;
       // Moving focus within a Split doesn't change the "previous" Tab.
@@ -243,7 +289,7 @@ export function useWorkspace(): Workspace {
       setState(next);
       if (readyRef.current && heldChanged(prev, next)) void saveSessionNow();
     },
-    [saveSessionNow],
+    [saveSessionNow, flushRich],
   );
 
   const [keptShadows] = useState(() => new Set<string>());
@@ -290,8 +336,13 @@ export function useWorkspace(): Workspace {
   }, []);
 
   const saveStatus = useCombinedSaveStatus(savers);
-  useExitHandshake(savers, settleInFlight);
-  useFlushOnBlur(savers);
+  // Exit writes the rich editors' pending edits before the savers flush.
+  const beforeExit = useCallback(async () => {
+    flushRich();
+    await settleInFlight();
+  }, [flushRich, settleInFlight]);
+  useExitHandshake(savers, beforeExit);
+  useFlushOnBlur(savers, flushRich);
 
   const keepTitle = useCallback(
     (id: string, text: string) => {
@@ -325,6 +376,7 @@ export function useWorkspace(): Workspace {
     newTabWrap,
     keptShadows,
     closing,
+    richPending,
   });
   const { internal, ...filesApi } = files;
   const { loadContent, afterRestore, closeFile } = internal;
@@ -504,6 +556,12 @@ export function useWorkspace(): Workspace {
           showNotice(TOO_LARGE_NOTICE);
           return;
         }
+        // Lazy: the check is the rich editor's own (Milkdown).
+        const { canKeep } = await import("../rich/richMarkdown");
+        if (!(await canKeep(text))) {
+          showNotice(CANT_KEEP_NOTICE);
+          return;
+        }
       } else {
         // Rich wrote outside the plain editor's history: its old entries no
         // longer line up.
@@ -589,6 +647,8 @@ export function useWorkspace(): Workspace {
       if (!stateRef.current.tabs.some((t) => t.id === id)) {
         return Promise.resolve();
       }
+      // While the Tab still takes edits (closing makes it read-only).
+      flushRich(id);
       setClosing(id, true);
       const work = async () => {
         await loadContent(id);
@@ -639,6 +699,7 @@ export function useWorkspace(): Workspace {
       closeFile,
       commit,
       contents,
+      flushRich,
       loadContent,
       onDisk,
       saveSessionNow,
@@ -717,6 +778,8 @@ export function useWorkspace(): Workspace {
         case "togglePreview": {
           const tab = s.tabs.find((t) => t.id === s.activeId);
           if (tab?.kind !== "text" || tab.language !== "markdown") return;
+          // Rich is already the rendered view: it has no preview.
+          if (effectiveMode(tab, settingsRef.current) === "rich") return;
           const next = NEXT_PREVIEW[tab.preview ?? "edit"];
           return setPreview(tab.id, next === "edit" ? null : next);
         }
@@ -947,6 +1010,7 @@ export function useWorkspace(): Workspace {
     richFallback,
     bridge,
     bridgeRef: takeBridge,
+    registerRich,
     splitWith,
     unsplit,
     swapSplit,

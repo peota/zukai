@@ -364,6 +364,8 @@ export default function App() {
       fontSize={w.fontSize}
       onRichFallback={(notice) => w.richFallback(tab.id, notice)}
       focusSignal={focusSignal}
+      onZoom={w.zoomEditor}
+      registerRich={w.registerRich}
     />
   );
 
