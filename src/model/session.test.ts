@@ -66,6 +66,7 @@ describe("session file", () => {
       wrapNewTabs: true,
       lineNumbers: false,
       previewSplit: 0.3,
+      markdownDefault: "markdown" as const,
     };
     const json = JSON.stringify(
       toSessionFile(ws, DEFAULT_SIDEBAR, 13, settings),
@@ -118,6 +119,22 @@ describe("session file", () => {
       JSON.stringify({ ...toSessionFile(ws), tabs, activeId: "a" }),
     )!;
     expect(r.tabs.map((t) => t.preview)).toEqual(["split", "only", undefined]);
+  });
+
+  it("keeps a Tab's markdown mode, and forgets a malformed one", () => {
+    const tabs = [
+      { ...newTabState("a"), markdownMode: "rich" },
+      { ...newTabState("b"), markdownMode: "markdown" },
+      { ...newTabState("c"), markdownMode: "html" },
+    ];
+    const r = parseSessionFile(
+      JSON.stringify({ ...toSessionFile(ws), tabs, activeId: "a" }),
+    )!;
+    expect(r.tabs.map((t) => t.markdownMode)).toEqual([
+      "rich",
+      "markdown",
+      undefined,
+    ]);
   });
 
   it("returns null for bad input", () => {

@@ -643,6 +643,9 @@ export function useWorkspace(): Workspace {
           }
           return;
         }
+        case "toggleRichMarkdown":
+          // Task 4 switches the Markdown editor here.
+          return;
         case "zoom":
           // A canvas or an image zooms itself (Excalidraw, the viewer).
           if (s.tabs.find((t) => t.id === s.activeId)?.kind === "text") {

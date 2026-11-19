@@ -8,6 +8,7 @@ import {
   MIN_FONT_SIZE,
 } from "../model/session";
 import type { Settings, ThemePref } from "../model/settings";
+import type { MarkdownMode } from "../model/types";
 
 export interface SettingsDialogProps {
   settings: Settings;
@@ -26,6 +27,11 @@ const THEMES: { id: ThemePref; label: string }[] = [
   { id: "system", label: "System" },
   { id: "light", label: "Light" },
   { id: "dark", label: "Dark" },
+];
+
+const MARKDOWN_MODES: { id: MarkdownMode; label: string }[] = [
+  { id: "rich", label: "Rich editor" },
+  { id: "markdown", label: "Markdown" },
 ];
 
 const BUTTON =
@@ -194,6 +200,31 @@ function General({
               }
             >
               {t.label}
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label="Open Markdown notes in">
+        <div
+          role="radiogroup"
+          aria-label="Open Markdown notes in"
+          className="flex rounded-[6px] bg-chrome p-0.5"
+        >
+          {MARKDOWN_MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              role="radio"
+              aria-checked={settings.markdownDefault === m.id}
+              onClick={() => onSettings({ markdownDefault: m.id })}
+              className={
+                "rounded-[4px] px-2.5 py-[3px] " +
+                (settings.markdownDefault === m.id
+                  ? "bg-surface text-text shadow-float"
+                  : "text-muted hover:text-text")
+              }
+            >
+              {m.label}
             </button>
           ))}
         </div>

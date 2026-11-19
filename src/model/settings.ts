@@ -1,3 +1,5 @@
+import type { MarkdownMode } from "./types";
+
 /** "system" follows the OS light or dark mode, live. */
 export type ThemePref = "system" | "light" | "dark";
 
@@ -10,6 +12,8 @@ export interface Settings {
   lineNumbers: boolean;
   /** The editor's share of the row in a Markdown Split (the preview has the rest). */
   previewSplit: number;
+  /** How a Markdown file (or a picked-Markdown Scratchpad) opens. */
+  markdownDefault: MarkdownMode;
 }
 
 export const SPLIT_MIN = 0.2;
@@ -25,6 +29,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   wrapNewTabs: false,
   lineNumbers: true,
   previewSplit: 0.5,
+  markdownDefault: "rich",
 });
 
 const THEMES: readonly string[] = ["system", "light", "dark"];
@@ -49,5 +54,9 @@ export function parseSettings(v: unknown): Settings {
       typeof v.previewSplit === "number" && Number.isFinite(v.previewSplit)
         ? clampSplit(v.previewSplit)
         : d.previewSplit,
+    markdownDefault:
+      v.markdownDefault === "rich" || v.markdownDefault === "markdown"
+        ? v.markdownDefault
+        : d.markdownDefault,
   };
 }
