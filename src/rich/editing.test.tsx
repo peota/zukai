@@ -210,3 +210,72 @@ describe("checklists", () => {
     expect(view.state.selection.$from.parent.type.name).toBe("paragraph");
   });
 });
+
+describe("deleting a selected table", () => {
+  const SRC = "before\n\n| a | b |\n| - | - |\n| c | d |\n\nafter\n";
+
+  /** Every cell of the note's table selected, as a drag across it does. */
+  const selectWholeTable = async (view: EditorView) => {
+    const { CellSelection } = await import("@milkdown/kit/prose/tables");
+    let at = -1;
+    view.state.doc.forEach((n, off) => {
+      if (n.type.name === "table") at = off;
+    });
+    const table = view.state.doc.nodeAt(at)!;
+    const cells: number[] = [];
+    table.descendants((n, p) => {
+      if (n.type.spec.tableRole?.toString().includes("cell")) {
+        cells.push(at + 1 + p);
+      }
+    });
+    act(() =>
+      view.dispatch(
+        view.state.tr.setSelection(
+          CellSelection.create(
+            view.state.doc,
+            cells[0],
+            cells[cells.length - 1],
+          ),
+        ),
+      ),
+    );
+  };
+
+  for (const key of ["Delete", "Backspace"]) {
+    it(`${key}_on_a_whole_table_removes_it`, async () => {
+      const { view, md } = await mountRich(SRC);
+      await selectWholeTable(view);
+      press(view, key);
+      expect(types(view)).not.toContain("table");
+      expect(md()).toBe("before\n\nafter\n");
+    });
+  }
+
+  it("delete_on_some_cells_still_only_clears_them", async () => {
+    const { CellSelection } = await import("@milkdown/kit/prose/tables");
+    const { view, md } = await mountRich(SRC);
+    let at = -1;
+    view.state.doc.forEach((n, off) => {
+      if (n.type.name === "table") at = off;
+    });
+    // Just the first header cell.
+    const cell = at + 2;
+    act(() =>
+      view.dispatch(
+        view.state.tr.setSelection(
+          CellSelection.create(view.state.doc, cell, cell),
+        ),
+      ),
+    );
+    press(view, "Delete");
+    expect(types(view)).toContain("table");
+    expect(md()).toContain("| c | d |");
+  });
+
+  it("read_only_keeps_the_table", async () => {
+    const { view, md } = await mountRich(SRC, { readOnly: true });
+    await selectWholeTable(view);
+    press(view, "Delete");
+    expect(md()).toContain("| a | b |");
+  });
+});
