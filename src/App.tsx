@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspace } from "./app/useWorkspace";
 import { detectPlatform, matchShortcut, type Command } from "./app/shortcuts";
 import {
@@ -6,12 +6,18 @@ import {
   blocksBrowserKey,
   isEditorTarget,
 } from "./app/browserGuard";
-import type { ImageInfo, LanguageId, TabState } from "./model/types";
+import type {
+  ImageInfo,
+  LanguageId,
+  SplitOrientation,
+  TabState,
+} from "./model/types";
 import { splitOf } from "./model/split";
 import { isUnder, revealLabel } from "./ui/libraryEntries";
 import { EditorHost } from "./editor/EditorHost";
 import { TabPane, useSlots } from "./app/TabPane";
 import { SplitView } from "./ui/SplitView";
+import { SplitDropZone, dropSide } from "./ui/SplitDropZone";
 import type { FormatResult } from "./editor/jsonFormat";
 import { TabBar } from "./ui/TabBar";
 import { StatusBar } from "./ui/StatusBar";
@@ -71,6 +77,8 @@ export default function App() {
     },
     [workspaceRun],
   );
+  /** The side a dragged Tab would split the editor area on, while shown. */
+  const [dropZone, setDropZone] = useState<SplitOrientation | null>(null);
   const [focusSignal, setFocusSignal] = useState(0);
   const [tabMenu, setTabMenu] = useState<{
     x: number;
@@ -235,6 +243,14 @@ export default function App() {
     if (activeId && offer) void renameExtension(activeId, offer.ext);
     closePicker();
   }, [activeId, offer, renameExtension, closePicker]);
+
+  const mainRef = useRef<HTMLElement>(null);
+  /** The side of the editor area at x, y, if the dragged Tab could split it. */
+  const sideAt = (id: string, x: number, y: number) => {
+    const rect = mainRef.current?.getBoundingClientRect();
+    if (!rect || id === activeId || split) return null;
+    return dropSide(rect, x, y);
+  };
 
   const closeTabMenu = useCallback(() => {
     setTabMenu(null);
@@ -413,8 +429,16 @@ export default function App() {
           onUnpin={(id) => w.setPinned(id, false)}
           splits={w.state.splits}
           onCloseSplit={w.closeSplit}
+          onDragOut={(id, x, y) => setDropZone(sideAt(id, x, y))}
+          onDropOut={(id, x, y) => {
+            const side = sideAt(id, x, y);
+            setDropZone(null);
+            if (side) w.splitWith(activeId, id, side);
+          }}
+          onDragOutEnd={() => setDropZone(null)}
         />
-        <main className="min-h-0 flex-1 bg-editor">
+        <main ref={mainRef} className="relative min-h-0 flex-1 bg-editor">
+          {dropZone && <SplitDropZone side={dropZone} />}
           {w.ready && (
             <div className="hidden">
               <EditorHost

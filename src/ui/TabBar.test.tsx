@@ -239,6 +239,59 @@ describe("TabBar", () => {
     expect(p.onActivate).not.toHaveBeenCalled();
   });
 
+  it("reportsADragBelowTheBar", () => {
+    const onDragOut = vi.fn();
+    const onDropOut = vi.fn();
+    const onDragOutEnd = vi.fn();
+    const p = setup(undefined, { onDragOut, onDropOut, onDragOutEnd });
+    layOut();
+    const second = screen.getByText("Second").closest("[role=tab]")!;
+    fireEvent.pointerDown(second, { button: 0, pointerId: 1, clientX: 150 });
+    fireEvent.pointerMove(second, {
+      pointerId: 1,
+      buttons: 1,
+      clientX: 160,
+      clientY: 200,
+    });
+    expect(onDragOut).toHaveBeenCalledWith("b", 160, 200);
+    fireEvent.pointerUp(second, { pointerId: 1, clientX: 160, clientY: 200 });
+    expect(onDropOut).toHaveBeenCalledWith("b", 160, 200);
+    expect(p.onMove).not.toHaveBeenCalled();
+    expect(onDragOutEnd).not.toHaveBeenCalled();
+  });
+
+  it("a drag that returns to the bar, or Esc, ends the drag-out", () => {
+    const onDragOutEnd = vi.fn();
+    const onDropOut = vi.fn();
+    setup(undefined, { onDragOutEnd, onDropOut, onDragOut: vi.fn() });
+    layOut();
+    const second = screen.getByText("Second").closest("[role=tab]")!;
+    fireEvent.pointerDown(second, { button: 0, pointerId: 1, clientX: 150 });
+    fireEvent.pointerMove(second, {
+      pointerId: 1,
+      buttons: 1,
+      clientX: 160,
+      clientY: 200,
+    });
+    fireEvent.pointerMove(second, {
+      pointerId: 1,
+      buttons: 1,
+      clientX: 160,
+      clientY: 0,
+    });
+    expect(onDragOutEnd).toHaveBeenCalledTimes(1);
+    fireEvent.pointerMove(second, {
+      pointerId: 1,
+      buttons: 1,
+      clientX: 160,
+      clientY: 200,
+    });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onDragOutEnd).toHaveBeenCalledTimes(2);
+    fireEvent.pointerUp(second, { pointerId: 1 });
+    expect(onDropOut).not.toHaveBeenCalled();
+  });
+
   it("a small pointer wobble is still a click", () => {
     const p = setup();
     layOut();

@@ -41,6 +41,12 @@ export interface TabBarProps {
   splits?: readonly { a: string; b: string; focus: "a" | "b" }[];
   /** The × (or middle-click) on a joined tab; `a` is its first member. */
   onCloseSplit(a: string): void;
+  /** A dragged (ordinary) Tab's pointer is below the bar, at x, y. */
+  onDragOut?(id: string, x: number, y: number): void;
+  /** The dragged Tab was released below the bar. */
+  onDropOut?(id: string, x: number, y: number): void;
+  /** The drag ended anywhere else (or on Esc) after going below the bar. */
+  onDragOutEnd?(): void;
 }
 
 /** One tab in the bar: a Tab, or two joined ones (a Split). */
@@ -85,6 +91,10 @@ interface Drag {
   width: number;
   dx: number;
   moving: boolean;
+  /** A joined tab: already a Split, so never dragged out. */
+  joined: boolean;
+  /** Reported below the bar, awaiting its drop or end. */
+  out: boolean;
 }
 
 /** The index among the other Tabs where the dragged one lands. */
@@ -104,6 +114,9 @@ export function TabBar({
   onUnpin,
   splits,
   onCloseSplit,
+  onDragOut,
+  onDropOut,
+  onDragOutEnd,
 }: TabBarProps) {
   const items = itemsOf(tabs, splits);
   const barRef = useRef<HTMLDivElement>(null);
@@ -114,6 +127,14 @@ export function TabBar({
   const drag = useRef<Drag | null>(null);
   const [dragView, setDragView] = useState<Drag | null>(null);
   const swallowClick = useRef(false);
+  /** The drag ends elsewhere than below the bar: clear what it showed. */
+  const dragOutEnd = useRef(onDragOutEnd);
+  useEffect(() => {
+    dragOutEnd.current = onDragOutEnd;
+  });
+  const endOut = (d: Drag | null) => {
+    if (d?.out) dragOutEnd.current?.();
+  };
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
@@ -126,6 +147,7 @@ export function TabBar({
       if (e.key !== "Escape") return;
       e.preventDefault();
       e.stopPropagation();
+      endOut(drag.current);
       drag.current = null;
       setDragView(null);
       // The release that follows still clicks: don't activate on it.
@@ -148,6 +170,7 @@ export function TabBar({
       if (!d || d.pointerId !== pointerId) return;
       drag.current = null;
       setDragView(null);
+      endOut(d);
       if (d.moving) swallowClick.current = true;
     };
     window.addEventListener("pointerup", onRelease);
@@ -182,6 +205,8 @@ export function TabBar({
       width: rects[index]?.width ?? 0,
       dx: 0,
       moving: false,
+      joined: items[index].members.length === 2,
+      out: false,
     };
     watchRelease(e.pointerId);
   };
@@ -191,6 +216,7 @@ export function TabBar({
     if (!d || d.pointerId !== e.pointerId) return;
     if ((e.buttons & 1) === 0) {
       // The button is up (its release was missed): no press to drag.
+      endOut(d);
       drag.current = null;
       setDragView(null);
       return;
@@ -204,7 +230,12 @@ export function TabBar({
         // No capture (e.g. the pointer is gone): the drag still works.
       }
     }
-    const next = { ...d, dx, moving: true };
+    const below =
+      !d.joined &&
+      e.clientY > (barRef.current?.getBoundingClientRect().bottom ?? Infinity);
+    if (below) onDragOut?.(d.id, e.clientX, e.clientY);
+    else endOut(d);
+    const next = { ...d, dx, moving: true, out: below };
     drag.current = next;
     setDragView(next);
   };
@@ -216,6 +247,11 @@ export function TabBar({
     setDragView(null);
     if (!d.moving) return;
     swallowClick.current = true;
+    if (d.out) {
+      if (drop) onDropOut?.(d.id, e.clientX, e.clientY);
+      else onDragOutEnd?.();
+      return;
+    }
     if (!drop) return;
     const to = dropIndex(d);
     if (to !== d.from) onMove(d.id, to);
