@@ -228,7 +228,8 @@ pub fn create_folder(parent: &Path, name: &str) -> Result<PathBuf, FileError> {
     })
 }
 
-/// A new file `stem.ext`, `stem 2.ext`… in `parent` holding `contents`.
+/// A new file `stem.ext`, `stem 2.ext`… in `parent` holding `contents`. An
+/// empty `ext` makes a plain `stem`, `stem 2`… (the sidebar's New file).
 pub fn create_file(
     parent: &Path,
     stem: &str,
@@ -236,8 +237,7 @@ pub fn create_file(
     contents: &[u8],
 ) -> Result<PathBuf, FileError> {
     validate_name(stem)?;
-    let ext_ok =
-        !ext.is_empty() && ext.len() <= 16 && ext.chars().all(|c| c.is_ascii_alphanumeric());
+    let ext_ok = ext.len() <= 16 && ext.chars().all(|c| c.is_ascii_alphanumeric());
     if !ext_ok {
         return Err(FileError::InvalidName);
     }
@@ -718,6 +718,15 @@ mod tests {
             create_file(dir, "ok", "m/d", b""),
             Err(FileError::InvalidName)
         ));
+        // No extension: a plain "Untitled", then "Untitled 2".
+        assert_eq!(
+            create_file(dir, "Untitled", "", b"").unwrap(),
+            dir.join("Untitled")
+        );
+        assert_eq!(
+            create_file(dir, "Untitled", "", b"").unwrap(),
+            dir.join("Untitled 2")
+        );
     }
 
     #[test]

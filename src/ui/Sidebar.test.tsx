@@ -558,14 +558,14 @@ describe("Sidebar", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((el) => el.textContent),
-    ).toEqual(
-      expect.arrayContaining([
-        "New folder",
-        "New note",
-        "New text file",
-        "New canvas",
-      ]),
-    );
+    ).toEqual(expect.arrayContaining(["New folder", "New file", "New canvas"]));
+    // A plain file with no extension replaces the note and text-file items.
+    expect(
+      within(menu).queryByRole("menuitem", { name: "New note" }),
+    ).toBeNull();
+    expect(
+      within(menu).queryByRole("menuitem", { name: "New text file" }),
+    ).toBeNull();
     fireEvent.click(within(menu).getByRole("menuitem", { name: "New canvas" }));
     expect(onCreate).toHaveBeenCalledWith(IDEAS.path, "canvas");
 
@@ -584,8 +584,8 @@ describe("Sidebar", () => {
 
     // The header + offers the same for the root, plus Choose Library folder…
     fireEvent.click(screen.getByRole("button", { name: "New in Library" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "New note" }));
-    expect(onCreate).toHaveBeenLastCalledWith(ROOT, "note");
+    fireEvent.click(screen.getByRole("menuitem", { name: "New file" }));
+    expect(onCreate).toHaveBeenLastCalledWith(ROOT, "file");
     fireEvent.click(screen.getByRole("button", { name: "New in Library" }));
     fireEvent.click(
       screen.getByRole("menuitem", { name: "Choose Library folder…" }),
@@ -818,7 +818,7 @@ describe("Sidebar", () => {
     const { p: pr, rerender } = setup({ onCreate });
     fireEvent.click(screen.getByRole("button", { name: "New in Library" }));
     await act(async () =>
-      fireEvent.click(screen.getByRole("menuitem", { name: "New note" })),
+      fireEvent.click(screen.getByRole("menuitem", { name: "New file" })),
     );
     // The next listing doesn't have it...
     const t1 = makeTree();

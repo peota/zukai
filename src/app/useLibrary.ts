@@ -39,6 +39,7 @@ import {
 } from "../library/tree";
 import type { FileError } from "../files/api";
 import { baseName } from "../files/paths";
+import { kindOf } from "../model/kinds";
 import type { SidebarState, TabState, WorkspaceState } from "../model/types";
 import { movedPath } from "../model/workspace";
 import type { ScratchpadItem, NewItem } from "../ui/Sidebar";
@@ -52,9 +53,12 @@ export const SEARCH_DEBOUNCE_MS = 120;
 /** While the index is still building, the search is asked again this often. */
 export const SEARCH_POLL_MS = 300;
 
+/**
+ * The extension of a new item. A plain file has none, like a new document
+ * in Notepad++: it's plain text until named ("plan.ts") or given a Language.
+ */
 const NEW_FILE: Record<Exclude<NewItem, "folder">, string> = {
-  note: "md",
-  text: "txt",
+  file: "",
   canvas: "excalidraw",
 };
 
@@ -596,6 +600,12 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
         !isDir && ext && name.toLowerCase().endsWith(ext.toLowerCase())
           ? name.slice(0, -ext.length)
           : name;
+      // A file with no extension takes the typed one: it may not turn into
+      // a drawing or an image, which its open Tab couldn't show or save.
+      const newName = arg + ext;
+      if (!isDir && kindOf(newName) !== kindOf(baseName(path))) {
+        return Promise.resolve(`A text file can't become ${newName}`);
+      }
       return withFlushed(path, "rename", async () => {
         let to: string;
         try {
