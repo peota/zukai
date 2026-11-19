@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  Annotation,
   Compartment,
   EditorSelection,
   EditorState,
@@ -116,7 +117,45 @@ export interface EditorHostProps {
    * view, stays in the host's own container. A view moves, never recreated.
    */
   slots?: ReadonlyMap<string, HTMLElement>;
+  /**
+   * Handed the host's text bridge (one object for the host's life) on mount,
+   * and null on unmount.
+   */
+  bridgeRef?(b: TextBridge | null): void;
 }
+
+/**
+ * A narrow way for another editor (the rich one) to work on a Tab's text
+ * while the Tab's CodeMirror view stays its owner.
+ */
+export interface TextBridge {
+  /** The Tab's current text; null until its view has loaded. */
+  text(id: string): string | null;
+  /**
+   * Make `text` the Tab's text as one change kept out of the view's history
+   * and tagged `fromRich`. It goes through the same `onChange` path as
+   * typing. Does nothing on a read-only (or not yet loaded) view.
+   */
+  replace(id: string, text: string): void;
+  /**
+   * Calls `cb` with the new text after every change to the Tab's text that
+   * didn't come from `replace` (its load, reloads, replace requests, Convert,
+   * typing in the plain editor). Returns the unsubscribe.
+   */
+  onOutsideChange(id: string, cb: (text: string) => void): () => void;
+  /** Forget the view's undo history. */
+  clearHistory(id: string): void;
+  readOnly(id: string): boolean;
+  /**
+   * Resolves once the Tab's view exists with its text loaded (views are only
+   * created for shown Tabs). Rejects if the Tab closes, its text fails to
+   * load or the host unmounts first.
+   */
+  ready(id: string): Promise<void>;
+}
+
+/** Tags a change written through `TextBridge.replace`. */
+export const fromRich = Annotation.define<boolean>();
 
 /** Wheel distance per zoom step: one mouse notch, or a short pinch. */
 const ZOOM_WHEEL_STEP = 100;
@@ -140,6 +179,7 @@ interface Entry {
   readOnly: Compartment;
   fontSize: Compartment;
   gutter: Compartment;
+  history: Compartment;
   /** What each compartment currently holds (or is loading, for language). */
   current: {
     language: LanguageId;
@@ -192,7 +232,6 @@ const baseSetup: Extension = [
   codeFolding(),
   highlightActiveLine(),
   highlightActiveLineGutter(),
-  history(),
   drawSelection(),
   EditorState.allowMultipleSelections.of(true),
   bracketMatching(),
@@ -372,6 +411,37 @@ function formatJson(
   return { ok: true, text };
 }
 
+/**
+ * The one change turning `old` into `text`, covering only what differs (so
+ * folds and heights elsewhere stay put), never splitting a surrogate pair.
+ */
+function changeTo(old: string, text: string): ChangeSpec {
+  const max = Math.min(old.length, text.length);
+  let a = 0;
+  while (a < max && old.charCodeAt(a) === text.charCodeAt(a)) a++;
+  if (a > 0 && isHighSurrogate(old.charCodeAt(a - 1))) a--;
+  let b = 0;
+  while (
+    b < max - a &&
+    old.charCodeAt(old.length - 1 - b) === text.charCodeAt(text.length - 1 - b)
+  ) {
+    b++;
+  }
+  if (b > 0 && isLowSurrogate(old.charCodeAt(old.length - b))) b--;
+  return {
+    from: a,
+    to: old.length - b,
+    insert: text.slice(a, text.length - b),
+  };
+}
+
+/** A pending `TextBridge.ready`. */
+interface Waiter {
+  promise: Promise<void>;
+  resolve(): void;
+  reject(err: Error): void;
+}
+
 function clampSelection(state: TabState, length: number) {
   const clamp = (n: number) => Math.max(0, Math.min(length, n | 0));
   return {
@@ -402,6 +472,10 @@ export function EditorHost(props: EditorHostProps) {
   const heldConverts = useRef(new Map<string, Partial<FileFormat>>());
   /** Per Tab, the newest replace `seq` applied (or known to be stale). */
   const replaced = useRef(new Map<string, number>());
+  /** Per Tab, the bridge's outside-change listeners. */
+  const outside = useRef(new Map<string, Set<(text: string) => void>>());
+  /** Per Tab, the `ready` promise of a view not created yet. */
+  const waiters = useRef(new Map<string, Waiter>());
   /** Latest props, for listeners and async callbacks. */
   const latest = useRef(props);
   useLayoutEffect(() => {
@@ -430,20 +504,6 @@ export function EditorHost(props: EditorHostProps) {
     const v = e.view;
     const old = v.state.doc.toString();
     if (old === text) return;
-    // Change only what differs, so folds and heights elsewhere stay put.
-    const max = Math.min(old.length, text.length);
-    let a = 0;
-    while (a < max && old.charCodeAt(a) === text.charCodeAt(a)) a++;
-    if (a > 0 && isHighSurrogate(old.charCodeAt(a - 1))) a--;
-    let b = 0;
-    while (
-      b < max - a &&
-      old.charCodeAt(old.length - 1 - b) ===
-        text.charCodeAt(text.length - 1 - b)
-    ) {
-      b++;
-    }
-    if (b > 0 && isLowSurrogate(old.charCodeAt(old.length - b))) b--;
     const clamp = (n: number) => Math.min(n, text.length);
     const sel = v.state.selection;
     const selection = EditorSelection.create(
@@ -455,11 +515,7 @@ export function EditorHost(props: EditorHostProps) {
     const visible = e.wrapper.style.display !== "none";
     const top = v.scrollDOM.scrollTop;
     v.dispatch({
-      changes: {
-        from: a,
-        to: old.length - b,
-        insert: text.slice(a, text.length - b),
-      },
+      changes: changeTo(old, text),
       selection,
       annotations: [
         isolateHistory.of("full"),
@@ -596,6 +652,7 @@ export function EditorHost(props: EditorHostProps) {
       readOnly: new Compartment(),
       fontSize: new Compartment(),
       gutter: new Compartment(),
+      history: new Compartment(),
       current: {
         language: "plaintext",
         wrap: tab.wrap,
@@ -610,7 +667,14 @@ export function EditorHost(props: EditorHostProps) {
     };
     const e = entry as Entry; // the listener only runs once view is set
     const listener = EditorView.updateListener.of((u) => {
-      if (u.docChanged) latest.current.onChange(id, u.state.doc.toString());
+      if (u.docChanged) {
+        const text = u.state.doc.toString();
+        latest.current.onChange(id, text);
+        const outsideChange = u.transactions.some(
+          (tr) => tr.docChanged && !tr.annotation(fromRich),
+        );
+        if (outsideChange) tellOutside(id, text);
+      }
       reportFormat(id, u);
       maybeGuess(id, e, u);
       if (u.selectionSet || u.docChanged) {
@@ -625,6 +689,7 @@ export function EditorHost(props: EditorHostProps) {
         selection: clampSelection(tab, text.length),
         extensions: [
           baseSetup,
+          entry.history.of(history()),
           entry.language.of([]),
           entry.wrap.of(wrapExt(tab.wrap)),
           entry.readOnly.of(readOnlyExt(readOnly)),
@@ -644,6 +709,19 @@ export function EditorHost(props: EditorHostProps) {
     });
     if (tab.language !== "plaintext") applyLanguage(e, tab.language);
     return e;
+  };
+
+  const tellOutside = (id: string, text: string) => {
+    for (const cb of [...(outside.current.get(id) ?? [])]) cb(text);
+  };
+
+  /** Settle the `ready` promise of `id`, if one is waiting. */
+  const settle = (id: string, err?: Error) => {
+    const w = waiters.current.get(id);
+    if (!w) return;
+    waiters.current.delete(id);
+    if (err) w.reject(err);
+    else w.resolve();
   };
 
   const destroy = (id: string, e: Entry) => {
@@ -716,6 +794,8 @@ export function EditorHost(props: EditorHostProps) {
         e.wrapper.style.display = "none";
         host.appendChild(e.wrapper);
         views.current.set(id, e);
+        tellOutside(id, text);
+        settle(id);
         const done = replaced.current.get(id) ?? 0;
         replaced.current.set(id, Math.max(done, known));
         applyReplaces();
@@ -725,7 +805,10 @@ export function EditorHost(props: EditorHostProps) {
           applyConvert(e, tabOf(id)?.file ?? tab.file, patch);
         showShown();
       })
-      .catch((err: unknown) => console.error("load scratchpad failed", err))
+      .catch((err: unknown) => {
+        console.error("load scratchpad failed", err);
+        settle(id, new Error(`Tab ${id}'s text failed to load`));
+      })
       .finally(() => creating.current.delete(id));
   };
 
@@ -737,6 +820,11 @@ export function EditorHost(props: EditorHostProps) {
     for (const [id, e] of views.current) if (!ids.has(id)) destroy(id, e);
     for (const id of heldConverts.current.keys()) {
       if (!ids.has(id)) heldConverts.current.delete(id);
+    }
+    for (const id of [...waiters.current.keys()]) {
+      if (!ids.has(id)) {
+        settle(id, new Error(`Tab ${id} closed before its text loaded`));
+      }
     }
 
     showShown();
@@ -836,14 +924,84 @@ export function EditorHost(props: EditorHostProps) {
   // Unmount: flush what's pending and tear every view down.
   useEffect(() => {
     const map = views.current;
+    const waiting = waiters.current;
     return () => {
       for (const [id, e] of map) {
         flushPatch(id, e);
         destroy(id, e);
       }
+      for (const id of [...waiting.keys()]) {
+        settle(id, new Error("The editor host unmounted"));
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The text bridge: one object for the host's life, reading the views map
+  // and the latest props through refs.
+  const [bridge] = useState<TextBridge>(() => {
+    const readOnly = (id: string) => {
+      const e = views.current.get(id);
+      const tab = tabOf(id);
+      return (e?.view.state.readOnly ?? false) || (!!tab && isReadOnly(tab));
+    };
+    return {
+      text: (id) => views.current.get(id)?.view.state.doc.toString() ?? null,
+      replace: (id, text) => {
+        const e = views.current.get(id);
+        if (!e || readOnly(id)) return;
+        const old = e.view.state.doc.toString();
+        if (old === text) return;
+        e.view.dispatch({
+          changes: changeTo(old, text),
+          annotations: [fromRich.of(true), Transaction.addToHistory.of(false)],
+        });
+      },
+      onOutsideChange: (id, cb) => {
+        let set = outside.current.get(id);
+        if (!set) outside.current.set(id, (set = new Set()));
+        const mine = set;
+        mine.add(cb);
+        return () => {
+          mine.delete(cb);
+          if (mine.size === 0 && outside.current.get(id) === mine) {
+            outside.current.delete(id);
+          }
+        };
+      },
+      clearHistory: (id) => {
+        const e = views.current.get(id);
+        if (!e) return;
+        // Dropping the history field and adding it back starts it empty.
+        e.view.dispatch({ effects: e.history.reconfigure([]) });
+        e.view.dispatch({ effects: e.history.reconfigure(history()) });
+      },
+      readOnly,
+      ready: (id) => {
+        if (views.current.has(id)) return Promise.resolve();
+        let w = waiters.current.get(id);
+        if (!w) {
+          let resolve!: () => void;
+          let reject!: (err: Error) => void;
+          const promise = new Promise<void>((res, rej) => {
+            resolve = res;
+            reject = rej;
+          });
+          w = { promise, resolve, reject };
+          waiters.current.set(id, w);
+        }
+        return w.promise;
+      },
+    };
+  });
+
+  // Hand the bridge over (a layout effect, so it's there before plain
+  // effects run); a replaced callback gets null, the new one the bridge.
+  const { bridgeRef } = props;
+  useLayoutEffect(() => {
+    bridgeRef?.(bridge);
+    return () => bridgeRef?.(null);
+  }, [bridgeRef, bridge]);
 
   // Line numbers on or off for every view, hidden ones included.
   const showNumbers = props.lineNumbers ?? true;

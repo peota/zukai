@@ -13,7 +13,12 @@ import {
   type Extension,
 } from "@codemirror/state";
 import { javascript } from "@codemirror/lang-javascript";
-import { EditorHost, reindent, type EditorHostProps } from "./EditorHost";
+import {
+  EditorHost,
+  reindent,
+  type EditorHostProps,
+  type TextBridge,
+} from "./EditorHost";
 import { undo } from "@codemirror/commands";
 import { foldedRanges, syntaxTree } from "@codemirror/language";
 import type { FileInfo, TabState } from "../model/types";
@@ -953,5 +958,134 @@ describe("EditorHost with two shown views", () => {
     expect(e.defaultPrevented).toBe(true);
     expect(onZoom).toHaveBeenCalledTimes(1);
     expect(onZoom).toHaveBeenLastCalledWith(1);
+  });
+});
+
+describe("EditorHost text bridge", () => {
+  function withBridge(over: Partial<EditorHostProps> = {}) {
+    let bridge: TextBridge | null = null;
+    const bridgeRef = vi.fn((b: TextBridge | null) => (bridge = b));
+    const r = setup({ bridgeRef, ...over });
+    return { ...r, bridgeRef, bridge: () => bridge! };
+  }
+
+  it("bridge_reads_and_replaces_outside_history", async () => {
+    const { container, props, bridge, bridgeRef, rerender } = withBridge();
+    const v = await activeView(container, "text of a");
+    const b = bridge();
+    expect(b.text("a")).toBe("text of a");
+    expect(b.text("b")).toBeNull();
+    expect(b.readOnly("a")).toBe(false);
+    act(() => b.replace("a", "# rich a"));
+    expect(v.state.doc.toString()).toBe("# rich a");
+    expect(b.text("a")).toBe("# rich a");
+    expect(props.onChange).toHaveBeenLastCalledWith("a", "# rich a");
+    act(() => void undo(v));
+    expect(v.state.doc.toString()).toBe("# rich a");
+    // Writing the same text again changes nothing.
+    vi.mocked(props.onChange).mockClear();
+    act(() => b.replace("a", "# rich a"));
+    expect(props.onChange).not.toHaveBeenCalled();
+    rerender({ fontSize: 15 });
+    expect(bridgeRef).toHaveBeenCalledTimes(1);
+  });
+
+  it("bridge_hands_over_a_stable_object_and_null_on_unmount", async () => {
+    const { container, bridgeRef, rerender, unmount } = withBridge();
+    await activeView(container, "text of a");
+    const first = bridgeRef.mock.calls[0][0];
+    expect(first).not.toBeNull();
+    rerender({ activeId: "b" });
+    await activeView(container, "text of b");
+    expect(bridgeRef).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(bridgeRef).toHaveBeenLastCalledWith(null);
+  });
+
+  it("bridge_reports_outside_changes_only", async () => {
+    const { container, rerender, bridge } = withBridge();
+    const v = await activeView(container, "text of a");
+    const heard = vi.fn();
+    const stop = bridge().onOutsideChange("a", heard);
+    rerender({ replaceRequests: [{ seq: 1, id: "a", text: "from disk" }] });
+    expect(heard).toHaveBeenLastCalledWith("from disk");
+    heard.mockClear();
+    act(() => bridge().replace("a", "from rich"));
+    expect(heard).not.toHaveBeenCalled();
+    // Typing in the plain editor is an outside change too.
+    act(() =>
+      v.dispatch({
+        changes: { from: 0, insert: "X" },
+        userEvent: "input.type",
+      }),
+    );
+    expect(heard).toHaveBeenLastCalledWith("Xfrom rich");
+    stop();
+    heard.mockClear();
+    rerender({ replaceRequests: [{ seq: 2, id: "a", text: "again" }] });
+    expect(heard).not.toHaveBeenCalled();
+  });
+
+  it("bridge_refuses_read_only", async () => {
+    const { container, props, bridge } = withBridge({
+      tabs: [tab("a", { file: { ...FILE, held: "readonly" } })],
+    });
+    const v = await activeView(container, "text of a");
+    expect(bridge().readOnly("a")).toBe(true);
+    act(() => bridge().replace("a", "nope"));
+    expect(v.state.doc.toString()).toBe("text of a");
+    expect(props.onChange).not.toHaveBeenCalled();
+  });
+
+  it("bridge_clear_history", async () => {
+    const { container, bridge } = withBridge();
+    const v = await activeView(container, "text of a");
+    act(() =>
+      v.dispatch({
+        changes: { from: 0, insert: "X" },
+        userEvent: "input.type",
+      }),
+    );
+    act(() => bridge().clearHistory("a"));
+    act(() => void undo(v));
+    expect(v.state.doc.toString()).toBe("Xtext of a");
+    // History still works for what comes next.
+    act(() =>
+      v.dispatch({
+        changes: { from: 0, insert: "Y" },
+        userEvent: "input.type",
+      }),
+    );
+    act(() => void undo(v));
+    expect(v.state.doc.toString()).toBe("Xtext of a");
+  });
+
+  it("bridge_ready_waits_for_load", async () => {
+    let resolve!: (s: string) => void;
+    const { container, bridge } = withBridge({
+      loadContent: () => new Promise<string>((r) => (resolve = r)),
+    });
+    let done = false;
+    const ready = bridge()
+      .ready("a")
+      .then(() => (done = true));
+    await act(async () => {});
+    expect(done).toBe(false);
+    expect(bridge().text("a")).toBeNull();
+    await act(async () => resolve("loaded a"));
+    await ready;
+    expect(bridge().text("a")).toBe("loaded a");
+    await activeView(container, "loaded a");
+    // Once loaded, ready resolves at once.
+    await expect(bridge().ready("a")).resolves.toBeUndefined();
+  });
+
+  it("bridge_ready_rejects_when_the_tab_closes_first", async () => {
+    const { rerender, bridge } = withBridge({
+      loadContent: () => new Promise<string>(() => {}),
+    });
+    const ready = bridge().ready("a");
+    rerender({ tabs: [tab("b")], activeId: "b" });
+    await expect(ready).rejects.toThrow(/closed/);
   });
 });
