@@ -214,10 +214,12 @@ afterEach(async () => {
 
 type Result = { current: ReturnType<typeof useWorkspace> };
 
-async function mount() {
+/** Most tests are about autosaving Files, so autosave starts on. */
+async function mount(autosaveFiles = true) {
   const r = renderHook(() => useWorkspace());
   await waitFor(() => expect(r.result.current.ready).toBe(true));
   await waitFor(() => expect(h.fileChanged).not.toBeNull());
+  act(() => r.result.current.setSettings({ autosaveFiles }));
   return r;
 }
 
@@ -233,6 +235,27 @@ async function openP(r: Result, path = P): Promise<string> {
 
 /** Wait past the 300 ms autosave debounce. */
 const settle = () => act(() => new Promise((res) => setTimeout(res, 350)));
+
+describe("useFiles autosave setting", () => {
+  it("turning autosave on doesn't write an unsaved File until its next edit", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "typed"));
+    await settle();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(shadows[id]).toBe("typed");
+    expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+
+    act(() => result.current.setSettings({ autosaveFiles: true }));
+    await act(() => h.flushAll!());
+    expect(f.fileWrite).not.toHaveBeenCalled();
+
+    act(() => result.current.setContent(id, "typed more"));
+    await settle();
+    expect(f.fileWrite).toHaveBeenCalledWith(P, "typed more", FMT, fp("h1"));
+    expect(fileTabOf(result)!.file!.unsaved).toBeUndefined();
+  });
+});
 
 describe("useFiles opening", () => {
   it("openSamePathTwiceSwitchesToExistingTab", async () => {

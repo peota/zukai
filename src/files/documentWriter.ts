@@ -20,6 +20,10 @@ export interface DocumentWriterDeps {
   fileFingerprint(path: string): Promise<Fingerprint | null>;
   shadowWrite(id: string, text: string): Promise<void>;
   shadowDelete(id: string): Promise<void>;
+  /** True when Files are saved automatically (the Settings switch). */
+  autosaveFiles(): boolean;
+  /** The text last read from or written to the File (undefined: unknown). */
+  diskText(id: string): string | undefined;
   /** The text reached the Document's own storage (scratchpad or File). */
   onWritten?(id: string, text: string): void;
   /**
@@ -36,6 +40,12 @@ export interface DocumentWriterDeps {
 }
 
 /**
+ * "auto" is the Saver's write: with autosave off, a File's edits go to its
+ * shadow. "save" is an explicit save (Ctrl+S): it writes the File.
+ */
+export type WriteMode = "auto" | "save";
+
+/**
  * The Saver's one write function. A Scratchpad goes to its scratchpad file.
  * A File is written only when it isn't held and its fingerprint still matches
  * the disk; otherwise the Tab is held and the text goes to its shadow file.
@@ -44,7 +54,7 @@ export interface DocumentWriterDeps {
  */
 export function createDocumentWriter(
   deps: DocumentWriterDeps,
-): (id: string, text: string) => Promise<void> {
+): (id: string, text: string, mode?: WriteMode) => Promise<void> {
   /** Hold the File (unless it moved meanwhile) and keep the text aside. */
   const hold = async (
     id: string,
@@ -58,7 +68,7 @@ export function createDocumentWriter(
     await deps.shadowWrite(id, text);
   };
 
-  return async (id, text) => {
+  return async (id, text, mode = "auto") => {
     const tab = deps.getTab(id);
     if (!tab) {
       // Closed Tabs are finalised by the close itself; nothing to write.
@@ -90,6 +100,22 @@ export function createDocumentWriter(
     }
     if (file.held !== null) {
       await deps.shadowWrite(id, text);
+      return;
+    }
+    if (mode === "auto" && !deps.autosaveFiles()) {
+      // Manual mode: the File is untouched; the text waits in the shadow.
+      if (text === deps.diskText(id) && !file.diskFormat) {
+        // Back to the disk's text with nothing else pending: nothing unsaved.
+        await deps.shadowDelete(id);
+        if (file.unsaved) {
+          const next = { ...file };
+          delete next.unsaved;
+          deps.patchFile(id, next);
+        }
+        return;
+      }
+      await deps.shadowWrite(id, text);
+      if (!file.unsaved) deps.patchFile(id, { ...file, unsaved: true });
       return;
     }
     const { path } = file;

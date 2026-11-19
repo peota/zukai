@@ -10,7 +10,7 @@ import {
   shadowDelete,
   shadowWrite,
 } from "../files/api";
-import { createDocumentWriter } from "../files/documentWriter";
+import { createDocumentWriter, type WriteMode } from "../files/documentWriter";
 import { BEFORE_EXIT_EVENT } from "./exit";
 import { createKeyedLock } from "./keyedLock";
 import { useFiles, type FilesApi } from "./files";
@@ -304,7 +304,7 @@ export function useWorkspace(): Workspace {
   const [lock] = useState(createKeyedLock);
   /** The Saver's write: scratchpad, File or shadow (the writer is stateless). */
   const writeDoc = useCallback(
-    (id: string, text: string) =>
+    (id: string, text: string, mode: WriteMode = "auto") =>
       lock(id, () =>
         createDocumentWriter({
           getTab: (tid) => stateRef.current.tabs.find((t) => t.id === tid),
@@ -315,15 +315,26 @@ export function useWorkspace(): Workspace {
           fileFingerprint,
           shadowWrite,
           shadowDelete,
+          autosaveFiles: () => settingsRef.current.autosaveFiles,
+          diskText: (tid) => onDisk.get(tid),
           // A Tab whose shadow is unread is never written (see useFiles).
           isUnreadable: (tid) => keptShadows.has(tid),
           // Never write text that isn't the Tab's: a defence for any path
           // that schedules a write before the text loaded.
           isLoaded: (tid) => contents.has(tid),
           onWritten: (tid, written) => onDisk.set(tid, written),
-        })(id, text),
+        })(id, text, mode),
       ),
     [commit, contents, keptShadows, lock, onDisk],
+  );
+  /**
+   * An explicit save. Takes the Tab's lock, which is not re-entrant (work
+   * under it waits for earlier work under the same key), so never call this
+   * from code already holding that Tab's lock.
+   */
+  const saveNow = useCallback(
+    (id: string, text: string) => writeDoc(id, text, "save"),
+    [writeDoc],
   );
   // createSaver only stores writeDoc; refs are read when a write runs.
   // eslint-disable-next-line react-hooks/refs
@@ -365,6 +376,10 @@ export function useWorkspace(): Workspace {
   );
 
   const newTabWrap = useCallback(() => settingsRef.current.wrapNewTabs, []);
+  const autosaveFiles = useCallback(
+    () => settingsRef.current.autosaveFiles,
+    [],
+  );
   const files = useFiles({
     state,
     ready,
@@ -374,6 +389,8 @@ export function useWorkspace(): Workspace {
     onDisk,
     saver,
     lock,
+    saveNow,
+    autosaveFiles,
     freshId,
     track,
     saveSessionNow,
