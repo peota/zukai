@@ -423,6 +423,7 @@ describe("useWorkspace settings", () => {
       accent: "blue",
       wrapNewTabs: false,
       lineNumbers: true,
+      autosaveFiles: false,
       previewSplit: 0.5,
       markdownDefault: "rich",
     });

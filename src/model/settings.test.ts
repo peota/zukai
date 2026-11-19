@@ -11,6 +11,7 @@ describe("parseSettings", () => {
         accent: "violet",
         wrapNewTabs: true,
         lineNumbers: false,
+        autosaveFiles: true,
         previewSplit: 0.35,
         markdownDefault: "markdown",
       }),
@@ -21,6 +22,7 @@ describe("parseSettings", () => {
       accent: "violet",
       wrapNewTabs: true,
       lineNumbers: false,
+      autosaveFiles: true,
       previewSplit: 0.35,
       markdownDefault: "markdown",
     });
@@ -36,6 +38,7 @@ describe("parseSettings", () => {
         accent: 7,
         wrapNewTabs: "yes",
         lineNumbers: false,
+        autosaveFiles: "yes",
       }),
     ).toEqual({
       theme: "system",
@@ -44,9 +47,19 @@ describe("parseSettings", () => {
       accent: "blue",
       wrapNewTabs: false,
       lineNumbers: false,
+      autosaveFiles: false,
       previewSplit: 0.5,
       markdownDefault: "rich",
     });
+  });
+});
+
+describe("autosaveFiles", () => {
+  it("is off by default and kept only when a boolean", () => {
+    expect(DEFAULT_SETTINGS.autosaveFiles).toBe(false);
+    expect(parseSettings({ autosaveFiles: true }).autosaveFiles).toBe(true);
+    expect(parseSettings({}).autosaveFiles).toBe(false);
+    expect(parseSettings({ autosaveFiles: 1 }).autosaveFiles).toBe(false);
   });
 });
 

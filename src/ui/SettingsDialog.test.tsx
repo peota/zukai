@@ -27,6 +27,7 @@ describe("SettingsDialog", () => {
         accent: "blue",
         wrapNewTabs: true,
         lineNumbers: false,
+        autosaveFiles: false,
         previewSplit: 0.5,
         markdownDefault: "rich",
       },
@@ -51,6 +52,13 @@ describe("SettingsDialog", () => {
     expect(
       screen.getByRole("checkbox", { name: "Line numbers" }),
     ).not.toBeChecked();
+    const autosave = screen.getByRole("checkbox", {
+      name: "Save files automatically",
+    });
+    expect(autosave).not.toBeChecked();
+    expect(autosave).toHaveAccessibleDescription(
+      "Scratchpads always save themselves. When off, a file changes on disk only when you save it.",
+    );
   });
 
   it("chooses how Markdown notes open", () => {
@@ -78,6 +86,10 @@ describe("SettingsDialog", () => {
     expect(props.onSettings).toHaveBeenCalledWith({ wrapNewTabs: true });
     fireEvent.click(screen.getByRole("checkbox", { name: "Line numbers" }));
     expect(props.onSettings).toHaveBeenCalledWith({ lineNumbers: false });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Save files automatically" }),
+    );
+    expect(props.onSettings).toHaveBeenCalledWith({ autosaveFiles: true });
   });
 
   it("the font size steps, takes a typed number, and resets", () => {

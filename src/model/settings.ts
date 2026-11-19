@@ -34,6 +34,8 @@ export interface Settings {
   wrapNewTabs: boolean;
   /** The line-number gutter in the text editor. */
   lineNumbers: boolean;
+  /** Files (not Scratchpads) save themselves as you type; off, they save on Ctrl+S. */
+  autosaveFiles: boolean;
   /** The editor's share of the row in a Markdown Split (the preview has the rest). */
   previewSplit: number;
   /** How a Markdown file (or a picked-Markdown Scratchpad) opens. */
@@ -55,6 +57,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   accent: "blue",
   wrapNewTabs: false,
   lineNumbers: true,
+  autosaveFiles: false,
   previewSplit: 0.5,
   markdownDefault: "rich",
 });
@@ -86,6 +89,8 @@ export function parseSettings(v: unknown): Settings {
       typeof v.wrapNewTabs === "boolean" ? v.wrapNewTabs : d.wrapNewTabs,
     lineNumbers:
       typeof v.lineNumbers === "boolean" ? v.lineNumbers : d.lineNumbers,
+    autosaveFiles:
+      typeof v.autosaveFiles === "boolean" ? v.autosaveFiles : d.autosaveFiles,
     previewSplit:
       typeof v.previewSplit === "number" && Number.isFinite(v.previewSplit)
         ? clampSplit(v.previewSplit)
