@@ -707,7 +707,10 @@ describe("useWorkspace Rich / Markdown editor", () => {
     await waitFor(() => expect(modeOf(result)).toBe("rich"));
   });
 
-  it("switch_round_trip_keeps_text", async () => {
+  // Mode switches alone (no rich editor mounts here): the text and the disk
+  // are untouched. An edit made in Rich then switched within the debounce
+  // is covered in App.test.tsx, where the rich editor is mounted.
+  it("switch_round_trip_without_an_edit_keeps_text", async () => {
     disk.a = "# Hi\n\n* a\n";
     const { result } = await mount();
     await markdownTab(result, "rich");
