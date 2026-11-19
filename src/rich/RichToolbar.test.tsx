@@ -79,6 +79,26 @@ describe("RichToolbar", () => {
     expect(md()).toBe("**~~one~~**\n");
   });
 
+  it("toolbar_wraps_and_table_control_follows_table", async () => {
+    const { view } = await mountRich("| a |\n| - |\n| 1 |\n");
+    act(() => select(view, "1", 1));
+    const bar = screen.getByRole("toolbar", { name: "Formatting" });
+    // A narrow pane (a Split) wraps onto a second row; nothing scrolls away.
+    expect(bar.className).toMatch(/\bflex-wrap\b/);
+    expect(bar.className).not.toMatch(/overflow-x-(auto|scroll)/);
+    // Each group stays together on its row.
+    const groups = bar.querySelectorAll(":scope > [role=group]");
+    expect(groups.length).toBeGreaterThanOrEqual(4);
+    for (const g of groups) expect(g.className).toMatch(/\bshrink-0\b/);
+    const names = [...bar.querySelectorAll("button")].map((b) =>
+      b.getAttribute("aria-label"),
+    );
+    expect(names.indexOf("Table options")).toBe(names.indexOf("Table") + 1);
+    expect(button("Table options").closest("[role=group]")).toBe(
+      button("Table").closest("[role=group]"),
+    );
+  });
+
   it("new_table_is_3x2_with_header", async () => {
     const { view, md } = await mountRich("intro\n");
     act(() => select(view, "intro", 5));

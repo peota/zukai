@@ -1,5 +1,6 @@
 /**
- * The table control: shown in the toolbar while the cursor is in a table,
+ * The table control: shown in the toolbar, beside its Table item, while the
+ * cursor is in a table,
  * with a menu to add and delete rows and columns, or the table.
  */
 import { useEffect, useState } from "react";
@@ -50,7 +51,6 @@ export function TableControls() {
 
   return (
     <>
-      <span className="mx-1 h-4 w-px shrink-0 bg-hairline" />
       <button
         type="button"
         aria-label="Table options"

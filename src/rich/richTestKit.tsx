@@ -1,5 +1,5 @@
 /** Test helpers: a RichEditor over a plain-string Tab text. */
-import { render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { expect, vi } from "vitest";
 import { serializerCtx } from "@milkdown/kit/core";
 import { TextSelection } from "@milkdown/kit/prose/state";
@@ -54,6 +54,9 @@ export async function mountRich(
     expect(handle).not.toBeNull();
     return handle!;
   });
+  // The handle is seen while rendering: let the editor's UI finish mounting
+  // (its effects add the key and transaction listeners).
+  await act(async () => {});
   const view: EditorView = rich.view;
   /** The Markdown the editor serializes now. */
   const md = () => rich.editor.ctx.get(serializerCtx)(view.state.doc);

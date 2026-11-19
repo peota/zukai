@@ -78,11 +78,14 @@ function mount(
 }
 
 async function viewOf(id = "a"): Promise<EditorView> {
-  return waitFor(() => {
+  const view = await waitFor(() => {
     const v = views.get(id);
     expect(v).toBeDefined();
     return v!;
   });
+  // The view is seen while rendering: let its effects (wheel, focus) run.
+  await act(async () => {});
+  return view;
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 450));

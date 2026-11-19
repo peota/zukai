@@ -3,7 +3,13 @@
  * blocks to insert, reflecting the selection. Also owns the keys Milkdown
  * doesn't bind: Mod+Shift+X (strike) and Mod+K (link).
  */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { detectPlatform, letterOf } from "../app/shortcuts";
 import { formatKeys } from "../app/shortcutList";
@@ -51,7 +57,27 @@ function Tool(p: {
   );
 }
 
-const Sep = () => <span className="mx-1 h-4 w-px shrink-0 bg-hairline" />;
+/**
+ * Items that stay together when the toolbar wraps (a narrow Split), each
+ * after the first set off by a hairline.
+ */
+const Group = ({
+  first,
+  children,
+}: {
+  first?: boolean;
+  children: ReactNode;
+}) => (
+  <div
+    role="group"
+    className={
+      "flex shrink-0 items-center gap-0.5" +
+      (first ? "" : " border-l border-hairline pl-1")
+    }
+  >
+    {children}
+  </div>
+);
 
 const MARK_TOOLS: [MarkKind, string, string, ReactNode][] = [
   ["bold", "Bold", keys("B"), <b key="b">B</b>],
@@ -143,44 +169,47 @@ export function RichToolbar() {
     <div
       role="toolbar"
       aria-label="Formatting"
-      className="flex h-8 items-center gap-0.5 overflow-x-auto border-b border-hairline bg-editor px-3"
+      className="flex min-h-8 flex-wrap items-center gap-x-1 gap-y-0.5 border-b border-hairline bg-editor px-3 py-1"
     >
-      {BLOCK_TOOLS.map(([id, glyph]) => (
+      <Group first>
+        {BLOCK_TOOLS.map(([id, glyph]) => (
+          <Tool
+            key={id}
+            label={BLOCK_ITEMS[id].label}
+            pressed={BLOCK_ITEMS[id].on(a)}
+            disabled={readOnly || a.inTable}
+            onRun={block(BLOCK_ITEMS[id])}
+          >
+            {glyph}
+          </Tool>
+        ))}
+      </Group>
+      <Group>
+        {MARK_TOOLS.map(([kind, label, hint, glyph]) => (
+          <Tool
+            key={kind}
+            label={label}
+            hint={hint}
+            pressed={a.marks.has(kind)}
+            disabled={readOnly || a.block === "code"}
+            onRun={() => {
+              toggleMark(view, kind);
+              done();
+            }}
+          >
+            {glyph}
+          </Tool>
+        ))}
         <Tool
-          key={id}
-          label={BLOCK_ITEMS[id].label}
-          pressed={BLOCK_ITEMS[id].on(a)}
-          disabled={readOnly || a.inTable}
-          onRun={block(BLOCK_ITEMS[id])}
-        >
-          {glyph}
-        </Tool>
-      ))}
-      <Sep />
-      {MARK_TOOLS.map(([kind, label, hint, glyph]) => (
-        <Tool
-          key={kind}
-          label={label}
-          hint={hint}
-          pressed={a.marks.has(kind)}
+          label="Link"
+          hint={keys("K")}
+          pressed={a.marks.has("link")}
           disabled={readOnly || a.block === "code"}
-          onRun={() => {
-            toggleMark(view, kind);
-            done();
-          }}
+          onRun={openLink}
         >
-          {glyph}
+          <Icon name="link" />
         </Tool>
-      ))}
-      <Tool
-        label="Link"
-        hint={keys("K")}
-        pressed={a.marks.has("link")}
-        disabled={readOnly || a.block === "code"}
-        onRun={openLink}
-      >
-        <Icon name="link" />
-      </Tool>
+      </Group>
       {href !== null && (
         <input
           aria-label="Link URL"
@@ -197,30 +226,32 @@ export function RichToolbar() {
             e.stopPropagation();
           }}
           onBlur={() => setHref(null)}
-          className="ml-1 h-6 w-56 shrink-0 rounded-[4px] bg-chrome px-2 text-[12px] text-text outline-none placeholder:text-faint"
+          // Never wider than the toolbar, so it fits a narrow Split.
+          className="h-6 w-56 max-w-full min-w-0 rounded-[4px] bg-chrome px-2 text-[12px] text-text outline-none placeholder:text-faint"
         />
       )}
       {INSERT_TOOLS.map((group, i) => (
-        <span key={i} className="contents">
-          <Sep />
+        <Group key={i}>
           {group.map(([id, icon]) => (
-            <Tool
-              key={id}
-              label={BLOCK_ITEMS[id].label}
-              pressed={
-                id === "table" || id === "rule"
-                  ? undefined
-                  : BLOCK_ITEMS[id].on(a)
-              }
-              disabled={readOnly || a.inTable}
-              onRun={block(BLOCK_ITEMS[id])}
-            >
-              <Icon name={icon} />
-            </Tool>
+            <Fragment key={id}>
+              <Tool
+                label={BLOCK_ITEMS[id].label}
+                pressed={
+                  id === "table" || id === "rule"
+                    ? undefined
+                    : BLOCK_ITEMS[id].on(a)
+                }
+                disabled={readOnly || a.inTable}
+                onRun={block(BLOCK_ITEMS[id])}
+              >
+                <Icon name={icon} />
+              </Tool>
+              {/* Beside the Table item: shown while the cursor is in one. */}
+              {id === "table" && <TableControls />}
+            </Fragment>
           ))}
-        </span>
+        </Group>
       ))}
-      <TableControls />
     </div>
   );
 }
