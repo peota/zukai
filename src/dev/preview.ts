@@ -106,7 +106,55 @@ const notes = `Onboarding notes
 - On-call handbook: wiki/oncall (rotation starts week 3)
 `;
 
+// A plain drawing (default white paper) and a transparent image, for the
+// Canvas and Image views.
+const flow = JSON.stringify({
+  type: "excalidraw",
+  version: 2,
+  source: "zukai",
+  elements: [
+    {
+      id: "c1",
+      type: "ellipse",
+      x: 120,
+      y: 120,
+      width: 220,
+      height: 220,
+      strokeColor: "#1e1e1e",
+      backgroundColor: "#ffc9c9",
+      fillStyle: "cross-hatch",
+      strokeWidth: 2,
+      roughness: 1,
+      opacity: 100,
+      seed: 7,
+      version: 1,
+    },
+    {
+      id: "r1",
+      type: "rectangle",
+      x: 420,
+      y: 170,
+      width: 220,
+      height: 120,
+      strokeColor: "#1971c2",
+      backgroundColor: "#a5d8ff",
+      fillStyle: "hachure",
+      strokeWidth: 2,
+      roughness: 1,
+      opacity: 100,
+      seed: 11,
+      version: 1,
+    },
+  ],
+  appState: { viewBackgroundColor: "#ffffff", gridSize: 20 },
+  files: {},
+});
+
+const logo = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 32 32"><path d="M4 7h8l4 10 4-10h8L18 27h-4z" fill="#3b74ee"/></svg>`;
+
 const files: Record<string, string> = {
+  [join(ROOT, "flow.excalidraw")]: flow,
+  [join(ROOT, "logo.svg")]: logo,
   [join(ROOT, "incidents\\2026-11-12 redis failover.md")]: md,
   [join(ROOT, "incidents\\checkout-latency.csv")]: csv,
   [join(ROOT, "snippets\\k8s.sh")]: sh,
@@ -186,7 +234,10 @@ const handlers: Record<string, (a: Args) => unknown> = {
   library_quick_open: (a) => {
     const q = Array.from(String(a.query).replace(/\s/g, "").toLowerCase());
     const hits = Object.keys(files).flatMap((p) => {
-      const rel = p.slice(ROOT.length + 1).split(sep).join("/");
+      const rel = p
+        .slice(ROOT.length + 1)
+        .split(sep)
+        .join("/");
       const chars = Array.from(rel.toLowerCase());
       const positions: number[] = [];
       for (let i = 0; i < chars.length && positions.length < q.length; i++) {
@@ -207,6 +258,8 @@ const handlers: Record<string, (a: Args) => unknown> = {
     files[a.path as string] = a.text as string;
     return { kind: "written", fingerprint: fp(a.text as string) };
   },
+  file_read_bytes: (a) =>
+    new TextEncoder().encode(files[a.path as string] ?? "").buffer,
   file_fingerprint: (a) => fp(files[a.path as string] ?? ""),
   file_fingerprint_quick: (a) => a.expected,
 };
@@ -261,6 +314,8 @@ function demoSession(params: URLSearchParams): string {
       { ...fileTab("f1", "snippets\\k8s.sh", "shell"), pinned: true },
       s1,
       fileTab("f2", "incidents\\2026-11-12 redis failover.md", "markdown"),
+      { ...fileTab("f3", "flow.excalidraw", "plaintext"), kind: "canvas" },
+      { ...fileTab("f4", "logo.svg", "plaintext"), kind: "image" },
     ],
     activeId: params.get("tab") ?? "f2",
     closed: [],

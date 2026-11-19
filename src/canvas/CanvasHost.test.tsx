@@ -241,6 +241,37 @@ describe("CanvasHost", () => {
     expect(props.onChange).toHaveBeenCalledTimes(1);
   });
 
+  it("aWhiteDrawingShowsOnTheEditorGroundAndStillSavesWhite", async () => {
+    const white = JSON.stringify({
+      type: "excalidraw",
+      version: 2,
+      elements: [A1],
+      appState: { viewBackgroundColor: "#ffffff" },
+    });
+    const { props } = await setup({
+      loadContent: () => Promise.resolve(white),
+    });
+    const { change } = await mounted();
+    const initial = fx.props!.initialData as {
+      appState: Record<string, unknown>;
+    };
+    // Shown transparent, so Zukai's editor ground (and the tab) shows.
+    expect(initial.appState.viewBackgroundColor).toBe("transparent");
+    // Excalidraw reporting the transparent paper back is no change.
+    change([A1], { viewBackgroundColor: "transparent" }, {});
+    expect(props.onChange).not.toHaveBeenCalled();
+    // A real edit saves the drawing with its white paper, as in the file.
+    change(
+      [{ id: "a", version: 2 }],
+      { viewBackgroundColor: "transparent" },
+      {},
+    );
+    expect(
+      JSON.parse((props.onChange as ReturnType<typeof vi.fn>).mock.calls[0][1])
+        .appState,
+    ).toEqual({ viewBackgroundColor: "#ffffff" });
+  });
+
   it("restores the remembered viewport and follows the theme live", async () => {
     const viewport = { scrollX: 5, scrollY: 6, zoom: 1.5 };
     const { rerender } = await setup({ tabs: [tab("c", { viewport })] });
