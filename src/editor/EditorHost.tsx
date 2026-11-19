@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import {
   Compartment,
   EditorSelection,
   EditorState,
+  Prec,
   Transaction,
   type Extension,
 } from "@codemirror/state";
@@ -120,8 +120,14 @@ interface Entry {
   language: Compartment;
   wrap: Compartment;
   readOnly: Compartment;
+  fontSize: Compartment;
   /** What each compartment currently holds (or is loading, for language). */
-  current: { language: LanguageId; wrap: boolean; readOnly: boolean };
+  current: {
+    language: LanguageId;
+    wrap: boolean;
+    readOnly: boolean;
+    fontSize: number;
+  };
   /** Guessing is tried at most once per Tab. */
   guessed: boolean;
   pending: Partial<TabState>;
@@ -140,6 +146,15 @@ function sidebarFieldFocused(): boolean {
 
 const wrapExt = (on: boolean): Extension => (on ? EditorView.lineWrapping : []);
 const readOnlyExt = (on: boolean): Extension => [EditorState.readOnly.of(on)];
+
+const DEFAULT_FONT_SIZE = 13;
+/**
+ * The text size as a theme: a theme change makes CodeMirror re-measure its
+ * line heights, so the gutter follows (a plain CSS change can leave the
+ * line numbers at the old height).
+ */
+const fontSizeExt = (px: number): Extension =>
+  Prec.highest(EditorView.theme({ "&": { fontSize: `${px}px` } }));
 
 /** A quiet fold marker: open ones show only while the gutter is hovered. */
 function foldMarker(open: boolean): HTMLElement {
@@ -459,7 +474,13 @@ export function EditorHost(props: EditorHostProps) {
       language: new Compartment(),
       wrap: new Compartment(),
       readOnly: new Compartment(),
-      current: { language: "plaintext", wrap: tab.wrap, readOnly },
+      fontSize: new Compartment(),
+      current: {
+        language: "plaintext",
+        wrap: tab.wrap,
+        readOnly,
+        fontSize: latest.current.fontSize ?? DEFAULT_FONT_SIZE,
+      },
       guessed: tab.languagePicked || tab.languageGuessed,
       pending: {},
       timer: undefined,
@@ -485,6 +506,7 @@ export function EditorHost(props: EditorHostProps) {
           entry.language.of([]),
           entry.wrap.of(wrapExt(tab.wrap)),
           entry.readOnly.of(readOnlyExt(readOnly)),
+          entry.fontSize.of(fontSizeExt(entry.current.fontSize)),
           formatExtension(tab.file?.format ?? null),
           findExtension((mode) => openBar(id, mode)),
           listener,
@@ -667,10 +689,16 @@ export function EditorHost(props: EditorHostProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A new size changes every line's height: re-measure the views.
-  const { fontSize } = props;
+  // A new size for every view, hidden ones included.
+  const fontSize = props.fontSize ?? DEFAULT_FONT_SIZE;
   useEffect(() => {
-    for (const e of views.current.values()) e.view.requestMeasure();
+    for (const e of views.current.values()) {
+      if (e.current.fontSize === fontSize) continue;
+      e.current.fontSize = fontSize;
+      e.view.dispatch({
+        effects: e.fontSize.reconfigure(fontSizeExt(fontSize)),
+      });
+    }
   }, [fontSize]);
 
   // Mod+wheel zooms the text; the page itself never zooms. Small deltas
@@ -698,16 +726,7 @@ export function EditorHost(props: EditorHostProps) {
   const showBar =
     bar && bar.tabId === activeId && tabs.some((t) => t.id === bar.tabId);
   return (
-    <div
-      ref={outer}
-      data-editor-zoom
-      className="relative size-full"
-      style={
-        {
-          "--z-editor-font-size": `${fontSize ?? 13}px`,
-        } as CSSProperties
-      }
-    >
+    <div ref={outer} className="relative size-full">
       <div ref={container} className="size-full" />
       <div ref={barBox} className="contents">
         {showBar && (
