@@ -26,6 +26,7 @@ import {
 import {
   addColumnAfter,
   addColumnBefore,
+  CellSelection,
   deleteColumn,
   deleteRow,
   deleteTable,
@@ -105,6 +106,23 @@ export function toggleTaskAt(view: EditorView, pos: number): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * Deletes the table when its every cell is selected (a drag across the
+ * table makes such a cell selection, and Delete would otherwise only clear
+ * the cells). Any other selection is left to the usual keys.
+ */
+export function deleteSelectedTable(view: EditorView): boolean {
+  const sel = view.state.selection;
+  if (
+    !(sel instanceof CellSelection) ||
+    !sel.isRowSelection() ||
+    !sel.isColSelection()
+  ) {
+    return false;
+  }
+  return deleteTable(view.state, view.dispatch);
 }
 
 /** Ticks or unticks the checklist item the cursor is in. */

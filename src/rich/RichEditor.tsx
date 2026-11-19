@@ -27,7 +27,7 @@ import {
   tooLargeForRich,
 } from "../model/markdownMode";
 import { detectPlatform, matchShortcut } from "../app/shortcuts";
-import { toggleTask, toggleTaskAt } from "./commands";
+import { deleteSelectedTable, toggleTask, toggleTaskAt } from "./commands";
 import { canKeep, richPlugins } from "./richMarkdown";
 import { PROGRAMMATIC, RichContext, type RichHandle } from "./richContext";
 import { RichToolbar } from "./RichToolbar";
@@ -246,10 +246,22 @@ export function RichEditor(p: RichEditorProps) {
       return true;
     };
 
-    /** Mod+Enter in a checklist item ticks or unticks it. */
+    /**
+     * Mod+Enter in a checklist item ticks or unticks it; Delete or
+     * Backspace on a whole selected table removes it.
+     */
     const onKeyDown = (v: EditorView, e: KeyboardEvent) => {
       const mod = mac ? e.metaKey : e.ctrlKey;
       const other = mac ? e.ctrlKey : e.metaKey;
+      if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        !mod &&
+        !other &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        return v.editable && deleteSelectedTable(v);
+      }
       if (e.key !== "Enter" || !mod || other || e.altKey || e.shiftKey) {
         return false;
       }
