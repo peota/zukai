@@ -1424,17 +1424,21 @@ describe("useFiles unsaved Files (manual save)", () => {
     expect(result.current.hasPending(id)).toBe(false);
   });
 
-  it("closing an unsaved File keeps its shadow, and reopening restores it", async () => {
-    const { result } = await mount(false);
-    const id = await openP(result);
-    act(() => result.current.setContent(id, "mine"));
-    await act(() => result.current.closeTab(id));
-    const entry = result.current.state.closed[0];
-    expect(entry.tab.file?.unsaved).toBe(true);
-    expect(entry.tab.file?.held).toBeNull();
-    expect(shadows[id]).toBe("mine");
-    expect(f.fileWrite).not.toHaveBeenCalled();
+  // Closing one asks first (see "useFiles close prompt"); an unsaved entry
+  // still comes from a Session saved by an earlier version.
+  const unsavedEntry = (): ClosedEntry => ({
+    tab: unsavedTab(),
+    index: 1,
+    closedAt: Date.now(),
+  });
 
+  it("reopening an unsaved Recently Closed File restores its shadow", async () => {
+    shadows.f = "mine";
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a")], [unsavedEntry()]),
+    );
+    const { result } = await mount(false);
+    const id = "f";
     await act(() => result.current.reopenEntry(id));
     expect(await result.current.loadContent(id)).toBe("mine");
     expect(fileTabOf(result)!.file!.unsaved).toBe(true);
@@ -1447,10 +1451,12 @@ describe("useFiles unsaved Files (manual save)", () => {
   });
 
   it("reopening an unsaved File whose disk changed is a conflict", async () => {
+    shadows.f = "mine";
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a")], [unsavedEntry()]),
+    );
     const { result } = await mount(false);
-    const id = await openP(result);
-    act(() => result.current.setContent(id, "mine"));
-    await act(() => result.current.closeTab(id));
+    const id = "f";
     disk[P] = { text: "theirs", hash: "h2" };
     await act(() => result.current.reopenEntry(id));
     expect(fileTabOf(result)!.file!.held).toBe("conflict");
@@ -2118,5 +2124,222 @@ describe("useFiles and a pending rich edit", () => {
     const rich = richEdit(result, id, "mine");
     rich.off();
     expect(result.current.hasPending(id)).toBe(false);
+  });
+});
+
+describe("useFiles close prompt", () => {
+  /** Starts closing `ids` (closeTabs) and waits for the prompt to show. */
+  async function startClose(r: Result, ids: string[]) {
+    let closed!: Promise<void>;
+    act(() => {
+      closed = r.current.closeTabs(ids);
+    });
+    await waitFor(() => expect(r.current.closePrompt).not.toBeNull());
+    // Wrapped: an async function returning the promise would wait for it.
+    return { closed };
+  }
+
+  async function unsavedP() {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    await settle();
+    expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+    return { result, id };
+  }
+
+  it("prompts before closing an unsaved File and keeps it open on cancel", async () => {
+    const { result, id } = await unsavedP();
+    let closed!: Promise<void>;
+    act(() => {
+      closed = result.current.closeTab(id);
+    });
+    await waitFor(() =>
+      expect(result.current.closePrompt).toEqual({ id, name: "A.json" }),
+    );
+    expect(result.current.isClosing(id)).toBe(false);
+    act(() => result.current.answerClosePrompt("cancel"));
+    await act(() => closed);
+    expect(result.current.closePrompt).toBeNull();
+    expect(fileTabOf(result)?.id).toBe(id);
+    expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+    expect(shadows[id]).toBe("mine");
+    expect(result.current.state.closed).toEqual([]);
+    expect(f.fileWrite).not.toHaveBeenCalled();
+  });
+
+  it("don't save closes and drops the shadow", async () => {
+    const { result, id } = await unsavedP();
+    const { closed } = await startClose(result, [id]);
+    act(() => result.current.answerClosePrompt("discard"));
+    await act(() => closed);
+    expect(fileTabOf(result)).toBeUndefined();
+    expect(shadows[id]).toBeUndefined();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(disk[P].text).toBe("{}");
+    // The Recently Closed entry reopens from disk.
+    const entry = result.current.state.closed[0];
+    expect(entry.tab.id).toBe(id);
+    expect(entry.tab.file?.unsaved).toBeUndefined();
+    await act(() => result.current.reopenEntry(id));
+    expect(await result.current.loadContent(id)).toBe("{}");
+    expect(fileTabOf(result)!.file!.unsaved).toBeUndefined();
+    expect(result.current.hasPending(id)).toBe(false);
+    expect(shadows[id]).toBeUndefined();
+  });
+
+  it("don't save drops an unsaved Convert too", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    await act(() => result.current.loadContent(id));
+    const crlf = { ...FMT, lineEnding: "crlf" as const };
+    const file = fileTabOf(result)!.file!;
+    act(() =>
+      result.current.updateTab(id, { file: { ...file, format: crlf } }),
+    );
+    await settle();
+    expect(fileTabOf(result)!.file!.diskFormat).toEqual(FMT);
+    const { closed } = await startClose(result, [id]);
+    act(() => result.current.answerClosePrompt("discard"));
+    await act(() => closed);
+    const entry = result.current.state.closed[0].tab.file!;
+    expect(entry.format).toEqual(FMT);
+    expect(entry.diskFormat).toBeUndefined();
+    expect(entry.unsaved).toBeUndefined();
+    expect(shadows[id]).toBeUndefined();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+  });
+
+  it("save then closes", async () => {
+    const { result, id } = await unsavedP();
+    const { closed } = await startClose(result, [id]);
+    act(() => result.current.answerClosePrompt("save"));
+    await act(() => closed);
+    expect(disk[P].text).toBe("mine");
+    expect(fileTabOf(result)).toBeUndefined();
+    expect(shadows[id]).toBeUndefined();
+    expect(result.current.state.closed[0].tab.file?.unsaved).toBeUndefined();
+  });
+
+  it("a save that ends in a Disk conflict keeps the Tab open", async () => {
+    const { result, id } = await unsavedP();
+    disk[P] = { text: "theirs", hash: "h2" };
+    const { closed } = await startClose(result, [id]);
+    act(() => result.current.answerClosePrompt("save"));
+    await act(() => closed);
+    expect(fileTabOf(result)!.file!.held).toBe("conflict");
+    expect(disk[P].text).toBe("theirs");
+    expect(shadows[id]).toBe("mine");
+    expect(result.current.state.closed).toEqual([]);
+  });
+
+  it("prompts when an edit has not reached the shadow yet", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    await act(() => result.current.loadContent(id));
+    vi.useFakeTimers();
+    act(() => result.current.setContent(id, "typed"));
+    let closed!: Promise<void>;
+    act(() => {
+      closed = result.current.closeTab(id);
+    });
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(result.current.closePrompt).toEqual({ id, name: "A.json" });
+    // The 300 ms debounce hasn't run: nothing is in the shadow yet.
+    expect(fileTabOf(result)!.file!.unsaved).toBeUndefined();
+    expect(shadows[id]).toBeUndefined();
+    act(() => result.current.answerClosePrompt("discard"));
+    await act(() => closed);
+    expect(fileTabOf(result)).toBeUndefined();
+    expect(shadows[id]).toBeUndefined();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+  });
+
+  it("cancel stops the remaining closes", async () => {
+    disk[Q] = { text: "q", hash: "q1" };
+    const { result } = await mount(false);
+    const a = await openP(result);
+    const b = await openP(result, Q);
+    act(() => result.current.setContent(a, "A2"));
+    act(() => result.current.setContent(b, "B2"));
+    await settle();
+    const { closed } = await startClose(result, [a, b]);
+    expect(result.current.closePrompt).toEqual({ id: a, name: "A.json" });
+    act(() => result.current.answerClosePrompt("cancel"));
+    await act(() => closed);
+    expect(result.current.closePrompt).toBeNull();
+    expect(fileTabOf(result)?.id).toBe(a);
+    expect(fileTabOf(result, Q)?.id).toBe(b);
+    expect(result.current.state.closed).toEqual([]);
+  });
+
+  it("asks once per unsaved Tab, in order, when closing several", async () => {
+    disk[Q] = { text: "q", hash: "q1" };
+    const { result } = await mount(false);
+    const a = await openP(result);
+    const b = await openP(result, Q);
+    act(() => result.current.setContent(a, "A2"));
+    act(() => result.current.setContent(b, "B2"));
+    await settle();
+    const { closed } = await startClose(result, [a, b]);
+    act(() => result.current.answerClosePrompt("save"));
+    await waitFor(() =>
+      expect(result.current.closePrompt).toEqual({ id: b, name: "notes.txt" }),
+    );
+    act(() => result.current.answerClosePrompt("discard"));
+    await act(() => closed);
+    expect(disk[P].text).toBe("A2");
+    expect(disk[Q].text).toBe("q");
+    expect(result.current.state.closed.map((e) => e.tab.id)).toEqual([b, a]);
+  });
+
+  it("never prompts for a held Tab or a Scratchpad", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    disk[P] = { text: "theirs", hash: "h2" };
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
+    act(() => result.current.setContent("a", "alpha!"));
+    // A prompt would never be answered: this would not resolve.
+    await act(() => result.current.closeTabs([id, "a"]));
+    expect(result.current.closePrompt).toBeNull();
+    expect(result.current.state.closed.map((e) => e.tab.id)).toEqual(["a", id]);
+    expect(result.current.state.closed[1].tab.file?.held).toBe("conflict");
+    expect(shadows[id]).toBe("mine");
+    expect(scratch.a).toBe("alpha!");
+  });
+
+  it("an unsaved File whose disk changed while closed closes as a conflict, unasked", async () => {
+    shadows.f = "mine";
+    disk[P] = { text: "theirs", hash: "b" };
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), fileTab("f", P, { unsaved: true })]),
+    );
+    const { result } = await mount(false);
+    await act(() => result.current.closeTab("f"));
+    expect(result.current.closePrompt).toBeNull();
+    expect(result.current.state.closed[0].tab.file?.held).toBe("conflict");
+    expect(shadows.f).toBe("mine");
+  });
+
+  it("with autosave on, closing right after typing writes the File unasked", async () => {
+    const { result } = await mount(true);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "typed"));
+    await act(() => result.current.closeTab(id));
+    expect(result.current.closePrompt).toBeNull();
+    expect(disk[P].text).toBe("typed");
+  });
+
+  it("quitting never prompts", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    await act(() => h.flushAll!());
+    expect(result.current.closePrompt).toBeNull();
+    expect(shadows[id]).toBe("mine");
+    expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+    expect(f.fileWrite).not.toHaveBeenCalled();
   });
 });
