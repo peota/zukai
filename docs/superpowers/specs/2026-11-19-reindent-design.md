@@ -16,11 +16,15 @@ The owner wants VS Code's habit to work here: press **Shift+Alt+F** in a code fi
 
 - **Shift+Alt+F** in a text Tab:
   - **JSON:** Beautify, as today. Nothing changes.
-  - **JavaScript, TypeScript, HTML, XML, CSS, SQL:** re-indents the selected lines, or the whole document when nothing is selected.
+  - **JavaScript, TypeScript, HTML, XML, CSS:** re-indents the selected lines, or the whole document when nothing is selected.
     - Only leading whitespace changes.
     - It is one undo step.
     - Selections and the cursor stay on the same text.
+    - Several cursors on one line indent it once.
   - **Python, YAML, Markdown, shell, plain text:** nothing happens. *(My call: in Python and YAML indentation **is** the meaning, so re-indenting could change what the code does. Markdown lists and code blocks have the same problem. Plain text and shell have no indentation rules.)*
+  - **SQL:** nothing happens. *(Changed after review, 2026-11-19: CodeMirror's SQL rules indent every continuation line one step, which wrecks the usual aligned `SELECT … FROM … WHERE` layout.)*
+- **Whitespace that is content is kept**: lines inside an HTML `<pre>` or `<textarea>`, and inside HTML/XML comments and CDATA, are left as they are.
+- **Until the Tab's Language has loaded** (it loads on first use), the key does nothing. On a very long file, if the whole file can't be parsed within half a second, it also does nothing rather than re-indent half of it.
 - **Read-only Tabs:** nothing happens, as with Format JSON.
 - **Indentation width:** the editor's existing indent unit, the same one Tab uses.
 - **Settings → Keyboard shortcuts:** the entry is renamed from "Format JSON" to **"Format JSON / re-indent code"**.
