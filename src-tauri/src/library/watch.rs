@@ -145,59 +145,93 @@ impl LibraryWatcher {
     }
 }
 
+/// One added folder's watcher and index. The watcher is shared so it can be
+/// started or stopped without holding the list lock.
+type AddedEntry = (PathBuf, Arc<LibraryWatcher>, NameIndex);
+
 /// Managed state: one watcher and one name index per available added
-/// folder, in sidebar order. The lock is held across starting and stopping
-/// them, like `LibraryWatcher`'s gate, so callers never interleave.
+/// folder, in sidebar order.
+///
+/// Two locks: `gate` serializes the slow work (starting a recursive watch
+/// walks the tree on some platforms, stopping one joins its thread), and
+/// `list` is only ever held to read or swap the entries, never across that
+/// work, so `roots`/`indexes` (search, a focus resync) never wait on it.
 #[derive(Default)]
-pub struct AddedWatchers(Mutex<Vec<(PathBuf, LibraryWatcher, NameIndex)>>);
+pub struct AddedWatchers {
+    gate: Mutex<()>,
+    list: Mutex<Vec<AddedEntry>>,
+}
 
 impl AddedWatchers {
-    fn list(&self) -> std::sync::MutexGuard<'_, Vec<(PathBuf, LibraryWatcher, NameIndex)>> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    fn gate(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.gate.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Watches and indexes exactly `roots` (canonical), in that order: a
-    /// root already watched keeps its watcher and index, a new one starts,
-    /// one no longer listed is dropped. A root that can't be watched is
-    /// still indexed.
+    /// The entries now (cheap clones), taken without waiting on the gate.
+    fn snapshot(&self) -> Vec<AddedEntry> {
+        self.list.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Watches and indexes exactly `roots` (canonical), in that order.
+    #[cfg(test)]
     pub fn sync(&self, roots: &[PathBuf], sink: &Sink) {
-        let mut list = self.list();
-        let mut old = std::mem::take(&mut *list);
-        for root in roots {
-            let entry = match old.iter().position(|(r, _, _)| r == root) {
-                Some(i) => old.remove(i),
+        self.sync_with(|| roots.to_vec(), sink);
+    }
+
+    /// Watches and indexes exactly the roots `roots()` returns (canonical),
+    /// in that order: a root already watched keeps its watcher and index, a
+    /// new one starts, one no longer listed is dropped. A root that can't
+    /// be watched is still indexed. `roots` runs inside the same critical
+    /// section that applies it, so a stale list never applies last.
+    pub fn sync_with(&self, roots: impl FnOnce() -> Vec<PathBuf>, sink: &Sink) {
+        let _gate = self.gate();
+        let roots = roots();
+        let current = self.snapshot();
+        let next: Vec<AddedEntry> = roots
+            .into_iter()
+            .map(|root| match current.iter().find(|(r, _, _)| *r == root) {
+                Some(entry) => entry.clone(),
                 None => {
-                    let (w, index) = (LibraryWatcher::default(), NameIndex::default());
+                    let (w, index) = (Arc::new(LibraryWatcher::default()), NameIndex::default());
                     let _ = w.set_ordered(w.ticket(), Some(root.clone()), &index, sink.clone());
-                    (root.clone(), w, index)
+                    (root, w, index)
                 }
-            };
-            list.push(entry);
-        }
-        // What is left in `old` is dropped here: its watchers stop.
+            })
+            .collect();
+        let old = std::mem::replace(
+            &mut *self.list.lock().unwrap_or_else(|e| e.into_inner()),
+            next,
+        );
+        // Dropped outside the list lock: the watchers no longer listed stop.
+        drop(old);
+        drop(current);
     }
 
     /// The roots watched, in order.
     pub fn roots(&self) -> Vec<PathBuf> {
-        self.list().iter().map(|(r, _, _)| r.clone()).collect()
+        self.snapshot().into_iter().map(|(r, _, _)| r).collect()
     }
 
     /// The name indexes, in order (cheap clones).
     pub fn indexes(&self) -> Vec<NameIndex> {
-        self.list().iter().map(|(_, _, i)| i.clone()).collect()
+        self.snapshot().into_iter().map(|(_, _, i)| i).collect()
     }
 
     /// Whether each watcher is running, in order.
     #[cfg(test)]
     pub fn running(&self) -> Vec<bool> {
-        self.list().iter().map(|(_, w, _)| w.running()).collect()
+        self.snapshot()
+            .iter()
+            .map(|(_, w, _)| w.running())
+            .collect()
     }
 
     /// Stops every watcher (closing its handles), keeping the indexes.
     /// Returns whether any was running.
     pub fn pause_all(&self) -> bool {
+        let _gate = self.gate();
         let mut any = false;
-        for (_, w, _) in self.list().iter() {
+        for (_, w, _) in self.snapshot() {
             any |= w.pause();
         }
         any
@@ -205,9 +239,10 @@ impl AddedWatchers {
 
     /// Starts every stopped watcher again (its index is rebuilt).
     pub fn resume_all(&self, sink: &Sink) {
-        for (root, w, index) in self.list().iter() {
+        let _gate = self.gate();
+        for (root, w, index) in self.snapshot() {
             if !w.running() {
-                let _ = w.set_ordered(w.ticket(), Some(root.clone()), index, sink.clone());
+                let _ = w.set_ordered(w.ticket(), Some(root), &index, sink.clone());
             }
         }
     }
@@ -357,6 +392,25 @@ mod tests {
         assert_eq!(dirs, [sub.clone(), root.clone()]);
         // No trailing separator on the root: it must equal `list_dir`'s spelling.
         assert_eq!(dirs[1].to_str(), root.to_str());
+    }
+
+    /// Readers (search, a focus resync) never wait on watcher start/stop.
+    #[test]
+    fn added_readers_never_wait_on_the_gate() {
+        let (_tmp, _g, root, _outside) = library();
+        let w = AddedWatchers::default();
+        let (sink, _rx) = sink_pair();
+        w.sync(std::slice::from_ref(&root), &sink);
+        let busy = w.gate.lock().unwrap(); // as during a slow watch setup
+        let (tx, rx) = channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                let _ = tx.send((w.roots(), w.indexes().len()));
+            });
+            let got = rx.recv_timeout(Duration::from_secs(2));
+            drop(busy);
+            assert_eq!(got.expect("a reader waited on the gate"), (vec![root], 1));
+        });
     }
 
     #[test]
