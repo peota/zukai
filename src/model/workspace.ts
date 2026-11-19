@@ -1,5 +1,6 @@
 import { languageOf } from "../files/paths";
 import type { Kind } from "./kinds";
+import { itemsOf, normalizeSplits, splitOf } from "./split";
 import type { TabState, WorkspaceState } from "./types";
 
 export function newTabState(id: string, kind: Kind = "text"): TabState {
@@ -17,16 +18,30 @@ export function newTabState(id: string, kind: Kind = "text"): TabState {
   };
 }
 
-/** Pinned Tabs first, each group in its own order. */
-function pinnedFirst(tabs: TabState[]): TabState[] {
-  const pinned = tabs.filter((t) => t.pinned);
+/** Pinned items first (a Split stays whole), each group in its own order. */
+function pinnedFirst(s: WorkspaceState): WorkspaceState {
+  const byId = new Map(s.tabs.map((t) => [t.id, t]));
+  const items = itemsOf(s.tabs, s.splits);
+  const pinned = items.filter((it) => byId.get(it[0])?.pinned);
   if (
     pinned.length === 0 ||
-    tabs.slice(0, pinned.length).every((t) => t.pinned)
+    items.slice(0, pinned.length).every((it) => byId.get(it[0])?.pinned)
   ) {
-    return tabs;
+    return s;
   }
-  return [...pinned, ...tabs.filter((t) => !t.pinned)];
+  const order = [...pinned, ...items.filter((it) => !pinned.includes(it))];
+  return { ...s, tabs: order.flat().map((id) => byId.get(id)!) };
+}
+
+/** Puts `tabs` in, settles Splits and keeps pinned items first. */
+const settle = (s: WorkspaceState): WorkspaceState =>
+  pinnedFirst(normalizeSplits(s));
+
+/** Where a Tab opened from `activeId` goes: after its whole item. */
+function insertAt(s: WorkspaceState): number {
+  const sp = splitOf(s, s.activeId);
+  const ids = sp ? [sp.a, sp.b] : [s.activeId];
+  return Math.max(...ids.map((id) => s.tabs.findIndex((t) => t.id === id))) + 1;
 }
 
 export function newTab(
@@ -34,13 +49,13 @@ export function newTab(
   id: string,
   kind: Kind = "text",
 ): WorkspaceState {
-  const at = s.tabs.findIndex((t) => t.id === s.activeId) + 1;
+  const at = insertAt(s);
   const tabs = [
     ...s.tabs.slice(0, at),
     newTabState(id, kind),
     ...s.tabs.slice(at),
   ];
-  return { ...s, tabs: pinnedFirst(tabs), activeId: id };
+  return settle({ ...s, tabs, activeId: id });
 }
 
 /**
@@ -62,10 +77,16 @@ export function setPinned(
     return { ...s, closed };
   }
   if (!!tab.pinned === pinned) return s;
-  const rest = s.tabs.filter((t) => t.id !== id);
+  // A Split is pinned as a whole.
+  const sp = splitOf(s, id);
+  const moving = new Set(sp ? [sp.a, sp.b] : [id]);
+  const rest = s.tabs.filter((t) => !moving.has(t.id));
   const at = rest.filter((t) => t.pinned).length;
-  const tabs = [...rest.slice(0, at), { ...tab, pinned }, ...rest.slice(at)];
-  return { ...s, tabs };
+  const moved = s.tabs
+    .filter((t) => moving.has(t.id))
+    .map((t) => ({ ...t, pinned }));
+  const tabs = [...rest.slice(0, at), ...moved, ...rest.slice(at)];
+  return normalizeSplits({ ...s, tabs });
 }
 
 export function findByPath(
@@ -97,9 +118,9 @@ export function openFileTab(
       closed = s.closed.filter((e) => e !== pin);
     }
   }
-  const at = s.tabs.findIndex((t) => t.id === s.activeId) + 1;
+  const at = insertAt(s);
   const tabs = [...s.tabs.slice(0, at), tab, ...s.tabs.slice(at)];
-  return { ...s, tabs: pinnedFirst(tabs), activeId: tab.id, closed };
+  return settle({ ...s, tabs, activeId: tab.id, closed });
 }
 
 export function closeTab(
@@ -127,7 +148,7 @@ export function closeTab(
   const drop = isEmpty && !tab.pinned;
   const closed = drop ? s.closed : [{ tab, index, closedAt: now }, ...older];
   return {
-    state: { tabs, activeId, closed },
+    state: normalizeSplits({ ...s, tabs, activeId, closed }),
     effect: drop ? "deleted" : "closed",
   };
 }
@@ -154,14 +175,14 @@ export function reopenClosed(
   const at = Math.min(entry.index, s.tabs.length);
   const tabs = [...s.tabs.slice(0, at), entry.tab, ...s.tabs.slice(at)];
   return {
-    state: { tabs: pinnedFirst(tabs), activeId: entry.tab.id, closed },
+    state: settle({ ...s, tabs, activeId: entry.tab.id, closed }),
     reopened: entry.tab,
   };
 }
 
 export function activate(s: WorkspaceState, id: string): WorkspaceState {
   if (!s.tabs.some((t) => t.id === id)) return s;
-  return { ...s, activeId: id };
+  return normalizeSplits({ ...s, activeId: id });
 }
 
 export function activateIndex(s: WorkspaceState, n: number): WorkspaceState {
@@ -172,7 +193,7 @@ export function activateIndex(s: WorkspaceState, n: number): WorkspaceState {
       : n >= 1 && n <= 8
         ? s.tabs[n - 1]
         : undefined;
-  return tab ? { ...s, activeId: tab.id } : s;
+  return tab ? normalizeSplits({ ...s, activeId: tab.id }) : s;
 }
 
 export function cycle(s: WorkspaceState, dir: 1 | -1): WorkspaceState {
@@ -180,7 +201,7 @@ export function cycle(s: WorkspaceState, dir: 1 | -1): WorkspaceState {
   if (len === 0) return s;
   const cur = s.tabs.findIndex((t) => t.id === s.activeId);
   const next = (cur + dir + len) % len;
-  return { ...s, activeId: s.tabs[next].id };
+  return normalizeSplits({ ...s, activeId: s.tabs[next].id });
 }
 
 export function moveTab(
@@ -188,15 +209,16 @@ export function moveTab(
   id: string,
   toIndex: number,
 ): WorkspaceState {
-  const from = s.tabs.findIndex((t) => t.id === id);
+  // Moves an item: a Split goes as a pair and counts once.
+  const items = itemsOf(s.tabs, s.splits);
+  const from = items.findIndex((it) => it.includes(id));
   if (from === -1) return s;
-  const rest = s.tabs.filter((t) => t.id !== id);
+  const rest = items.filter((_, i) => i !== from);
   const to = Math.max(0, Math.min(toIndex, rest.length));
+  const byId = new Map(s.tabs.map((t) => [t.id, t]));
+  const order = [...rest.slice(0, to), items[from], ...rest.slice(to)].flat();
   // Pinned Tabs stay before the others.
-  return {
-    ...s,
-    tabs: pinnedFirst([...rest.slice(0, to), s.tabs[from], ...rest.slice(to)]),
-  };
+  return settle({ ...s, tabs: order.map((tid) => byId.get(tid)!) });
 }
 
 export function rename(

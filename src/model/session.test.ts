@@ -56,6 +56,7 @@ describe("session file", () => {
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
       settings: DEFAULT_SETTINGS,
+      splits: [],
     });
   });
 
@@ -248,6 +249,7 @@ describe("restoreWorkspace", () => {
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
       settings: DEFAULT_SETTINGS,
+      splits: [],
     };
     const withOrphans = restore(file, ["q"], fresh, 0).state;
     expect(withOrphans.tabs.map((t) => t.id)).toEqual(["q"]);
@@ -341,6 +343,7 @@ describe("session v3", () => {
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
       settings: DEFAULT_SETTINGS,
+      splits: [],
     });
     expect(parsed?.tabs.every((t) => t.file === undefined)).toBe(true);
   });
@@ -359,6 +362,7 @@ describe("session v3", () => {
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
       settings: DEFAULT_SETTINGS,
+      splits: [],
     });
   });
 
@@ -477,6 +481,7 @@ describe("session v3 migration and sidebar", () => {
         sidebar,
         fontSize: DEFAULT_FONT_SIZE,
         settings: DEFAULT_SETTINGS,
+        splits: [],
       },
     );
   });
@@ -581,6 +586,7 @@ describe("restoreWorkspace with grantedPaths", () => {
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
       settings: DEFAULT_SETTINGS,
+      splits: [],
       tabs: [fileTab("f1", "ok"), fileTab("f2", "bad"), newTabState("a")],
       activeId: "f2",
       closed: [
@@ -611,6 +617,7 @@ describe("restoreWorkspace closed File dedupe", () => {
       sidebar: DEFAULT_SIDEBAR,
       fontSize: DEFAULT_FONT_SIZE,
       settings: DEFAULT_SETTINGS,
+      splits: [],
       tabs: [newTabState("a")],
       activeId: "a",
       closed: [
@@ -643,5 +650,56 @@ describe("restoreWorkspace closed Files and the closed/ folder", () => {
     });
     const { state } = restore(file, ["a"], fresh, 20, []);
     expect(state.closed.map((e) => e.tab.id)).toEqual(["f"]);
+  });
+});
+
+describe("Splits in the Session", () => {
+  const sp = {
+    a: "a",
+    b: "b",
+    orientation: "column" as const,
+    ratio: 0.3,
+    focus: "b" as const,
+  };
+  const w: WorkspaceState = {
+    tabs: [newTabState("a"), newTabState("b"), newTabState("x")],
+    activeId: "b",
+    closed: [],
+    splits: [sp],
+  };
+
+  it("keepsSplitsAndDropsBrokenOnes", () => {
+    const file = toSessionFile(w);
+    expect(file.splits).toEqual([sp]);
+    expect(parseSessionFile(JSON.stringify(file))!.splits).toEqual([sp]);
+    const bad = {
+      ...file,
+      splits: [
+        sp,
+        { ...sp, a: 1 },
+        { ...sp, orientation: "diagonal" },
+        { ...sp, ratio: "half" },
+        { ...sp, a: "x", b: "y", ratio: 0.99 },
+        "nope",
+      ],
+    };
+    const parsed = parseSessionFile(JSON.stringify(bad))!;
+    expect(parsed.splits).toEqual([sp, { ...sp, a: "x", b: "y", ratio: 0.8 }]);
+    const { splits: _gone, ...old } = file;
+    void _gone;
+    expect(parseSessionFile(JSON.stringify(old))!.splits).toEqual([]);
+    expect(toSessionFile({ ...w, splits: undefined }).splits).toEqual([]);
+  });
+
+  it("restoreNormalizesSplits", () => {
+    const file = {
+      ...toSessionFile(w),
+      tabs: [w.tabs[0], w.tabs[2], w.tabs[1]],
+      splits: [sp, { ...sp, a: "a", b: "gone" }],
+    };
+    const { state } = restore(file, [], fresh, 0);
+    expect(state.tabs.map((t) => t.id)).toEqual(["a", "b", "x"]);
+    expect(state.splits).toEqual([sp]);
+    expect(restore(null, [], fresh, 0).state.splits).toEqual([]);
   });
 });
