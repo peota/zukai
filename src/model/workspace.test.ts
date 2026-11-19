@@ -15,6 +15,7 @@ import {
   movedPath,
   reopenClosed,
   rewritePaths,
+  setPinned,
   updateTab,
 } from "./workspace";
 
@@ -299,5 +300,94 @@ describe("movedPath", () => {
     expect(movedPath("C:/L/proj2/a.md", "C:/L/proj", "C:/L/w", lower)).toBe(
       null,
     );
+  });
+});
+
+describe("pinned Tabs", () => {
+  const pinnedIds = (s: WorkspaceState) =>
+    s.tabs.filter((t) => t.pinned).map((t) => t.id);
+
+  it("pinning moves a Tab to the end of the pinned group; unpinning to just after it", () => {
+    let s = ws(["a", "b", "c", "d"]);
+    s = setPinned(s, "c", true);
+    expect(ids(s)).toEqual(["c", "a", "b", "d"]);
+    s = setPinned(s, "d", true);
+    expect(ids(s)).toEqual(["c", "d", "a", "b"]);
+    expect(pinnedIds(s)).toEqual(["c", "d"]);
+    s = setPinned(s, "c", false);
+    expect(ids(s)).toEqual(["d", "c", "a", "b"]);
+    expect(pinnedIds(s)).toEqual(["d"]);
+    // No change: the same state back.
+    expect(setPinned(s, "d", true)).toBe(s);
+  });
+
+  it("new and opened Tabs never land inside the pinned group", () => {
+    let s = setPinned(setPinned(ws(["a", "b", "c"]), "a", true), "b", true);
+    s = activate(s, "a");
+    s = newTab(s, "n");
+    expect(ids(s)).toEqual(["a", "b", "n", "c"]);
+    s = activate(s, "a");
+    s = openFileTab(s, newTabState("f"));
+    expect(ids(s)).toEqual(["a", "b", "f", "n", "c"]);
+  });
+
+  it("dragging keeps pinned Tabs before the others", () => {
+    const s = setPinned(ws(["a", "b", "c"]), "a", true);
+    expect(ids(moveTab(s, "a", 2))).toEqual(["a", "b", "c"]);
+    expect(ids(moveTab(s, "c", 0))).toEqual(["a", "c", "b"]);
+  });
+
+  it("closing a pinned Tab keeps it in Closed even when empty, still pinned", () => {
+    const s = setPinned(ws(["a", "b"]), "a", true);
+    const { state, effect } = closeTab(s, "a", true, 5, same);
+    expect(effect).toBe("closed");
+    expect(state.closed[0].tab).toMatchObject({ id: "a", pinned: true });
+  });
+
+  it("a closed pin can be unpinned, and reopens into its group", () => {
+    let s = setPinned(ws(["a", "b", "c"]), "c", true);
+    s = closeTab(s, "c", false, 5, same).state;
+    s = setPinned(s, "b", true);
+    expect(ids(s)).toEqual(["b", "a"]);
+    // c closed first in line, so it comes back first among the pins.
+    const back = reopenClosed(s, 0).state;
+    expect(ids(back)).toEqual(["c", "b", "a"]);
+    const unpinned = setPinned(s, "c", false);
+    expect(unpinned.closed[0].tab.pinned).toBe(false);
+    // Unpinned, it can't go before a pin.
+    expect(ids(reopenClosed(unpinned, 0).state)).toEqual(["b", "c", "a"]);
+  });
+
+  it("opening a File whose closed Tab was pinned brings the pin back", () => {
+    const file = (id: string): TabState => ({
+      ...newTabState(id),
+      file: {
+        path: "C:/L/Note.md",
+        format: {
+          encoding: "utf-8",
+          bom: false,
+          lineEnding: "lf",
+          mixed: false,
+        },
+        fingerprint: { mtimeMs: 1, size: 1, hash: "h" },
+        held: null,
+      },
+    });
+    let s = ws(["a"]);
+    s = {
+      ...s,
+      closed: [
+        { tab: { ...file("old"), pinned: true }, index: 0, closedAt: 1 },
+      ],
+    };
+    const lower = (p: string) => p.toLowerCase();
+    s = openFileTab(
+      s,
+      { ...file("new"), file: { ...file("new").file!, path: "c:/l/note.md" } },
+      lower,
+    );
+    expect(ids(s)).toEqual(["new", "a"]);
+    expect(s.tabs[0].pinned).toBe(true);
+    expect(s.closed).toEqual([]);
   });
 });

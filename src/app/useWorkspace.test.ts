@@ -385,3 +385,30 @@ describe("useWorkspace editor zoom", () => {
     expect(result.current.fontSize).toBe(20);
   });
 });
+
+describe("useWorkspace pinned Tabs", () => {
+  it("an empty pinned Scratchpad is kept on close and reopens pinned", async () => {
+    const { result } = await mount();
+    act(() => result.current.setPinned("b", true));
+    expect(tabIds(result)).toEqual(["b", "a"]);
+    await act(() => result.current.closeTab("b"));
+    expect(m.deleteScratchpad).not.toHaveBeenCalled();
+    expect(m.closeScratchpad).toHaveBeenCalledWith("b");
+    expect(result.current.state.closed[0].tab).toMatchObject({
+      id: "b",
+      pinned: true,
+    });
+    await act(() => result.current.reopenEntry("b"));
+    expect(tabIds(result)).toEqual(["b", "a"]);
+    expect(result.current.state.tabs[0].pinned).toBe(true);
+  });
+
+  it("unpins a closed Tab without reopening it", async () => {
+    const { result } = await mount();
+    act(() => result.current.setPinned("a", true));
+    await act(() => result.current.closeTab("a"));
+    act(() => result.current.setPinned("a", false));
+    expect(result.current.state.closed[0].tab.pinned).toBe(false);
+    expect(tabIds(result)).toEqual(["b"]);
+  });
+});

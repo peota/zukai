@@ -16,6 +16,18 @@ export function newTabState(id: string, kind: Kind = "text"): TabState {
   };
 }
 
+/** Pinned Tabs first, each group in its own order. */
+function pinnedFirst(tabs: TabState[]): TabState[] {
+  const pinned = tabs.filter((t) => t.pinned);
+  if (
+    pinned.length === 0 ||
+    tabs.slice(0, pinned.length).every((t) => t.pinned)
+  ) {
+    return tabs;
+  }
+  return [...pinned, ...tabs.filter((t) => !t.pinned)];
+}
+
 export function newTab(
   s: WorkspaceState,
   id: string,
@@ -27,7 +39,32 @@ export function newTab(
     newTabState(id, kind),
     ...s.tabs.slice(at),
   ];
-  return { ...s, tabs, activeId: id };
+  return { ...s, tabs: pinnedFirst(tabs), activeId: id };
+}
+
+/**
+ * Pins or unpins Tab `id`, open or in Recently Closed. A pinned Tab goes to
+ * the end of the pinned group; an unpinned one to just after it.
+ */
+export function setPinned(
+  s: WorkspaceState,
+  id: string,
+  pinned: boolean,
+): WorkspaceState {
+  const tab = s.tabs.find((t) => t.id === id);
+  if (!tab) {
+    const i = s.closed.findIndex((e) => e.tab.id === id);
+    if (i < 0 || !!s.closed[i].tab.pinned === pinned) return s;
+    const closed = s.closed.map((e, j) =>
+      j === i ? { ...e, tab: { ...e.tab, pinned } } : e,
+    );
+    return { ...s, closed };
+  }
+  if (!!tab.pinned === pinned) return s;
+  const rest = s.tabs.filter((t) => t.id !== id);
+  const at = rest.filter((t) => t.pinned).length;
+  const tabs = [...rest.slice(0, at), { ...tab, pinned }, ...rest.slice(at)];
+  return { ...s, tabs };
 }
 
 export function findByPath(
@@ -38,11 +75,30 @@ export function findByPath(
   return s.tabs.find((t) => t.file !== undefined && keyOf(t.file.path) === key);
 }
 
-/** Insert after the active Tab and activate it. */
-export function openFileTab(s: WorkspaceState, tab: TabState): WorkspaceState {
+/**
+ * Insert after the active Tab and activate it. With `keyOf`, a pinned
+ * Recently Closed entry for the same File gives the new Tab its pin (and
+ * is dropped, so the File isn't listed twice).
+ */
+export function openFileTab(
+  s: WorkspaceState,
+  tab: TabState,
+  keyOf?: (path: string) => string,
+): WorkspaceState {
+  let closed = s.closed;
+  if (keyOf && tab.file) {
+    const key = keyOf(tab.file.path);
+    const pin = s.closed.find(
+      (e) => e.tab.pinned && e.tab.file && keyOf(e.tab.file.path) === key,
+    );
+    if (pin) {
+      tab = { ...tab, pinned: true };
+      closed = s.closed.filter((e) => e !== pin);
+    }
+  }
   const at = s.tabs.findIndex((t) => t.id === s.activeId) + 1;
   const tabs = [...s.tabs.slice(0, at), tab, ...s.tabs.slice(at)];
-  return { ...s, tabs, activeId: tab.id };
+  return { ...s, tabs: pinnedFirst(tabs), activeId: tab.id, closed };
 }
 
 export function closeTab(
@@ -66,10 +122,12 @@ export function closeTab(
     key === null
       ? s.closed
       : s.closed.filter((e) => !e.tab.file || keyOf(e.tab.file.path) !== key);
-  const closed = isEmpty ? s.closed : [{ tab, index, closedAt: now }, ...older];
+  // A pinned Tab is kept even empty: it stays in the Pinned list.
+  const drop = isEmpty && !tab.pinned;
+  const closed = drop ? s.closed : [{ tab, index, closedAt: now }, ...older];
   return {
     state: { tabs, activeId, closed },
-    effect: isEmpty ? "deleted" : "closed",
+    effect: drop ? "deleted" : "closed",
   };
 }
 
@@ -95,7 +153,7 @@ export function reopenClosed(
   const at = Math.min(entry.index, s.tabs.length);
   const tabs = [...s.tabs.slice(0, at), entry.tab, ...s.tabs.slice(at)];
   return {
-    state: { tabs, activeId: entry.tab.id, closed },
+    state: { tabs: pinnedFirst(tabs), activeId: entry.tab.id, closed },
     reopened: entry.tab,
   };
 }
@@ -133,9 +191,10 @@ export function moveTab(
   if (from === -1) return s;
   const rest = s.tabs.filter((t) => t.id !== id);
   const to = Math.max(0, Math.min(toIndex, rest.length));
+  // Pinned Tabs stay before the others.
   return {
     ...s,
-    tabs: [...rest.slice(0, to), s.tabs[from], ...rest.slice(to)],
+    tabs: pinnedFirst([...rest.slice(0, to), s.tabs[from], ...rest.slice(to)]),
   };
 }
 

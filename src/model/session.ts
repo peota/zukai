@@ -179,6 +179,16 @@ function withViewport(t: unknown): unknown {
   return rest;
 }
 
+/** A malformed pin is only forgotten: the Tab itself is fine. */
+function withPin(t: unknown): unknown {
+  if (!isObject(t) || t.pinned === undefined || typeof t.pinned === "boolean") {
+    return t;
+  }
+  const { pinned: _bad, ...rest } = t;
+  void _bad;
+  return rest;
+}
+
 /** Before v3 a Tab had no Kind: a File's comes from its path. */
 function withKind(t: unknown): unknown {
   if (!isObject(t) || t.kind !== undefined) return t;
@@ -211,13 +221,10 @@ export function parseSessionFile(json: string | null): SessionFile | null {
     return null;
   }
   // A malformed entry is dropped alone; the rest of the session survives.
-  const tabs: unknown[] = (migrate ? data.tabs.map(withKind) : data.tabs).map(
-    withViewport,
-  );
+  const fix = (t: unknown) => withPin(withViewport(migrate ? withKind(t) : t));
+  const tabs: unknown[] = data.tabs.map(fix);
   const closed: unknown[] = data.closed.map((e: unknown) =>
-    isObject(e)
-      ? { ...e, tab: withViewport(migrate ? withKind(e.tab) : e.tab) }
-      : e,
+    isObject(e) ? { ...e, tab: fix(e.tab) } : e,
   );
   return {
     version: SESSION_VERSION,
@@ -238,8 +245,11 @@ export function purgeExpired(
   const kept: ClosedEntry[] = [];
   const expired: ClosedEntry[] = [];
   for (const e of closed) {
-    // A closed File has no shadow text unless held, so it never expires.
-    const forever = e.tab.file !== undefined && e.tab.file.held === null;
+    // A closed File has no shadow text unless held, so it never expires;
+    // nor does a pinned Tab, which the sidebar keeps listing.
+    const forever =
+      (e.tab.file !== undefined && e.tab.file.held === null) ||
+      e.tab.pinned === true;
     (!forever && now - e.closedAt > CLOSED_TTL_MS ? expired : kept).push(e);
   }
   return { kept, expired };

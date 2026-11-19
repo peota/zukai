@@ -25,6 +25,7 @@ import { fileReadBytes, openDefault, pathKey } from "./files/api";
 import { baseName, languageRename } from "./files/paths";
 import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
+import { pinnedItems } from "./ui/Pinned";
 import { useColorScheme } from "./ui/useColorScheme";
 
 const platform = detectPlatform();
@@ -277,6 +278,17 @@ export default function App() {
           refocus();
         }}
         onInboxMove={(id, dest) => void lib.inboxMove(id, dest)}
+        pinned={pinnedItems(w.state.tabs, w.state.closed)}
+        onPinnedOpen={(id) => {
+          if (w.state.tabs.some((t) => t.id === id)) {
+            w.activate(id);
+            refocus();
+          } else {
+            // A closed pin comes back as a Tab, still pinned.
+            void w.reopenEntry(id).then(refocus);
+          }
+        }}
+        onUnpin={(id) => w.setPinned(id, false)}
         onLeave={refocus}
         platform={platform}
       />
@@ -291,6 +303,7 @@ export default function App() {
               : undefined,
             locked: w.shadowUnreadable.has(t.id),
             folder: folders.get(t.id),
+            pinned: t.pinned,
           }))}
           onActivate={w.activate}
           onClose={(id) => void w.closeTab(id)}
@@ -304,6 +317,7 @@ export default function App() {
             void w.rename(id, name);
           }}
           onContextMenu={(tabId, x, y) => setTabMenu({ tabId, x, y })}
+          onUnpin={(id) => w.setPinned(id, false)}
         />
         {active && (
           <FileBar
@@ -431,10 +445,18 @@ export default function App() {
           tabCount={w.state.tabs.length}
           closed={w.state.closed}
           reopenHint={REOPEN_HINT}
+          pinned={
+            w.state.tabs.find((t) => t.id === tabMenu.tabId)?.pinned ?? false
+          }
+          onTogglePin={(id) => {
+            const tab = w.state.tabs.find((t) => t.id === id);
+            if (tab) w.setPinned(id, !tab.pinned);
+          }}
           onClose={(id) => void w.closeTab(id)}
           onCloseOthers={(id) => {
+            // Pinned Tabs stay open.
             for (const t of w.state.tabs) {
-              if (t.id !== id) void w.closeTab(t.id);
+              if (t.id !== id && !t.pinned) void w.closeTab(t.id);
             }
           }}
           onReopen={() => void run({ type: "reopenTab" })}

@@ -73,6 +73,20 @@ describe("session file", () => {
     ).toBe(21);
   });
 
+  it("keeps a Tab's pin, and forgets a malformed one without the Tab", () => {
+    const tabs = [
+      { ...newTabState("a"), pinned: true },
+      { ...newTabState("b"), pinned: "yes" },
+    ];
+    const r = parseSessionFile(
+      JSON.stringify({ ...toSessionFile(ws), tabs, activeId: "a" }),
+    )!;
+    expect(r.tabs.map((t) => [t.id, t.pinned])).toEqual([
+      ["a", true],
+      ["b", undefined],
+    ]);
+  });
+
   it("returns null for bad input", () => {
     expect(parseSessionFile(null)).toBeNull();
     expect(parseSessionFile("{")).toBeNull();
@@ -94,6 +108,12 @@ describe("purgeExpired", () => {
     index: 0,
     closedAt,
   });
+  it("never expires a pinned Scratchpad", () => {
+    const now = 10 * CLOSED_TTL_MS;
+    const pin = { ...entry(0), tab: { ...newTabState("p"), pinned: true } };
+    expect(purgeExpired([pin], now).kept).toEqual([pin]);
+  });
+
   it("keeps exactly 30 days, expires 30 days + 1 ms", () => {
     const now = 10 * CLOSED_TTL_MS;
     const keep = entry(now - CLOSED_TTL_MS);

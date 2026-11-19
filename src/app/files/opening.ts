@@ -42,7 +42,7 @@ export function useOpening(c: FilesContext) {
             languageGuessed: true,
             file: fileInfoOf(path, r.read),
           };
-          return commit(ws.openFileTab(stateRef.current, fresh));
+          return commit(ws.openFileTab(stateRef.current, fresh, keyOf));
         }
       }
       commit(ws.activate(stateRef.current, tab.id));

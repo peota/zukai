@@ -6,6 +6,7 @@ import type {
   WheelEvent,
 } from "react";
 import { baseName, stemOf } from "../files/paths";
+import { Icon } from "./icons";
 
 export interface TabBarItem {
   id: string;
@@ -17,6 +18,8 @@ export interface TabBarItem {
   locked?: boolean;
   /** Parent folder, shown when another open File has the same name. */
   folder?: string;
+  /** Kept at the start; a pin (which unpins) replaces the close button. */
+  pinned?: boolean;
 }
 
 export interface TabBarProps {
@@ -32,6 +35,8 @@ export interface TabBarProps {
   onRename(id: string, name: string): void | Promise<string | null>;
   /** Right-click on a Tab, or (id null) on the empty bar. */
   onContextMenu(id: string | null, x: number, y: number): void;
+  /** The pin on a pinned Tab was clicked. */
+  onUnpin(id: string): void;
 }
 
 /** Pointer travel (px) before a press becomes a drag; less is a click. */
@@ -65,6 +70,7 @@ export function TabBar({
   onMove,
   onRename,
   onContextMenu,
+  onUnpin,
 }: TabBarProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
@@ -279,29 +285,46 @@ export function TabBar({
                 )}
               </>
             )}
-            <button
-              type="button"
-              aria-label={`Close ${tab.title}`}
-              tabIndex={-1}
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose(tab.id);
-              }}
-              onDoubleClick={(e) => e.stopPropagation()}
-              className={
-                "flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-chrome hover:text-text " +
-                (tab.active ? "" : "invisible group-hover:visible")
-              }
-            >
-              <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
-                <path
-                  d="M1 1l6 6M7 1L1 7"
-                  stroke="currentColor"
-                  strokeWidth="1.3"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
+            {tab.pinned ? (
+              <button
+                type="button"
+                aria-label={`Unpin ${tab.title}`}
+                title="Unpin"
+                tabIndex={-1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUnpin(tab.id);
+                }}
+                onDoubleClick={(e) => e.stopPropagation()}
+                className="flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-chrome hover:text-text"
+              >
+                <Icon name="pin" size={12} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label={`Close ${tab.title}`}
+                tabIndex={-1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose(tab.id);
+                }}
+                onDoubleClick={(e) => e.stopPropagation()}
+                className={
+                  "flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-chrome hover:text-text " +
+                  (tab.active ? "" : "invisible group-hover:visible")
+                }
+              >
+                <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+                  <path
+                    d="M1 1l6 6M7 1L1 7"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            )}
           </div>
         );
       })}

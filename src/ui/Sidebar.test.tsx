@@ -73,6 +73,9 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     onRecreateRoot: vi.fn(),
     onInboxActivate: vi.fn(),
     onInboxMove: vi.fn(),
+    pinned: [],
+    onPinnedOpen: vi.fn(),
+    onUnpin: vi.fn(),
     onLeave: vi.fn(),
     platform: "windows",
     ...over,
@@ -833,5 +836,57 @@ describe("Sidebar", () => {
   it("renders nothing when closed", () => {
     const { container } = setup({ open: false });
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("Sidebar Pinned section", () => {
+  const PINS = [
+    { id: "p1", title: "note.md", icon: "markdown" as const, open: true },
+    { id: "p2", title: "Sketch", icon: "canvas" as const, open: false },
+  ];
+
+  it("lists pins above the Library, closed ones dimmed", () => {
+    setup({ pinned: PINS, activeId: "p1" });
+    const header = screen.getByText("PINNED");
+    const library = screen.getByText("LIBRARY");
+    expect(
+      header.compareDocumentPosition(library) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const list = screen.getByRole("list", { name: "Pinned" });
+    const [open, closed] = within(list).getAllByRole("listitem");
+    expect(open).toHaveTextContent("note.md");
+    expect(open.getAttribute("aria-current")).toBe("true");
+    expect(iconOf(open)).toBe("markdown");
+    expect(closed).toHaveTextContent("Sketch");
+    expect(closed.getAttribute("title")).toBe("Sketch (closed)");
+    expect(closed.className).toContain("text-faint");
+  });
+
+  it("a click opens the pin, open or closed", () => {
+    const { p } = setup({ pinned: PINS });
+    const list = within(screen.getByRole("list", { name: "Pinned" }));
+    fireEvent.click(list.getByText("Sketch"));
+    expect(p.onPinnedOpen).toHaveBeenCalledWith("p2");
+    const item = list.getByText("note.md").closest("li")!;
+    item.focus();
+    key(item, "Enter");
+    expect(p.onPinnedOpen).toHaveBeenCalledWith("p1");
+  });
+
+  it("its menu unpins", () => {
+    const { p } = setup({ pinned: PINS });
+    const list = within(screen.getByRole("list", { name: "Pinned" }));
+    fireEvent.contextMenu(list.getByText("Sketch"), {
+      clientX: 5,
+      clientY: 5,
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Unpin" }));
+    expect(p.onUnpin).toHaveBeenCalledWith("p2");
+  });
+
+  it("is hidden with nothing pinned", () => {
+    setup({ pinned: [] });
+    expect(screen.queryByText("PINNED")).toBeNull();
   });
 });
