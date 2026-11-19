@@ -20,7 +20,12 @@ function setup(over: Partial<SettingsDialogProps> = {}) {
 describe("SettingsDialog", () => {
   it("shows the current settings on the General tab", () => {
     setup({
-      settings: { theme: "dark", wrapNewTabs: true, lineNumbers: false },
+      settings: {
+        theme: "dark",
+        wrapNewTabs: true,
+        lineNumbers: false,
+        previewSplit: 0.5,
+      },
       fontSize: 18,
     });
     const dialog = screen.getByRole("dialog", { name: "Settings" });

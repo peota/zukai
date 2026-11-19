@@ -8,12 +8,23 @@ export interface Settings {
   wrapNewTabs: boolean;
   /** The line-number gutter in the text editor. */
   lineNumbers: boolean;
+  /** The editor's share of the row in a Markdown Split (the preview has the rest). */
+  previewSplit: number;
+}
+
+export const SPLIT_MIN = 0.2;
+export const SPLIT_MAX = 0.8;
+
+/** A split share kept within 20–80%, to the nearest 0.1%. */
+export function clampSplit(r: number): number {
+  return Math.round(Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, r)) * 1000) / 1000;
 }
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   theme: "system",
   wrapNewTabs: false,
   lineNumbers: true,
+  previewSplit: 0.5,
 });
 
 const THEMES: readonly string[] = ["system", "light", "dark"];
@@ -34,5 +45,9 @@ export function parseSettings(v: unknown): Settings {
       typeof v.wrapNewTabs === "boolean" ? v.wrapNewTabs : d.wrapNewTabs,
     lineNumbers:
       typeof v.lineNumbers === "boolean" ? v.lineNumbers : d.lineNumbers,
+    previewSplit:
+      typeof v.previewSplit === "number" && Number.isFinite(v.previewSplit)
+        ? clampSplit(v.previewSplit)
+        : d.previewSplit,
   };
 }

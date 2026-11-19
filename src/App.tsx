@@ -23,6 +23,7 @@ import { convertPatch } from "./ui/encodings";
 import { folderHints } from "./ui/tabFolders";
 import { fileReadBytes, openDefault, openUrl, pathKey } from "./files/api";
 import { createTextFeed, MarkdownPreview } from "./markdown/MarkdownPreview";
+import { SplitHandle } from "./markdown/SplitHandle";
 import { baseName, languageRename } from "./files/paths";
 import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
@@ -383,7 +384,16 @@ export default function App() {
             <div className={isCanvas || isImage ? "hidden" : "flex size-full"}>
               <div
                 className={
-                  previewMode === "only" ? "hidden" : "size-full min-w-0 flex-1"
+                  previewMode === "only"
+                    ? "hidden"
+                    : previewMode === "split"
+                      ? "size-full min-w-0 shrink-0"
+                      : "size-full min-w-0 flex-1"
+                }
+                style={
+                  previewMode === "split"
+                    ? { flexBasis: `${w.settings.previewSplit * 100}%` }
+                    : undefined
                 }
               >
                 <EditorHost
@@ -406,13 +416,14 @@ export default function App() {
                   lineNumbers={w.settings.lineNumbers}
                 />
               </div>
+              {previewMode === "split" && (
+                <SplitHandle
+                  ratio={w.settings.previewSplit}
+                  onRatio={(r) => w.setSettings({ previewSplit: r })}
+                />
+              )}
               {active && previewMode !== "edit" && (
-                <div
-                  className={
-                    "size-full min-w-0 flex-1 bg-editor " +
-                    (previewMode === "split" ? "border-l border-hairline" : "")
-                  }
-                >
+                <div className="size-full min-w-0 flex-1 bg-editor">
                   <MarkdownPreview
                     key={active.id}
                     id={active.id}
