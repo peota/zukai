@@ -22,7 +22,7 @@ import { EncodingPicker } from "./ui/EncodingPicker";
 import { convertPatch } from "./ui/encodings";
 import { folderHints } from "./ui/tabFolders";
 import { fileReadBytes, openDefault, pathKey } from "./files/api";
-import { baseName } from "./files/paths";
+import { baseName, languageRename } from "./files/paths";
 import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
 import { useColorScheme } from "./ui/useColorScheme";
@@ -161,13 +161,31 @@ export default function App() {
     refocus();
   }, [refocus]);
 
+  /** A text File whose extension doesn't match `language` can take its. */
+  const renameOffer = useCallback(
+    (language: LanguageId) =>
+      active?.kind === "text" && active.file && active.file.held === null
+        ? languageRename(active.file.path, language)
+        : null,
+    [active],
+  );
+  const offer = picking && active ? renameOffer(active.language) : null;
+
   const pickLanguage = useCallback(
     (language: LanguageId) => {
       if (activeId) updateTab(activeId, { language, languagePicked: true });
-      closePicker();
+      // A pick that no longer matches the File keeps the list open on the
+      // rename offer; Escape still just closes it.
+      if (!renameOffer(language)) closePicker();
     },
-    [activeId, updateTab, closePicker],
+    [activeId, updateTab, closePicker, renameOffer],
   );
+
+  const { renameExtension } = w;
+  const renameToLanguage = useCallback(() => {
+    if (activeId && offer) void renameExtension(activeId, offer.ext);
+    closePicker();
+  }, [activeId, offer, renameExtension, closePicker]);
 
   const closeTabMenu = useCallback(() => {
     setTabMenu(null);
@@ -400,6 +418,8 @@ export default function App() {
         current={active?.language ?? "plaintext"}
         onPick={pickLanguage}
         onClose={closePicker}
+        rename={offer}
+        onRename={renameToLanguage}
       />
       {tabMenu && (
         <TabContextMenu

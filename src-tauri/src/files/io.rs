@@ -258,6 +258,31 @@ pub fn rename_no_replace(from: &Path, new_stem: &str) -> Result<PathBuf, FileErr
     Ok(to)
 }
 
+/// The extensions a File can be renamed to from the Language list: one per
+/// Language, plus `txt` for Plain Text. Anything else (`exe`, `lnk`…) is
+/// refused, so the webview can't turn a note into something runnable.
+const LANGUAGE_EXTENSIONS: [&str; 12] = [
+    "txt", "md", "json", "js", "ts", "html", "xml", "css", "sql", "py", "yaml", "sh",
+];
+
+/// Renames `from` to the same name with extension `ext` (added if it has
+/// none), refusing to replace an existing file.
+pub fn change_extension(from: &Path, ext: &str) -> Result<PathBuf, FileError> {
+    if !LANGUAGE_EXTENSIONS.contains(&ext) {
+        return Err(FileError::InvalidName);
+    }
+    let to = from.with_extension(ext);
+    if to.file_name().is_none_or(|n| n.len() > 255) {
+        return Err(FileError::InvalidName);
+    }
+    if to == from {
+        fs::metadata(from)?;
+        return Ok(to);
+    }
+    rename_path_no_replace(from, &to)?;
+    Ok(to)
+}
+
 /// Moves `from` (a file or a folder) to exactly `to`, failing with `Exists`
 /// instead of replacing anything already there (atomically, not
 /// check-then-rename).
@@ -757,6 +782,50 @@ mod tests {
             assert!(
                 matches!(rename_no_replace(&a, bad), Err(FileError::InvalidName)),
                 "{bad:?} should be rejected"
+            );
+        }
+        assert!(a.exists());
+    }
+
+    #[test]
+    fn change_extension_renames_and_never_replaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("note.v1.md");
+        fs::write(&a, b"x").unwrap();
+        let to = change_extension(&a, "ts").unwrap();
+        assert_eq!(to, dir.path().join("note.v1.ts"));
+        assert!(!a.exists());
+        assert_eq!(fs::read(&to).unwrap(), b"x");
+
+        // No extension yet: one is added.
+        let n = dir.path().join("notes");
+        fs::write(&n, b"n").unwrap();
+        assert_eq!(
+            change_extension(&n, "md").unwrap(),
+            dir.path().join("notes.md")
+        );
+
+        // An existing target is never replaced.
+        let b = dir.path().join("b.md");
+        fs::write(&b, b"b").unwrap();
+        fs::write(dir.path().join("b.json"), b"j").unwrap();
+        assert!(matches!(
+            change_extension(&b, "json"),
+            Err(FileError::Exists)
+        ));
+        assert_eq!(fs::read(&b).unwrap(), b"b");
+        assert_eq!(fs::read(dir.path().join("b.json")).unwrap(), b"j");
+    }
+
+    #[test]
+    fn change_extension_takes_only_language_extensions() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.md");
+        fs::write(&a, b"x").unwrap();
+        for bad in ["exe", "bat", "lnk", "", ".ts", "ts/x", "TS ", "md.exe"] {
+            assert!(
+                matches!(change_extension(&a, bad), Err(FileError::InvalidName)),
+                "{bad:?} should be refused"
             );
         }
         assert!(a.exists());

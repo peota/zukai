@@ -47,6 +47,8 @@ export interface FilesApi {
   convert(id: string, patch: Partial<FileFormat>): void;
   /** Resolves to an error message to show inline, or null on success. */
   renameFile(id: string, stem: string): Promise<string | null>;
+  /** Renames a File to `ext` (a Language's); same result as renameFile. */
+  renameExtension(id: string, ext: string): Promise<string | null>;
   /**
    * Reopens the Recently Closed entry of Tab `id` (by id, not position: the
    * list may change between showing it and the click). Unknown ids do nothing.
@@ -109,7 +111,7 @@ export function useFiles(
     refuseUnreadable,
   );
   const bar = useBarActions(c, { refuseUnreadable, loadContent, reloadLocked });
-  const { save, saveAs, saveTo, renameFile } = useSave(c, {
+  const { save, saveAs, saveTo, renameFile, renameExtension } = useSave(c, {
     refuseUnreadable,
     loadContent,
   });
@@ -171,6 +173,7 @@ export function useFiles(
     hasPending: c.hasPending,
     convert: bar.convert,
     renameFile,
+    renameExtension,
     reopenEntry,
     requestFormat: bar.requestFormat,
     showNotice: c.showNotice,
