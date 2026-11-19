@@ -9,12 +9,14 @@ describe("parseSettings", () => {
         wrapNewTabs: true,
         lineNumbers: false,
         previewSplit: 0.35,
+        markdownDefault: "markdown",
       }),
     ).toEqual({
       theme: "dark",
       wrapNewTabs: true,
       lineNumbers: false,
       previewSplit: 0.35,
+      markdownDefault: "markdown",
     });
   });
 
@@ -28,7 +30,24 @@ describe("parseSettings", () => {
       wrapNewTabs: false,
       lineNumbers: false,
       previewSplit: 0.5,
+      markdownDefault: "rich",
     });
+  });
+});
+
+describe("markdownDefault", () => {
+  it("defaults to rich, keeps a valid value, and defaults a bad one", () => {
+    expect(DEFAULT_SETTINGS.markdownDefault).toBe("rich");
+    expect(parseSettings({ markdownDefault: "markdown" }).markdownDefault).toBe(
+      "markdown",
+    );
+    expect(parseSettings({ markdownDefault: "rich" }).markdownDefault).toBe(
+      "rich",
+    );
+    expect(parseSettings({ markdownDefault: "html" }).markdownDefault).toBe(
+      "rich",
+    );
+    expect(parseSettings({}).markdownDefault).toBe("rich");
   });
 });
 

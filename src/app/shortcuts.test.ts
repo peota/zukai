@@ -158,6 +158,17 @@ describe("platform differences", () => {
         "mac",
       ),
     ).toEqual({ type: "replace" }));
+  it("rich Markdown: Ctrl+Alt+M on other, Cmd+Alt+M on mac", () => {
+    expect(
+      matchShortcut(ev("KeyM", { ctrlKey: true, altKey: true }), "windows"),
+    ).toEqual({ type: "toggleRichMarkdown" });
+    expect(
+      matchShortcut(
+        ev("KeyM", { metaKey: true, altKey: true, key: "µ" }),
+        "mac",
+      ),
+    ).toEqual({ type: "toggleRichMarkdown" });
+  });
   it("Cmd+H on mac is left to the OS", () =>
     expect(matchShortcut(ev("KeyH", { metaKey: true }), "mac")).toBeNull());
   it("Ctrl+Alt+F on other is not replace", () =>

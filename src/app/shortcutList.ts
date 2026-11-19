@@ -109,6 +109,12 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
     keys: [["Shift", "Alt", "F"]],
     command: "format",
   },
+  {
+    group: "Editing",
+    action: "Rich / Markdown editor",
+    keys: [["Mod", "Alt", "M"]],
+    command: "toggleRichMarkdown",
+  },
   { group: "Find", action: "Find", keys: [["Mod", "F"]], command: "find" },
   {
     group: "Find",

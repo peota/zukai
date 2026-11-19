@@ -25,6 +25,7 @@ describe("SettingsDialog", () => {
         wrapNewTabs: true,
         lineNumbers: false,
         previewSplit: 0.5,
+        markdownDefault: "rich",
       },
       fontSize: 18,
     });
@@ -47,6 +48,21 @@ describe("SettingsDialog", () => {
     expect(
       screen.getByRole("checkbox", { name: "Line numbers" }),
     ).not.toBeChecked();
+  });
+
+  it("chooses how Markdown notes open", () => {
+    const { props } = setup();
+    expect(
+      screen.getByRole("radiogroup", { name: "Open Markdown notes in" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Rich editor" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Markdown" }));
+    expect(props.onSettings).toHaveBeenCalledWith({
+      markdownDefault: "markdown",
+    });
   });
 
   it("changes apply right away", () => {

@@ -23,7 +23,9 @@ export type Command =
   /** A Markdown Tab: Edit → Split → Preview → Edit. */
   | { type: "togglePreview" }
   /** Splits the active Tab with the one active just before, or unsplits. */
-  | { type: "toggleSplit" };
+  | { type: "toggleSplit" }
+  /** A Markdown Tab: the rich editor or the Markdown source. */
+  | { type: "toggleRichMarkdown" };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -99,6 +101,8 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
   }
 
   if (e.altKey) {
+    // Mod+Alt+M switches the Markdown editor (Ctrl+Alt+M is no AltGr letter).
+    if (letter === "m" && !e.shiftKey) return { type: "toggleRichMarkdown" };
     // Mod+Alt+F is Replace on macOS only. Ctrl+Alt elsewhere is AltGr.
     return mac && letter === "f" && !e.shiftKey ? { type: "replace" } : null;
   }

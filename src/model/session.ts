@@ -236,6 +236,15 @@ function withPreview(t: unknown): unknown {
   return rest;
 }
 
+/** So is a malformed Markdown editor mode. */
+function withMarkdownMode(t: unknown): unknown {
+  if (!isObject(t) || t.markdownMode === undefined) return t;
+  if (t.markdownMode === "rich" || t.markdownMode === "markdown") return t;
+  const { markdownMode: _bad, ...rest } = t;
+  void _bad;
+  return rest;
+}
+
 /** Before v3 a Tab had no Kind: a File's comes from its path. */
 function withKind(t: unknown): unknown {
   if (!isObject(t) || t.kind !== undefined) return t;
@@ -269,7 +278,9 @@ export function parseSessionFile(json: string | null): SessionFile | null {
   }
   // A malformed entry is dropped alone; the rest of the session survives.
   const fix = (t: unknown) =>
-    withPreview(withPin(withViewport(migrate ? withKind(t) : t)));
+    withMarkdownMode(
+      withPreview(withPin(withViewport(migrate ? withKind(t) : t))),
+    );
   const tabs: unknown[] = data.tabs.map(fix);
   const closed: unknown[] = data.closed.map((e: unknown) =>
     isObject(e) ? { ...e, tab: fix(e.tab) } : e,

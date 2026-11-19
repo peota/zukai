@@ -76,7 +76,14 @@ export interface TabState {
    * its place ("only"); absent while just editing.
    */
   preview?: PreviewMode;
+  /**
+   * A Markdown Tab's editor: the rich one or the Markdown source. Absent
+   * until first shown, when it's decided from the Settings default.
+   */
+  markdownMode?: MarkdownMode;
 }
+
+export type MarkdownMode = "rich" | "markdown";
 
 export type PreviewMode = "split" | "only";
 
