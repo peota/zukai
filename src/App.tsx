@@ -33,6 +33,7 @@ import { folderHints } from "./ui/tabFolders";
 import { fileReadBytes, openDefault, openUrl, pathKey } from "./files/api";
 import { createTextFeed } from "./markdown/MarkdownPreview";
 import { baseName, languageRename } from "./files/paths";
+import { inShadow } from "./files/fileState";
 import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
 import { pinnedItems } from "./ui/Pinned";
@@ -484,6 +485,7 @@ export default function App() {
               folder: folders.get(t.id),
               pinned: t.pinned,
               kind: t.kind,
+              unsaved: t.file ? inShadow(t.file) : false,
             }))}
             onActivate={w.activate}
             onClose={(id) => void w.closeTab(id)}
@@ -692,6 +694,8 @@ export default function App() {
               w.state.tabs.filter((t) => !t.pinned).map((t) => t.id),
             )
           }
+          canSaveAll={w.state.tabs.some((t) => t.file && inShadow(t.file))}
+          onSaveAll={() => void w.saveAll()}
           onReopen={() => void run({ type: "reopenTab" })}
           onReopenEntry={(id) => void w.reopenEntry(id)}
           onDismiss={closeTabMenu}
