@@ -85,11 +85,17 @@ describe("EditorHost", () => {
   it("shows the text at fontSize, and Mod+wheel asks to zoom", async () => {
     const onZoom = vi.fn();
     const { container, rerender } = setup({ fontSize: 18, onZoom });
-    await activeView(container, "text of a");
-    const host = container.querySelector<HTMLElement>("[data-editor-zoom]")!;
-    expect(host.style.getPropertyValue("--z-editor-font-size")).toBe("18px");
+    const view = await activeView(container, "text of a");
+    const size = () => getComputedStyle(view.dom).fontSize;
+    expect(size()).toBe("18px");
+    // A theme change, so CodeMirror re-measures and the gutter follows.
     rerender({ fontSize: 12 });
-    expect(host.style.getPropertyValue("--z-editor-font-size")).toBe("12px");
+    expect(size()).toBe("12px");
+    // A Tab created later starts at the current size.
+    rerender({ tabs: [tab("a"), tab("b")], activeId: "b" });
+    const later = await activeView(container, "text of b");
+    expect(getComputedStyle(later.dom).fontSize).toBe("12px");
+    rerender({ activeId: "a" });
 
     const scroller = container.querySelector(".cm-scroller")!;
     const wheel = (deltaY: number, ctrlKey = true) => {
