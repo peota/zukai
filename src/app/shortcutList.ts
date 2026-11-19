@@ -37,6 +37,12 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "Tabs",
+    action: "Split with previous tab / unsplit",
+    keys: [["Mod", "\\"]],
+    command: "toggleSplit",
+  },
+  {
+    group: "Tabs",
     action: "Next / previous tab",
     keys: [
       ["Ctrl", "Tab"],

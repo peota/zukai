@@ -23,6 +23,7 @@ const ALL: Record<Command["type"], true> = {
   zoom: true,
   openSettings: true,
   togglePreview: true,
+  toggleSplit: true,
 };
 
 describe("the shortcut list", () => {
@@ -43,6 +44,15 @@ describe("the shortcut list", () => {
     expect(keysOf("mac", "Replace")).toEqual(["⌥⌘F"]);
     expect(keysOf("windows", "Redo")).toEqual(["Ctrl+Shift+Z", "Ctrl+Y"]);
     expect(keysOf("mac", "Redo")).toEqual(["⇧⌘Z"]);
+  });
+
+  it("lists the Split toggle", () => {
+    expect(SHORTCUTS).toContainEqual({
+      group: "Tabs",
+      action: "Split with previous tab / unsplit",
+      keys: [["Mod", "\\"]],
+      command: "toggleSplit",
+    });
   });
 
   it("formats keys per platform", () => {

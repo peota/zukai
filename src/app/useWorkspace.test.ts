@@ -482,3 +482,52 @@ describe("useWorkspace Markdown preview", () => {
     expect(preview()).toBe("only");
   });
 });
+
+describe("useWorkspace Split", () => {
+  const splits = (r: { current: ReturnType<typeof useWorkspace> }) =>
+    r.current.state.splits ?? [];
+
+  it("toggleSplitPairsWithThePreviousTab", async () => {
+    const { result } = await mount();
+    // One Tab active and no previous: nothing happens.
+    await act(() => result.current.run({ type: "toggleSplit" }));
+    expect(splits(result)).toEqual([]);
+    act(() => result.current.activate("b"));
+    act(() => result.current.activate("a"));
+    await act(() => result.current.run({ type: "toggleSplit" }));
+    expect(splits(result)).toMatchObject([{ a: "a", b: "b", focus: "a" }]);
+    expect(result.current.state.activeId).toBe("a");
+    await act(() => result.current.run({ type: "toggleSplit" }));
+    expect(splits(result)).toEqual([]);
+  });
+
+  it("closingTheFocusedHalfLeavesTheOther", async () => {
+    const { result } = await mount();
+    act(() => result.current.splitWith("a", "b"));
+    expect(result.current.state.activeId).toBe("a");
+    await act(() => result.current.closeTab("a"));
+    expect(splits(result)).toEqual([]);
+    expect(result.current.state.activeId).toBe("b");
+  });
+
+  it("closeSplitClosesBoth", async () => {
+    const { result } = await mount();
+    act(() => result.current.setContent("b", "beta"));
+    act(() => result.current.splitWith("a", "b"));
+    await act(() => result.current.closeSplit("a"));
+    expect(result.current.state.closed.map((e) => e.tab.id).sort()).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(splits(result)).toEqual([]);
+  });
+
+  it("splitsAreSaved", async () => {
+    const { result } = await mount();
+    act(() => result.current.splitWith("a", "b", "column"));
+    await act(() => h.flushAll!());
+    expect(
+      (lastSession() as unknown as { splits: unknown[] }).splits,
+    ).toMatchObject([{ a: "a", b: "b", orientation: "column" }]);
+  });
+});
