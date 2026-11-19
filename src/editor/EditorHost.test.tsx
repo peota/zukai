@@ -470,6 +470,89 @@ describe("EditorHost replace requests", () => {
   });
 });
 
+describe("EditorHost re-indent (Shift+Alt+F on code)", () => {
+  const code = (
+    id: string,
+    language: TabState["language"],
+    over: Partial<TabState> = {},
+  ) => tab(id, { language, languagePicked: true, ...over });
+  /** Waits until the Language's parser covers the whole text. */
+  const parsed = (v: EditorView) =>
+    waitFor(() => expect(syntaxTree(v.state).length).toBe(v.state.doc.length));
+
+  it("reindents_javascript_whole_doc", async () => {
+    const src = "function f() {\nreturn 1;\n    }\n";
+    const { container, rerender } = setup({
+      tabs: [code("a", "javascript")],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    await parsed(v);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe("function f() {\n  return 1;\n}\n");
+    // One undoable edit.
+    act(() => void undo(v));
+    expect(v.state.doc.toString()).toBe(src);
+  });
+
+  it("reindent_selected_lines_only", async () => {
+    const src = "if (a) {\nx();\ny();\n}";
+    // A selection inside line 2 only.
+    const { container, rerender } = setup({
+      tabs: [code("a", "javascript", { selection: { anchor: 10, head: 11 } })],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    await parsed(v);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    const lines = v.state.doc.toString().split("\n");
+    expect(lines[1]).toBe("  x();");
+    expect(lines[2]).toBe("y();");
+  });
+
+  it("reindent_leaves_python_yaml_plain_alone", async () => {
+    for (const language of ["python", "yaml", "plaintext"] as const) {
+      const src = "a:\n      b\n  c\n";
+      const { container, rerender, unmount } = setup({
+        tabs: [code("a", language)],
+        loadContent: () => Promise.resolve(src),
+      });
+      const v = await activeView(container, src);
+      if (language !== "plaintext") await parsed(v);
+      rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+      expect(v.state.doc.toString()).toBe(src);
+      unmount();
+    }
+  });
+
+  it("reindent_skips_read_only", async () => {
+    const src = "function f() {\nreturn 1;\n}";
+    const { container, rerender } = setup({
+      tabs: [code("a", "javascript", { file: { ...FILE, held: "readonly" } })],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    expect(v.state.readOnly).toBe(true);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe(src);
+  });
+
+  it("reindent_before_language_loads_is_harmless", async () => {
+    const src = "function f() {\nreturn 1;\n}";
+    const { container, rerender } = setup({
+      tabs: [code("a", "typescript")],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    expect(() =>
+      rerender({ formatRequest: { seq: 1, kind: "beautify" } }),
+    ).not.toThrow();
+    expect([src, "function f() {\n  return 1;\n}"]).toContain(
+      v.state.doc.toString(),
+    );
+  });
+});
+
 describe("EditorHost read-only and Convert", () => {
   it("readOnlyFileRejectsInput", async () => {
     const { container, rerender, props } = setup({

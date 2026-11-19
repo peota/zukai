@@ -105,7 +105,7 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "Editing",
-    action: "Format JSON",
+    action: "Format JSON / re-indent code",
     keys: [["Shift", "Alt", "F"]],
     command: "format",
   },
