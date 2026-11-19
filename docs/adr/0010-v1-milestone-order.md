@@ -32,3 +32,4 @@ v1 ships when all seven are done.
 ## Notes
 
 - 2026-11-19: Canvas (M3) is delivered with the Library before M2 (ADR 0011).
+- 2026-11-19: Split (M5, without Compare) is delivered early, at the owner's request.

@@ -45,7 +45,10 @@ A way of displaying a Document that doesn't change what it is. A Table has two V
 The syntax a Text Document is highlighted as (JSON, SQL, Markdown and so on). A File gets it from its extension, and a Scratchpad from a guess based on its content. The user can always override it in the status bar.
 
 **Split**
-Exactly two Tabs paired side by side. A Split appears in the single tab bar as one joined tab showing both titles. Each half keeps its own cursor, zoom and View. Unsplitting turns the pair back into two ordinary Tabs. Splits are restored with the Session. There is no grid, no nesting, and no second tab bar.
+Exactly two Tabs paired side by side, or top and bottom. A Split appears in the single tab bar as one joined tab showing both titles. Each half keeps its own cursor, zoom and View. Unsplitting turns the pair back into two ordinary Tabs. There is no grid, no nesting, and no second tab bar.
+A Split is side by side by default, and each Split can be switched to top and bottom from its menu. The divider between the halves can be dragged, moved with the arrow keys, or double-clicked to go back to half and half. Each half keeps at least 20%, and the ratio is stored per Split.
+One half has focus. Clicking a half focuses it and its Tab becomes the active Tab, which commands and the status bar act on.
+A Split is made from a tab's "Split with" menu, with Mod+\ (which splits the active Tab with the one active before it, or unsplits a Split), or by dragging a tab onto the right or bottom edge of the editor. The joined tab's × closes both Tabs, while Mod+W closes only the focused half. Splits are stored in the Session (`splits`).
 _Avoid_: pane, editor group.
 
 **Compare**
