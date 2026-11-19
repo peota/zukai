@@ -182,6 +182,22 @@ const handlers: Record<string, (a: Args) => unknown> = {
       })),
     ready: true,
   }),
+  // A plain left-to-right subsequence match; Rust ranks the real one.
+  library_quick_open: (a) => {
+    const q = Array.from(String(a.query).replace(/\s/g, "").toLowerCase());
+    const hits = Object.keys(files).flatMap((p) => {
+      const rel = p.slice(ROOT.length + 1).split(sep).join("/");
+      const chars = Array.from(rel.toLowerCase());
+      const positions: number[] = [];
+      for (let i = 0; i < chars.length && positions.length < q.length; i++) {
+        if (chars[i] === q[positions.length]) positions.push(i);
+      }
+      if (!q.length || positions.length < q.length) return [];
+      const entry = { name: p.split(sep).pop(), path: p, isDir: false };
+      return [{ entry: { ...entry, link: null }, rel, positions, score: 0 }];
+    });
+    return { hits, ready: true };
+  },
   library_resolve: (a) => a.path,
   file_read: (a) => {
     const text = files[a.path as string] ?? "";

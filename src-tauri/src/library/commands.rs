@@ -5,7 +5,9 @@
 //! The command bodies are plain functions over `&Grants` so the checks are
 //! testable without an app.
 
-use super::index::{NameIndex, SEARCH_LIMIT, SearchResult};
+use super::index::{
+    NameIndex, QUICK_OPEN_LIMIT, QuickResult, SEARCH_LIMIT, SearchResult, sort_hits,
+};
 use super::watch::{AddedWatchers, LIBRARY_CHANGED_EVENT, LibraryWatcher, Sink};
 use super::{added, ops, root};
 use crate::files::FileError;
@@ -941,19 +943,55 @@ pub async fn library_watch(app: AppHandle) -> Result<(), FileError> {
 pub async fn library_search(app: AppHandle, query: String) -> Result<SearchResult, FileError> {
     let handle = app.clone();
     blocking(app, move |g| {
-        let index = handle.state::<NameIndex>();
-        let root = g.root();
-        if root.is_some() && index.root() != root {
-            let ticket = handle.state::<LibraryWatcher>().ticket();
-            watch_root(&handle, ticket, root)?;
-        }
-        let added = handle.state::<AddedWatchers>();
-        if added.roots() != available_added(g) {
-            sync_added_watchers(&handle, g);
-        }
-        let mut indexes = vec![index.inner().clone()];
-        indexes.extend(added.indexes());
+        let indexes = current_indexes(&handle, g)?;
         Ok(search_all(&indexes, &query, SEARCH_LIMIT))
+    })
+    .await
+}
+
+/// The Library's index and each available added folder's, starting (and
+/// watching) any that should run but don't yet. Blocking.
+fn current_indexes(app: &AppHandle, g: &Grants) -> Result<Vec<NameIndex>, FileError> {
+    let index = app.state::<NameIndex>();
+    let root = g.root();
+    if root.is_some() && index.root() != root {
+        let ticket = app.state::<LibraryWatcher>().ticket();
+        watch_root(app, ticket, root)?;
+    }
+    let added = app.state::<AddedWatchers>();
+    if added.roots() != available_added(g) {
+        sync_added_watchers(app, g);
+    }
+    let mut indexes = vec![index.inner().clone()];
+    indexes.extend(added.indexes());
+    Ok(indexes)
+}
+
+/// The best `limit` files of every index for Quick open, merged best first.
+pub(crate) fn quick_open_all(indexes: &[NameIndex], query: &str, limit: usize) -> QuickResult {
+    let mut out = QuickResult {
+        hits: Vec::new(),
+        ready: true,
+    };
+    for index in indexes {
+        let found = index.quick_open(query, limit);
+        out.ready &= found.ready;
+        out.hits.extend(found.hits);
+    }
+    sort_hits(&mut out.hits);
+    out.hits.truncate(limit);
+    out
+}
+
+/// Quick open (Mod+P): files anywhere in the Library and the available
+/// added folders whose relative path fuzzy-matches `query`, best first.
+/// Partial (`ready: false`) until every index is built, like search.
+#[tauri::command]
+pub async fn library_quick_open(app: AppHandle, query: String) -> Result<QuickResult, FileError> {
+    let handle = app.clone();
+    blocking(app, move |g| {
+        let indexes = current_indexes(&handle, g)?;
+        Ok(quick_open_all(&indexes, &query, QUICK_OPEN_LIMIT))
     })
     .await
 }

@@ -38,6 +38,11 @@ import { Sidebar } from "./ui/Sidebar";
 import { pinnedItems } from "./ui/Pinned";
 import { useColorScheme } from "./ui/useColorScheme";
 import { SettingsDialog } from "./ui/SettingsDialog";
+import { QuickOpen, type QuickTab } from "./ui/QuickOpen";
+import { fileIcon } from "./ui/icons";
+import { libraryQuickOpen } from "./library/api";
+import { rootOf } from "./library/tree";
+import { parentOf } from "./ui/libraryEntries";
 
 const platform = detectPlatform();
 const keyOf = (p: string) => pathKey(p, platform);
@@ -62,6 +67,7 @@ export default function App() {
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [picking, setPicking] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   /** Edits reach a Markdown preview without re-rendering the App. */
   const [feed] = useState(createTextFeed);
   const { setContent } = w;
@@ -80,6 +86,7 @@ export default function App() {
   const run = useCallback(
     async (cmd: Command) => {
       if (cmd.type === "openSettings") setSettingsOpen(true);
+      else if (cmd.type === "quickOpen") setQuickOpen(true);
       else await workspaceRun(cmd);
       // The other editor takes the keyboard.
       if (cmd.type === "toggleRichMarkdown") refocus();
@@ -324,6 +331,38 @@ export default function App() {
   );
 
   const lib = w.library;
+
+  const closeQuickOpen = useCallback(() => {
+    setQuickOpen(false);
+    refocus();
+  }, [refocus]);
+  /** With nothing typed, Quick open lists the other open Tabs. */
+  const quickTabs: QuickTab[] = quickOpen
+    ? w.state.tabs
+        .filter((t) => t.id !== activeId)
+        .map((t) => ({
+          id: t.id,
+          title: t.title,
+          detail: t.file ? parentOf(t.file.path) : "Scratchpad",
+          icon: t.file
+            ? fileIcon(t.file.path)
+            : t.kind === "canvas"
+              ? "canvas"
+              : "scratchpad",
+        }))
+    : [];
+  const added = lib.added;
+  /** An added folder's name before its hits' folders; none for the Library. */
+  const treeLabel = useCallback(
+    (path: string) => {
+      const r = rootOf(
+        path,
+        added.map((a) => a.path),
+      );
+      return r ? baseName(r.replace(/[\\/]+$/, "")) : null;
+    },
+    [added],
+  );
 
   /** One Tab's area, alone or as half of a Split. */
   const pane = (tab: TabState) => (
@@ -583,6 +622,24 @@ export default function App() {
           onClose={() => {
             setSettingsOpen(false);
             refocus();
+          }}
+        />
+      )}
+      {quickOpen && (
+        <QuickOpen
+          search={libraryQuickOpen}
+          tabs={quickTabs}
+          treeLabel={treeLabel}
+          platform={platform}
+          onClose={closeQuickOpen}
+          onActivate={(id) => {
+            setQuickOpen(false);
+            w.activate(id);
+            refocus();
+          }}
+          onOpen={(entry) => {
+            setQuickOpen(false);
+            void lib.open(entry).then(refocus);
           }}
         />
       )}

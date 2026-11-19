@@ -5,6 +5,7 @@
 //! and skips dotfiles and dot-folders, like `list_dir`; kept current by the
 //! Library watcher through `apply`.
 
+use super::fuzzy::{self, Scorer};
 use super::ops::{self, Entry, LinkKind};
 use crate::files::grants::key;
 use serde::Serialize;
@@ -23,6 +24,35 @@ pub struct SearchResult {
     pub entries: Vec<Entry>,
     /// False while the index is still being built: `entries` is partial.
     pub ready: bool,
+}
+
+/// How many matches `library_quick_open` returns.
+pub const QUICK_OPEN_LIMIT: usize = 50;
+
+/// A file Quick open offers.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickHit {
+    pub entry: Entry,
+    /// Its path relative to its tree, `/`-separated: what was matched.
+    pub rel: String,
+    /// The matched characters of `rel` (in chars).
+    pub positions: Vec<u32>,
+    pub score: i32,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickResult {
+    /// Best first.
+    pub hits: Vec<QuickHit>,
+    /// False while an index is still being built: `hits` is partial.
+    pub ready: bool,
+}
+
+/// Best first; equal scores by path, so the order is stable.
+pub fn sort_hits(hits: &mut [QuickHit]) {
+    hits.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.rel.cmp(&b.rel)));
 }
 
 /// The root's slot.
@@ -394,6 +424,68 @@ impl NameIndex {
         SearchResult { entries, ready }
     }
 
+    /// The `limit` best files (not folders, not links leading outside)
+    /// whose path relative to the root fuzzy-matches `query`
+    /// (`fuzzy.rs`). An empty query matches nothing.
+    pub fn quick_open(&self, query: &str, limit: usize) -> QuickResult {
+        let query = fuzzy::prepare(query);
+        let s = self.lock();
+        let ready = s.ready || s.root.is_none();
+        if query.is_empty() {
+            return QuickResult {
+                hits: Vec::new(),
+                ready,
+            };
+        }
+        let mut scorer = Scorer::default();
+        let mut rel = String::new();
+        let mut parts: Vec<&str> = Vec::new();
+        let mut found: Vec<(u32, String, fuzzy::Match)> = Vec::new();
+        for (id, n) in s.nodes.iter().enumerate().skip(1) {
+            if !n.alive || n.is_dir || n.link == Some(LinkKind::Outside) {
+                continue;
+            }
+            parts.clear();
+            let mut at = id as u32;
+            while at != ROOT {
+                let node = s.node(at);
+                parts.push(&node.name);
+                at = node.parent;
+            }
+            rel.clear();
+            for (i, part) in parts.iter().rev().enumerate() {
+                if i > 0 {
+                    rel.push('/');
+                }
+                rel.push_str(part);
+            }
+            if let Some(m) = scorer.score(&rel, &query) {
+                found.push((id as u32, rel.clone(), m));
+            }
+        }
+        found.sort_by(|a, b| b.2.score.cmp(&a.2.score).then_with(|| a.1.cmp(&b.1)));
+        found.truncate(limit);
+        let hits = found
+            .into_iter()
+            .filter_map(|(id, rel, m)| {
+                let path = s.path_of(id)?;
+                let n = s.node(id);
+                Some(QuickHit {
+                    entry: Entry {
+                        name: n.name.to_string(),
+                        path: path.to_str()?.to_owned(),
+                        is_dir: false,
+                        link: n.link,
+                    },
+                    rel,
+                    positions: m.positions,
+                    score: m.score,
+                })
+            })
+            .collect();
+        QuickResult { hits, ready }
+    }
+
     /// Roughly the heap the index holds, for the size notes in tests.
     #[cfg(test)]
     pub fn approx_bytes(&self) -> usize {
@@ -548,6 +640,38 @@ pub(crate) mod tests {
         assert_eq!(index.search("notes", 2).entries.len(), 2);
         assert!(index.search("", 100).entries.is_empty());
         assert!(index.search("zzz", 100).entries.is_empty());
+    }
+
+    #[test]
+    fn quick_open_ranks_files_by_relative_path() {
+        let (_tmp, _g, root, _outside) = library();
+        fs::create_dir_all(root.join("work").join("plans")).unwrap();
+        fs::write(root.join("work").join("plans").join("Roadmap.md"), "").unwrap();
+        fs::write(root.join("roadmap.txt"), "").unwrap();
+        fs::create_dir(root.join("roadmap-folder")).unwrap();
+        fs::write(root.join(".roadmap.md"), "").unwrap();
+
+        let index = NameIndex::default();
+        index.start_build(root.clone());
+        wait_ready(&index);
+
+        let r = index.quick_open("roadmap", 10);
+        assert!(r.ready);
+        let rels: Vec<&str> = r.hits.iter().map(|h| h.rel.as_str()).collect();
+        // Files only, no dotfiles; the shorter path first.
+        assert_eq!(rels, ["roadmap.txt", "work/plans/Roadmap.md"]);
+        let deep = &r.hits[1];
+        assert_eq!(deep.entry.name, "Roadmap.md");
+        assert_eq!(
+            Path::new(&deep.entry.path),
+            root.join("work").join("plans").join("Roadmap.md")
+        );
+        assert_eq!(deep.positions, [11, 12, 13, 14, 15, 16, 17]);
+
+        let r = index.quick_open("wpr", 10);
+        assert_eq!(r.hits[0].rel, "work/plans/Roadmap.md");
+        assert!(index.quick_open("", 10).hits.is_empty());
+        assert_eq!(index.quick_open("roadmap", 1).hits.len(), 1);
     }
 
     #[test]

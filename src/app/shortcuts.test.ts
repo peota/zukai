@@ -125,6 +125,13 @@ describe.each(["mac", "other"] as Platform[])("matchShortcut (%s)", (p) => {
       ),
     ).toBeNull();
   });
+  it("Mod+P is Quick open; Mod+Shift+P is not", () => {
+    expect(matchShortcut(ev("KeyP", m), p)).toEqual({ type: "quickOpen" });
+    expect(
+      matchShortcut(ev("KeyP", { ...m, key: "P", shiftKey: true }), p),
+    ).toBeNull();
+    expect(matchShortcut(ev("KeyP"), p)).toBeNull();
+  });
   it("sidebar: Mod+B toggles, Mod+Shift+E focuses", () => {
     expect(matchShortcut(ev("KeyB", m), p)).toEqual({ type: "toggleSidebar" });
     expect(
