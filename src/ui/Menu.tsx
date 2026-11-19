@@ -37,6 +37,13 @@ export interface MenuProps {
   ignoreSelector?: string;
 }
 
+/** The menu's panel and its rows, for lists that look like a Menu. */
+export const MENU_PANEL =
+  "z-fade-in min-w-48 max-w-[360px] select-none rounded-float bg-surface p-1 text-[12px] text-text shadow-float outline-none";
+export const menuRow = (active: boolean, disabled = false) =>
+  "flex cursor-default items-start gap-3 rounded-[5px] px-2 py-[5px] " +
+  (disabled ? "text-faint" : active ? "bg-chrome text-text" : "");
+
 /** Zukai's floating menu in the Paper style (spec section 6). */
 export function Menu({
   label,
@@ -182,7 +189,8 @@ function MenuList({
           : undefined
       }
       className={
-        "z-fade-in min-w-48 max-w-[360px] select-none rounded-float bg-surface p-1 text-[12px] text-text shadow-float outline-none " +
+        MENU_PANEL +
+        " " +
         (sub
           ? "absolute top-[-4px] left-full ml-1 max-h-[70vh] overflow-y-auto"
           : "")
@@ -208,14 +216,7 @@ function MenuList({
             }}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => choose(i)}
-            className={
-              "flex cursor-default items-start gap-3 rounded-[5px] px-2 py-[5px] " +
-              (item.disabled
-                ? "text-faint"
-                : i === active
-                  ? "bg-chrome text-text"
-                  : "")
-            }
+            className={menuRow(i === active, item.disabled)}
           >
             <span className="min-w-0 flex-1">
               <span className="block truncate">{item.label}</span>

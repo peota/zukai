@@ -5,14 +5,7 @@
  *
  * Load this module lazily (`React.lazy`): it pulls in Milkdown.
  */
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Editor,
   defaultValueCtx,
@@ -35,15 +28,14 @@ import {
 } from "../model/markdownMode";
 import { detectPlatform } from "../app/shortcuts";
 import { canKeep, richPlugins } from "./richMarkdown";
+import { PROGRAMMATIC, RichContext, type RichHandle } from "./richContext";
+import { RichToolbar } from "./RichToolbar";
+import { SlashMenu } from "./SlashMenu";
+
+export { useRich, type RichHandle } from "./richContext";
 
 /** How long typing settles before it is written to the Tab's text. */
 export const RICH_DEBOUNCE_MS = 300;
-
-/**
- * Tags a transaction that isn't the user's (the mount, a re-parse after an
- * outside change): it never writes the Tab's text.
- */
-const PROGRAMMATIC = "zukaiProgrammatic";
 
 const mac = detectPlatform() === "mac";
 
@@ -90,19 +82,6 @@ export interface RichSync {
 /** Wheel distance per zoom step, as in the plain editor. */
 const ZOOM_WHEEL_STEP = 100;
 
-/** The live Milkdown editor and its ProseMirror view. */
-export interface RichHandle {
-  editor: Editor;
-  view: EditorView;
-}
-
-const RichContext = createContext<RichHandle | null>(null);
-
-/** The enclosing RichEditor's editor and view (null outside one). */
-export function useRich(): RichHandle | null {
-  return useContext(RichContext);
-}
-
 /** Images are never loaded: their alt text stands in, as in the preview. */
 const imageAsAlt = () =>
   $view(imageSchema.node, () => (node) => {
@@ -119,7 +98,9 @@ const WEB_LINK = /^(https?:|mailto:)/i;
 export function RichEditor(p: RichEditorProps) {
   const { id, bridge, readOnly, focused, fontSize, focusSignal } = p;
   const root = useRef<HTMLDivElement>(null);
-  const [handle, setHandle] = useState<RichHandle | null>(null);
+  const [handle, setHandle] = useState<Omit<RichHandle, "readOnly"> | null>(
+    null,
+  );
   const [fellBack, setFellBack] = useState(false);
   // The latest props, for the editor's long-lived callbacks.
   const latest = useRef({
@@ -155,6 +136,8 @@ export function RichEditor(p: RichEditorProps) {
     /** Bumped per outside change: only the newest one is shown. */
     let outsideSeq = 0;
     let off = () => {};
+    /** The editor's own UI, told of every transaction. */
+    const listeners = new Set<(tr: Transaction) => void>();
 
     const fallBack = (notice: string) => {
       if (!live) return;
@@ -182,6 +165,7 @@ export function RichEditor(p: RichEditorProps) {
       const user = mounted && tr.docChanged && !tr.getMeta(PROGRAMMATIC);
       if (user && latest.current.readOnly) return;
       this.updateState(this.state.apply(tr));
+      for (const cb of [...listeners]) cb(tr);
       if (!user) return;
       dirty = true;
       clearTimeout(timer);
@@ -308,7 +292,14 @@ export function RichEditor(p: RichEditorProps) {
         unregister();
         document.removeEventListener("pointerdown", onPointerDown, true);
       };
-      setHandle({ editor: made, view });
+      setHandle({
+        editor: made,
+        view,
+        subscribe: (cb) => {
+          listeners.add(cb);
+          return () => listeners.delete(cb);
+        },
+      });
     })().catch((err) => {
       console.error("rich editor failed", err);
       fallBack(CANT_KEEP_NOTICE);
@@ -352,17 +343,24 @@ export function RichEditor(p: RichEditorProps) {
     return () => el.removeEventListener("wheel", onWheel);
   }, [handle]);
 
+  const rich = useMemo<RichHandle | null>(
+    () => (handle ? { ...handle, readOnly } : null),
+    [handle, readOnly],
+  );
+
   if (fellBack) return null;
   return (
     <div
       className="z-rich flex size-full flex-col bg-editor"
       data-rich-editor=""
     >
-      {handle && (
-        <RichContext.Provider value={handle}>
+      {rich && (
+        <RichContext.Provider value={rich}>
           <div data-rich-toolbar="" className="shrink-0">
+            <RichToolbar />
             {p.children}
           </div>
+          <SlashMenu />
         </RichContext.Provider>
       )}
       <div
