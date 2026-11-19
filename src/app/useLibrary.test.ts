@@ -67,6 +67,9 @@ vi.mock("../library/api", () => ({
   libraryUseDefault: vi.fn(),
   libraryChoose: vi.fn(),
   libraryRecreate: vi.fn(),
+  libraryAddFolder: vi.fn(),
+  libraryLocateFolder: vi.fn(),
+  libraryRemoveFolder: vi.fn(),
   libraryList: vi.fn(),
   libraryCreateFolder: vi.fn(),
   libraryCreateFile: vi.fn(),
@@ -230,8 +233,12 @@ beforeEach(() => {
   f.onFileChanged.mockResolvedValue(() => {});
   f.onOpenPaths.mockResolvedValue(() => {});
 
-  l.libraryRoot.mockResolvedValue({ root: R, available: true });
-  l.libraryUseDefault.mockResolvedValue({ root: R, available: true });
+  l.libraryRoot.mockResolvedValue({ root: R, available: true, added: [] });
+  l.libraryUseDefault.mockResolvedValue({
+    root: R,
+    available: true,
+    added: [],
+  });
   l.libraryWatch.mockResolvedValue(undefined);
   l.libraryResync.mockResolvedValue(false);
   l.librarySetDropTarget.mockResolvedValue(undefined);
@@ -613,7 +620,7 @@ describe("useLibrary", () => {
   it("chooseRootReloadsTree", async () => {
     const R2 = "D:\\Other";
     listings[R2] = [file(`${R2}\\x.md`)];
-    l.libraryChoose.mockResolvedValue({ root: R2, available: true });
+    l.libraryChoose.mockResolvedValue({ root: R2, available: true, added: [] });
     const { result } = await mount();
     expect(l.libraryWatch).toHaveBeenCalledTimes(1);
     await act(() => result.current.library.chooseRoot());
@@ -625,6 +632,228 @@ describe("useLibrary", () => {
     expect(result.current.library.root).toBe(R2);
     expect(l.libraryWatch).toHaveBeenCalledTimes(2);
     expect(result.current.library.tree.expanded.size).toBe(0);
+  });
+
+  it("add_folder_appends_and_expands", async () => {
+    const X = "D:\\Work";
+    listings[X] = [file(`${X}\\n.md`)];
+    l.libraryAddFolder.mockResolvedValue({
+      root: R,
+      available: true,
+      added: [{ path: X, available: true }],
+    });
+    const { result } = await mount();
+    l.libraryWatch.mockClear();
+    await act(() => result.current.library.addFolder());
+    expect(result.current.library.added).toEqual([
+      { path: X, available: true },
+    ]);
+    expect(result.current.library.tree.expanded.has(X)).toBe(true);
+    await waitFor(() =>
+      expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
+        `${X}\\n.md`,
+      ),
+    );
+    const rows = result.current.library.rows;
+    const at = rows.findIndex((x) => x.entry.path === X);
+    expect(rows[at].heading).toEqual({ available: true });
+    expect(at).toBeGreaterThan(
+      rows.findIndex((x) => x.entry.path === `${R}\\top.md`),
+    );
+    expect(rows[at + 1]).toMatchObject({ depth: 1 });
+    // The watchers and indexes sync with the new list.
+    expect(l.libraryWatch).toHaveBeenCalledTimes(1);
+    // A refusal shows Rust's message as is.
+    const msg = "That folder is already in your Library.";
+    l.libraryAddFolder.mockRejectedValue({ kind: "io", message: msg });
+    await act(() => result.current.library.addFolder());
+    expect(result.current.notice).toBe(msg);
+    expect(result.current.library.added).toHaveLength(1);
+  });
+
+  it("cross_root_drop_copies", async () => {
+    const X = "D:\\Work";
+    listings[X] = [];
+    l.libraryRoot.mockResolvedValue({
+      root: R,
+      available: true,
+      added: [{ path: X, available: true }],
+    });
+    l.libraryCopyInto.mockImplementation(async () => {
+      listings[X] = [file(`${X}\\a.md`)];
+      return [{ path: `${X}\\a.md`, error: null }];
+    });
+    const { result } = await mount(undefined, [], {
+      ...OPEN,
+      expanded: [PROJ, X],
+    });
+    await act(() => result.current.library.move(A, X));
+    expect(l.libraryCopyInto).toHaveBeenCalledWith([A], X);
+    expect(l.libraryMove).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
+        `${X}\\a.md`,
+      ),
+    );
+    // The source stays.
+    expect(result.current.library.rows.map((x) => x.entry.path)).toContain(A);
+    // Within one tree it still moves.
+    l.libraryMove.mockResolvedValue(`${R}\\dest\\a.md`);
+    await act(() => result.current.library.move(A, `${R}\\dest`));
+    expect(l.libraryMove).toHaveBeenCalledWith(A, `${R}\\dest`);
+    expect(l.libraryCopyInto).toHaveBeenCalledTimes(1);
+  });
+
+  it("remove_passes_open_paths", async () => {
+    const X = "D:\\Work";
+    const XF = `${X}\\n.md`;
+    disk[XF] = { text: "n", hash: "h1" };
+    listings[X] = [file(XF)];
+    l.libraryRoot.mockResolvedValue({
+      root: R,
+      available: true,
+      added: [{ path: X, available: true }],
+    });
+    l.libraryRemoveFolder.mockResolvedValue({
+      root: R,
+      available: true,
+      added: [],
+    });
+    const closed: ClosedEntry = {
+      tab: fileTab("fb", B),
+      index: 1,
+      closedAt: Date.now(),
+    };
+    const { result } = await mount(
+      [fileTab("fa", A), fileTab("fx", XF)],
+      [closed],
+      { ...OPEN, expanded: [PROJ, X] },
+    );
+    await waitFor(() =>
+      expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
+        XF,
+      ),
+    );
+    await act(() => result.current.library.removeFolder(X));
+    expect(l.libraryRemoveFolder).toHaveBeenCalledWith(X, [A, XF, B]);
+    expect(result.current.library.added).toEqual([]);
+    const paths = result.current.library.rows.map((x) => x.entry.path);
+    expect(paths).not.toContain(X);
+    expect(paths).not.toContain(XF);
+    // Its open Tab stays open.
+    expect(tabByPath(result, XF)).toBeDefined();
+  });
+
+  it("locate_follows_open_tabs", async () => {
+    const OLD = "D:\\Work";
+    const NEW = "E:\\Work";
+    const gone = `${OLD}\\n.md`;
+    disk[`${NEW}\\n.md`] = { text: "n", hash: "h1" };
+    listings[NEW] = [file(`${NEW}\\n.md`)];
+    l.libraryRoot.mockResolvedValue({
+      root: R,
+      available: true,
+      added: [{ path: OLD, available: false }],
+    });
+    l.libraryLocateFolder.mockResolvedValue({
+      root: R,
+      available: true,
+      added: [{ path: NEW, available: true }],
+    });
+    const missing: TabState = {
+      ...fileTab("fm", gone),
+      file: { ...fileTab("fm", gone).file!, held: "missing" },
+    };
+    const { result } = await mount([fileTab("fa", A), missing]);
+    await act(() => result.current.library.locateFolder(OLD));
+    expect(l.libraryLocateFolder).toHaveBeenCalledWith(OLD);
+    expect(l.libraryFollow).toHaveBeenCalledWith(OLD, NEW, [gone]);
+    expect(result.current.state.tabs[1].file?.path).toBe(`${NEW}\\n.md`);
+    expect(result.current.library.added).toEqual([
+      { path: NEW, available: true },
+    ]);
+    await waitFor(() =>
+      expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
+        `${NEW}\\n.md`,
+      ),
+    );
+    // A refusal shows Rust's message as is.
+    const msg = "That folder contains your Library.";
+    l.libraryLocateFolder.mockRejectedValue({ kind: "io", message: msg });
+    await act(() => result.current.library.locateFolder(NEW));
+    expect(result.current.notice).toBe(msg);
+  });
+
+  it("choose_root_notices_removed_folders", async () => {
+    const R2 = "D:\\Other";
+    listings[R2] = [file(`${R2}\\x.md`)];
+    l.libraryRoot.mockResolvedValue({
+      root: R,
+      available: true,
+      added: [{ path: `${R2}\\proj`, available: true }],
+    });
+    l.libraryChoose.mockResolvedValue({
+      root: R2,
+      available: true,
+      added: [],
+      removed: ["proj"],
+    });
+    const closed: ClosedEntry = {
+      tab: fileTab("fb", B),
+      index: 1,
+      closedAt: Date.now(),
+    };
+    const { result } = await mount([fileTab("fa", A)], [closed]);
+    await act(() => result.current.library.chooseRoot());
+    expect(l.libraryChoose).toHaveBeenCalledWith([A, B]);
+    expect(result.current.notice).toBe(
+      "Removed proj from the sidebar: it overlaps the new Library folder.",
+    );
+    expect(result.current.library.added).toEqual([]);
+    await waitFor(() =>
+      expect(result.current.library.rows.map((x) => x.entry.path)).toEqual([
+        `${R2}\\x.md`,
+      ]),
+    );
+  });
+
+  it("focus_rechecks_root_state", async () => {
+    const X = "D:\\Work";
+    listings[X] = [file(`${X}\\n.md`)];
+    l.libraryRoot.mockResolvedValue({
+      root: R,
+      available: true,
+      added: [{ path: X, available: false }],
+    });
+    const { result } = await mount(undefined, [], {
+      ...OPEN,
+      expanded: [PROJ, X],
+    });
+    const heading = result.current.library.rows.find((x) => x.entry.path === X);
+    expect(heading?.heading).toEqual({ available: false });
+    expect(l.libraryList).not.toHaveBeenCalledWith(X);
+    // The drive is plugged in again.
+    l.libraryRoot.mockResolvedValue({
+      root: R,
+      available: true,
+      added: [{ path: X, available: true }],
+    });
+    l.libraryWatch.mockClear();
+    const asked = l.libraryRoot.mock.calls.length;
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() =>
+      expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
+        `${X}\\n.md`,
+      ),
+    );
+    expect(l.libraryRoot.mock.calls.length).toBeGreaterThan(asked);
+    expect(l.libraryResync).toHaveBeenCalled();
+    expect(l.libraryWatch).toHaveBeenCalledTimes(1);
+    expect(result.current.library.added).toEqual([
+      { path: X, available: true },
+    ]);
   });
 
   it("trashRefusedShowsNotice", async () => {
@@ -661,7 +890,11 @@ describe("sidebar state", () => {
   });
 
   it("first open creates the default root and starts watching once", async () => {
-    l.libraryRoot.mockResolvedValue({ root: null, available: false });
+    l.libraryRoot.mockResolvedValue({
+      root: null,
+      available: false,
+      added: [],
+    });
     const { result } = await mount(undefined, [], {
       open: false,
       width: 240,

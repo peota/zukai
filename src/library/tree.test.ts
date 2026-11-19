@@ -4,6 +4,7 @@ import {
   filterRows,
   invalidate,
   rewritePrefix,
+  rootOf,
   setChildren,
   toggle,
   visibleRows,
@@ -24,6 +25,7 @@ const empty = (): TreeState => ({
   children: {},
   expanded: new Set(),
   selected: null,
+  added: [],
 });
 
 function sample(): TreeState {
@@ -113,7 +115,7 @@ describe("tree", () => {
   it("filterRowsIncludesAncestors", () => {
     const rows = filterRows(
       [file(`${R}/a/x/deep.md`), file(`${R}/a/f.md`), file(`${R}/z.md`)],
-      R,
+      [R],
     );
     expect(
       rows.map((r) => `${r.depth}:${r.entry.name}:${r.entry.isDir}`),
@@ -124,14 +126,104 @@ describe("tree", () => {
       "1:f.md:false",
       "0:z.md:false",
     ]);
-    expect(filterRows([file("/other/q.md")], R)).toEqual([]);
+    expect(filterRows([file("/other/q.md")], [R])).toEqual([]);
   });
 
   it("filterRowsKeepsMatchedFolderEntryAndPosixPaths", () => {
     const link = { ...dir("/r/a"), link: "inside" as const };
-    const rows = filterRows([file("/r/a/b.md"), link], "/r/");
+    const rows = filterRows([file("/r/a/b.md"), link], ["/r/"]);
     expect(rows[0].entry).toBe(link);
     expect(rows[1].entry.path).toBe("/r/a/b.md");
+  });
+});
+
+describe("added folders", () => {
+  const X = "/x/proj";
+  const Y = "/y/gone";
+  function withAdded(): TreeState {
+    let s: TreeState = {
+      ...sample(),
+      added: [
+        { path: X, available: true },
+        { path: Y, available: false },
+      ],
+    };
+    s = setChildren(s, X, [dir(`${X}/sub`), file(`${X}/n.md`)]);
+    s = setChildren(s, `${X}/sub`, [file(`${X}/sub/d.md`)]);
+    return s;
+  }
+  const show = (s: TreeState) =>
+    visibleRows(s).map(
+      (r) =>
+        `${r.depth}:${r.entry.name}${r.heading ? `:h${r.heading.available ? "" : "!"}` : ""}`,
+    );
+
+  it("added_rows_follow_library_rows_with_headings", () => {
+    const s = toggle(toggle(withAdded(), X), `${X}/sub`);
+    expect(show(s)).toEqual([
+      "0:a",
+      "0:b",
+      "0:z.md",
+      "0:proj:h",
+      "1:sub",
+      "2:d.md",
+      "1:n.md",
+      "0:gone:h!",
+    ]);
+    const heading = visibleRows(s)[3];
+    expect(heading.entry).toEqual({
+      name: "proj",
+      path: X,
+      isDir: true,
+      link: null,
+    });
+    // Only an added folder's own row is a heading.
+    expect(visibleRows(s).filter((r) => r.heading)).toHaveLength(2);
+  });
+
+  it("collapsed_or_missing_added_shows_heading_only", () => {
+    let s = withAdded();
+    // Collapsed: the heading alone.
+    expect(show(s)).toEqual(["0:a", "0:b", "0:z.md", "0:proj:h", "0:gone:h!"]);
+    // Missing, though expanded and with a cached listing: the heading alone.
+    s = setChildren(toggle(s, Y), Y, [file(`${Y}/old.md`)]);
+    expect(show(s)).toEqual(["0:a", "0:b", "0:z.md", "0:proj:h", "0:gone:h!"]);
+    // No Library listing (or no Library): the added folders still show.
+    expect(show({ ...s, root: null })).toEqual(["0:proj:h", "0:gone:h!"]);
+  });
+
+  it("filterRows_groups_by_root", () => {
+    const rows = filterRows(
+      [
+        file(`${X}/sub/d.md`),
+        file(`${R}/z.md`),
+        file("/elsewhere/q.md"),
+        file(`${R}/a/f.md`),
+      ],
+      [R, "/w/empty", X],
+    );
+    expect(
+      rows.map((r) => `${r.depth}:${r.entry.name}${r.heading ? ":h" : ""}`),
+    ).toEqual(["0:z.md", "0:a", "1:f.md", "0:proj:h", "1:sub", "2:d.md"]);
+    expect(rows[3].entry.path).toBe(X);
+  });
+
+  it("rootOf_respects_separators", () => {
+    const roots = ["/a/b", "/c"];
+    expect(rootOf("/a/b2/x", roots, false)).toBeNull();
+    expect(rootOf("/a/b/x", roots, false)).toBe("/a/b");
+    expect(rootOf("/a/b", roots, false)).toBe("/a/b");
+    expect(rootOf("/c/d/e", roots, false)).toBe("/c");
+    expect(rootOf("/A/B/x", roots, false)).toBeNull();
+    const W = ["c:", "lib"].join("\\");
+    expect(rootOf(["C:", "Lib", "x"].join("\\"), [W], true)).toBe(W);
+    expect(rootOf(["C:", "Lib2", "x"].join("\\"), [W], true)).toBeNull();
+    expect(rootOf("/r/a", ["/r/"], false)).toBe("/r/");
+  });
+
+  it("rewritePrefix_rewrites_added_paths", () => {
+    const out = rewritePrefix(withAdded(), X, "/x/work");
+    expect(out.added.map((a) => a.path)).toEqual(["/x/work", Y]);
   });
 });
 
@@ -150,6 +242,7 @@ describe("tree with backslash paths", () => {
       children: {},
       expanded: new Set([p("a")]),
       selected: null,
+      added: [],
     };
     s = setChildren(s, W, [e(p("a"), true)]);
     s = setChildren(s, p("a"), [e(p("a", "f.md"), false)]);
@@ -159,7 +252,7 @@ describe("tree with backslash paths", () => {
       p("c", "f.md"),
     ]);
     expect(
-      filterRows([e(p("a", "f.md"), false)], W).map((r) => r.entry.path),
+      filterRows([e(p("a", "f.md"), false)], [W]).map((r) => r.entry.path),
     ).toEqual([p("a"), p("a", "f.md")]);
   });
 });

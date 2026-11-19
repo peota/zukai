@@ -132,7 +132,7 @@ beforeEach(() => {
   s.backupSession.mockResolvedValue(undefined);
   s.startupMark.mockResolvedValue(undefined);
   s.purgeClosed.mockResolvedValue(undefined);
-  l.libraryRoot.mockResolvedValue({ root: R, available: true });
+  l.libraryRoot.mockResolvedValue({ root: R, available: true, added: [] });
   l.libraryWatch.mockResolvedValue(undefined);
   l.libraryResync.mockResolvedValue(false);
   l.librarySetDropTarget.mockResolvedValue(undefined);
