@@ -313,6 +313,7 @@ body {
   position: absolute;
   left: -1.3em;
   color: var(--z-muted);
+  cursor: pointer;
 }
 .z-rich .ProseMirror li[data-item-type="task"][data-checked="true"]::before {
   content: "☑";

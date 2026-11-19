@@ -134,3 +134,70 @@ describe("ordinary editing", () => {
     }
   });
 });
+
+describe("checklists", () => {
+  /** A press on the box drawn left of the item's text. */
+  const pressBox = (view: EditorView, n = 0) =>
+    act(() => {
+      const li = view.dom.querySelectorAll('li[data-item-type="task"]')[n];
+      // jsdom lays nothing out: the item's box starts at 0, so a press left
+      // of it is on the drawn checkbox.
+      fireEvent.mouseDown(li, { clientX: -10, button: 0 });
+    });
+
+  it("clicking_the_box_ticks_and_unticks_it", async () => {
+    const { view, bridge, md } = await mountRich("- [ ] a\n- [ ] b\n");
+    vi.useFakeTimers();
+    try {
+      pressBox(view);
+      expect(md()).toBe("- [x] a\n- [ ] b\n");
+      act(() => vi.advanceTimersByTime(RICH_DEBOUNCE_MS + 10));
+      expect(bridge.text("a")).toBe("- [x] a\n- [ ] b\n");
+      pressBox(view);
+      act(() => vi.advanceTimersByTime(RICH_DEBOUNCE_MS + 10));
+      expect(bridge.text("a")).toBe("- [ ] a\n- [ ] b\n");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clicking_the_text_does_not_tick", async () => {
+    const { view, md } = await mountRich("- [ ] a\n");
+    act(() => {
+      const p = view.dom.querySelector('li[data-item-type="task"] p')!;
+      fireEvent.mouseDown(p, { clientX: 20, button: 0 });
+    });
+    expect(md()).toBe("- [ ] a\n");
+  });
+
+  it("read_only_refuses_a_tick", async () => {
+    const { view, bridge, md } = await mountRich("- [ ] a\n", {
+      readOnly: true,
+    });
+    pressBox(view);
+    expect(md()).toBe("- [ ] a\n");
+    expect(bridge.replace).not.toHaveBeenCalled();
+  });
+
+  it("mod_enter_toggles_the_item", async () => {
+    const { view, md } = await mountRich("- [ ] a\n  - [x] b\n");
+    act(() => select(view, "b", 0));
+    press(view, "Enter", { ctrlKey: true });
+    expect(md()).toBe("- [ ] a\n  - [ ] b\n");
+    act(() => select(view, "a", 1));
+    press(view, "Enter", { ctrlKey: true });
+    expect(md()).toBe("- [x] a\n  - [ ] b\n");
+  });
+
+  it("mod_enter_outside_a_checklist_is_unchanged", async () => {
+    const { view, md } = await mountRich("- a\n\n```\ncode\n```\n");
+    act(() => select(view, "a", 1));
+    press(view, "Enter", { ctrlKey: true });
+    expect(md()).not.toContain("[x]");
+    expect(md()).not.toContain("[ ]");
+    // In a code block it still leaves the block (exitCode).
+    act(() => select(view, "code", 4));
+    press(view, "Enter", { ctrlKey: true });
+    expect(view.state.selection.$from.parent.type.name).toBe("paragraph");
+  });
+});

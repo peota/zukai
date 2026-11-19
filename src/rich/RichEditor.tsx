@@ -27,6 +27,7 @@ import {
   tooLargeForRich,
 } from "../model/markdownMode";
 import { detectPlatform } from "../app/shortcuts";
+import { toggleTask, toggleTaskAt } from "./commands";
 import { canKeep, richPlugins } from "./richMarkdown";
 import { PROGRAMMATIC, RichContext, type RichHandle } from "./richContext";
 import { RichToolbar } from "./RichToolbar";
@@ -225,6 +226,27 @@ export function RichEditor(p: RichEditorProps) {
       return true;
     };
 
+    /** A press on a checklist item's box (drawn left of its text) ticks it. */
+    const onMouseDown = (v: EditorView, e: MouseEvent) => {
+      const li = e.target;
+      if (e.button !== 0 || !(li instanceof HTMLLIElement)) return false;
+      if (li.dataset.itemType !== "task") return false;
+      if (e.clientX >= li.getBoundingClientRect().left) return false;
+      e.preventDefault();
+      if (v.editable) toggleTaskAt(v, v.posAtDOM(li, 0));
+      return true;
+    };
+
+    /** Mod+Enter in a checklist item ticks or unticks it. */
+    const onKeyDown = (v: EditorView, e: KeyboardEvent) => {
+      const mod = mac ? e.metaKey : e.ctrlKey;
+      const other = mac ? e.ctrlKey : e.metaKey;
+      if (e.key !== "Enter" || !mod || other || e.altKey || e.shiftKey) {
+        return false;
+      }
+      return v.editable && toggleTask(v);
+    };
+
     void (async () => {
       try {
         await bridge.ready(id);
@@ -249,9 +271,11 @@ export function RichEditor(p: RichEditorProps) {
             ...o,
             editable: () => !latest.current.readOnly,
             dispatchTransaction,
+            handleKeyDown: onKeyDown,
             handleDOMEvents: {
               ...o.handleDOMEvents,
               click: onClick,
+              mousedown: onMouseDown,
               blur: () => {
                 write();
                 return false;

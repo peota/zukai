@@ -85,6 +85,32 @@ const inCell = ($pos: ResolvedPos) => {
   return false;
 };
 
+/**
+ * Ticks or unticks the innermost checklist item around `pos`. Nothing in a
+ * code block (Mod+Enter leaves it there) or outside a checklist item.
+ */
+export function toggleTaskAt(view: EditorView, pos: number): boolean {
+  const $pos = view.state.doc.resolve(pos);
+  if ($pos.parent.type.spec.code) return false;
+  for (let d = $pos.depth; d > 0; d--) {
+    const node = $pos.node(d);
+    if (node.type.name !== "list_item") continue;
+    if (node.attrs.checked == null) return false;
+    view.dispatch(
+      view.state.tr.setNodeMarkup($pos.before(d), undefined, {
+        ...node.attrs,
+        checked: !node.attrs.checked,
+      }),
+    );
+    return true;
+  }
+  return false;
+}
+
+/** Ticks or unticks the checklist item the cursor is in. */
+export const toggleTask = (view: EditorView): boolean =>
+  toggleTaskAt(view, view.state.selection.from);
+
 /** A list's items made tight, and task items (or not) as `kind` says. */
 function setItems(tr: Transaction, list: Node, pos: number, kind: ListKind) {
   list.forEach((item, offset) => {
