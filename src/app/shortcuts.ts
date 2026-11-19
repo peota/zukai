@@ -20,6 +20,8 @@ export type Command =
   /** Editor text size: 1 bigger, -1 smaller, 0 back to the default. */
   | { type: "zoom"; dir: 1 | -1 | 0 }
   | { type: "openSettings" }
+  /** Quick open: find a Library file by name and open it. */
+  | { type: "quickOpen" }
   /** A Markdown Tab: Edit → Split → Preview → Edit. */
   | { type: "togglePreview" }
   /** Splits the active Tab with the one active just before, or unsplits. */
@@ -141,6 +143,8 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
       return { type: "save" };
     case "b":
       return { type: "toggleSidebar" };
+    case "p":
+      return { type: "quickOpen" };
   }
   // Digits by physical key: AZERTY types symbols on the number row.
   const digit = /^Digit([1-9])$/.exec(e.code);

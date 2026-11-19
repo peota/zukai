@@ -61,6 +61,12 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "Files",
+    action: "Quick open (find a file by name)",
+    keys: [["Mod", "P"]],
+    command: "quickOpen",
+  },
+  {
+    group: "Files",
     action: "Open file",
     keys: [["Mod", "O"]],
     command: "open",

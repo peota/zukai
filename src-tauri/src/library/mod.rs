@@ -6,6 +6,7 @@
 
 pub mod added;
 pub mod commands;
+pub mod fuzzy;
 pub mod index;
 pub mod ops;
 pub mod root;

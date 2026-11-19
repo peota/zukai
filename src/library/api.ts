@@ -35,6 +35,22 @@ export interface SearchResult {
   ready: boolean;
 }
 
+/** A file Quick open offers. */
+export interface QuickHit {
+  entry: Entry;
+  /** Its path relative to its tree, `/`-separated: what was matched. */
+  rel: string;
+  /** The matched characters of `rel`, as code-point indices. */
+  positions: number[];
+  score: number;
+}
+
+export interface QuickResult {
+  /** Best first. */
+  hits: QuickHit[];
+  ready: boolean;
+}
+
 export interface LibraryChanged {
   dirs: string[];
 }
@@ -98,6 +114,9 @@ export const libraryReveal = (path: string): Promise<void> =>
   invoke("library_reveal", { path });
 export const librarySearch = (query: string): Promise<SearchResult> =>
   invoke("library_search", { query });
+/** Quick open: the best files whose relative path fuzzy-matches `query`. */
+export const libraryQuickOpen = (query: string): Promise<QuickResult> =>
+  invoke("library_quick_open", { query });
 export const libraryWatch = (): Promise<void> => invoke("library_watch");
 /**
  * After `from` became `to`: where each of `paths` (Files the UI holds) is
