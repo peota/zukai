@@ -288,6 +288,8 @@ async function mount(
   );
   const r = renderHook(() => useWorkspace());
   await waitFor(() => expect(r.result.current.ready).toBe(true));
+  // These tests are about autosaving Files.
+  act(() => r.result.current.setSettings({ autosaveFiles: true }));
   if (sidebar.open) {
     const shown = sidebar.expanded.includes(PROJ) ? A : PROJ;
     await waitFor(() =>

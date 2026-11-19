@@ -32,6 +32,14 @@ export interface FilesInternals {
   onDisk: Map<string, string>;
   saver: Saver;
   lock: KeyedLock;
+  /**
+   * An explicit save: writes the File now (the writer's "save" mode) under
+   * the Tab's lock. The lock isn't re-entrant: never call it while holding
+   * that Tab's lock.
+   */
+  saveNow(id: string, text: string): Promise<void>;
+  /** True when Files are saved automatically (the Settings switch). */
+  autosaveFiles(): boolean;
   freshId(): string;
   track(p: Promise<void>): Promise<void>;
   saveSessionNow(): Promise<void>;
