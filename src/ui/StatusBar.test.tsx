@@ -48,6 +48,14 @@ describe("encodingLabel", () => {
 });
 
 describe("StatusBar", () => {
+  it("the gear opens Settings, with its shortcut in the tooltip", () => {
+    const p = setup({ onSettings: vi.fn(), settingsHint: "Ctrl+," });
+    const gear = screen.getByRole("button", { name: "Settings" });
+    expect(gear.getAttribute("title")).toBe("Settings (Ctrl+,)");
+    fireEvent.click(gear);
+    expect(p.onSettings).toHaveBeenCalled();
+  });
+
   it("a Scratchpad shows UTF-8 and the platform ending, not clickable", () => {
     setup();
     expect(screen.getByText("UTF-8").tagName).not.toBe("BUTTON");

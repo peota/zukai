@@ -1,21 +1,27 @@
 import { useEffect, useState } from "react";
+import type { ThemePref } from "../model/settings";
 
 const QUERY = "(prefers-color-scheme: dark)";
 
-const current = (): "light" | "dark" =>
+/** The OS light or dark mode right now. */
+export const systemScheme = (): "light" | "dark" =>
   typeof window.matchMedia === "function" && window.matchMedia(QUERY).matches
     ? "dark"
     : "light";
 
-/** The OS light or dark mode, live (the app's CSS follows the same query). */
-export function useColorScheme(): "light" | "dark" {
-  const [scheme, setScheme] = useState(current);
+/**
+ * The scheme to show for `pref`: Light or Dark as chosen, or the OS mode
+ * (live) for System. The app puts it on <html data-theme>, which the CSS
+ * palette follows.
+ */
+export function useColorScheme(pref: ThemePref = "system"): "light" | "dark" {
+  const [system, setSystem] = useState(systemScheme);
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const mq = window.matchMedia(QUERY);
-    const onChange = () => setScheme(mq.matches ? "dark" : "light");
+    const onChange = () => setSystem(mq.matches ? "dark" : "light");
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
-  return scheme;
+  return pref === "system" ? system : pref;
 }

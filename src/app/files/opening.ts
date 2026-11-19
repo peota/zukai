@@ -15,7 +15,7 @@ import {
 /** Opening Files: by path, from the OS, from the picker. */
 export function useOpening(c: FilesContext) {
   const { stateRef, commit, contents, onDisk, freshId, keyOf } = c;
-  const { openingRef, showNotice } = c;
+  const { openingRef, showNotice, newTabWrap } = c;
 
   const openOne = useCallback(
     async (path: string) => {
@@ -40,6 +40,7 @@ export function useOpening(c: FilesContext) {
             title: baseName(path),
             language: languageOf(path),
             languageGuessed: true,
+            wrap: newTabWrap(),
             file: fileInfoOf(path, r.read),
           };
           return commit(ws.openFileTab(stateRef.current, fresh, keyOf));
@@ -47,7 +48,16 @@ export function useOpening(c: FilesContext) {
       }
       commit(ws.activate(stateRef.current, tab.id));
     },
-    [commit, contents, freshId, keyOf, onDisk, showNotice, stateRef],
+    [
+      commit,
+      contents,
+      freshId,
+      keyOf,
+      newTabWrap,
+      onDisk,
+      showNotice,
+      stateRef,
+    ],
   );
 
   /** Opens one after another, so the last one ends up active. */

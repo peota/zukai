@@ -101,6 +101,9 @@ _Avoid_: Inbox (its earlier name), Drafts.
 **Pinned**
 A Tab marked to stay at hand: it sits at the start of the tab bar, with a pin in place of its close button, and in the Sidebar's Pinned list. Closing it keeps it in the Pinned list, dimmed, and in Recently Closed, where it never expires; reopening it keeps the pin. Stored on the Tab in the Session (`pinned`).
 
+**Settings**
+The dialog opened by the gear at the left of the status bar or Mod+,. Its General section holds the Theme (System, Light or Dark), the editor font size, word wrap in new Tabs and line numbers, applied at once and stored in the Session (`settings`, with `fontSize` beside it). Its Keyboard shortcuts section lists every shortcut for the platform, searchable; they can't be changed yet.
+
 **Open with default app**
 A button on the read-only bar of a File Zukai can't show, which hands it to the operating system. It never launches executables or scripts: the refused list is in `src-tauri/src/files/exec.rs`, plus files with the Unix execute bit and what Windows calls dangerous. For those, only **Show in Explorer / Finder** is offered. It's never triggered by a click in the tree.
 

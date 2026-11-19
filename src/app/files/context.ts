@@ -38,6 +38,8 @@ export interface FilesInternals {
   keepTitle(id: string, text: string): void;
   keyOf(path: string): string;
   newFileFormat: FileFormat;
+  /** Whether a newly opened File's Tab starts with word wrap on. */
+  newTabWrap(): boolean;
   /**
    * Held Tabs whose shadow couldn't be read (this run only, never saved):
    * their shadow is never deleted or overwritten, nothing can be typed into

@@ -12,6 +12,7 @@ import {
   type ScratchFile,
   type SessionFile,
 } from "../model/session";
+import { DEFAULT_SETTINGS, type Settings } from "../model/settings";
 import type { SidebarState, WorkspaceState } from "../model/types";
 import {
   backupSession,
@@ -53,6 +54,8 @@ export interface RestoreOptions {
   onSidebar?(sidebar: SidebarState): void;
   /** The editor font size the Session holds (the default when none). */
   onFontSize?(px: number): void;
+  /** The settings the Session holds (the defaults when none). */
+  onSettings?(settings: Settings): void;
 }
 
 export async function restoreSession(
@@ -74,6 +77,7 @@ export async function restoreSession(
   );
   opts.onSidebar?.(file?.sidebar ?? defaultSidebar());
   opts.onFontSize?.(file?.fontSize ?? DEFAULT_FONT_SIZE);
+  opts.onSettings?.(file?.settings ?? { ...DEFAULT_SETTINGS });
   const broken =
     json.status === "rejected" || (json.value !== null && file === null);
   if (broken) await backupSession().catch(logError("back up session"));

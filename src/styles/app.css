@@ -52,48 +52,50 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --z-editor: #191919;
-    --z-chrome: #202020;
-    --z-surface: #2c2c2c;
-    --z-hairline: #2a2a2a;
-    --z-text: #e6e3de;
-    --z-muted: #9b9893;
-    --z-faint: #5f5d59;
-    --z-accent: #529cca;
-    --z-accent-soft: rgb(82 156 202 / 0.2);
-    --z-search-current: rgb(82 156 202 / 0.42);
-    --z-danger: #df8a83;
-    --z-active-line: rgb(255 255 255 / 0.03);
-    --z-selection-match: rgb(82 156 202 / 0.12);
+/*
+ * Dark: set by the app on <html data-theme="dark">, from Settings > Theme
+ * ("System" follows the OS, live; main.tsx sets it before the first paint).
+ */
+:root[data-theme="dark"] {
+  --z-editor: #191919;
+  --z-chrome: #202020;
+  --z-surface: #2c2c2c;
+  --z-hairline: #2a2a2a;
+  --z-text: #e6e3de;
+  --z-muted: #9b9893;
+  --z-faint: #5f5d59;
+  --z-accent: #529cca;
+  --z-accent-soft: rgb(82 156 202 / 0.2);
+  --z-search-current: rgb(82 156 202 / 0.42);
+  --z-danger: #df8a83;
+  --z-active-line: rgb(255 255 255 / 0.03);
+  --z-selection-match: rgb(82 156 202 / 0.12);
 
-    --z-side: #1d1d1d;
-    --z-row-hover: #262626;
-    --z-row-sel: #2e2e2e;
+  --z-side: #1d1d1d;
+  --z-row-hover: #262626;
+  --z-row-sel: #2e2e2e;
 
-    --z-bar-warn-bg: #3a3122;
-    --z-bar-warn-fg: #e6c07b;
-    --z-bar-err-bg: #3d2523;
-    --z-bar-err-fg: #ef9a92;
-    --z-bar-info-bg: #262626;
-    --z-bar-info-fg: #9b9893;
-    --z-bar-btn-bg: rgb(255 255 255 / 0.06);
-    --z-bar-btn-hover: rgb(255 255 255 / 0.12);
-    --z-bar-btn-ring: rgb(255 255 255 / 0.1);
-    --z-bar-btn-primary-bg: #e6e3de;
-    --z-bar-btn-primary-fg: #191919;
+  --z-bar-warn-bg: #3a3122;
+  --z-bar-warn-fg: #e6c07b;
+  --z-bar-err-bg: #3d2523;
+  --z-bar-err-fg: #ef9a92;
+  --z-bar-info-bg: #262626;
+  --z-bar-info-fg: #9b9893;
+  --z-bar-btn-bg: rgb(255 255 255 / 0.06);
+  --z-bar-btn-hover: rgb(255 255 255 / 0.12);
+  --z-bar-btn-ring: rgb(255 255 255 / 0.1);
+  --z-bar-btn-primary-bg: #e6e3de;
+  --z-bar-btn-primary-fg: #191919;
 
-    --z-syn-keyword: #d3a6f5;
-    --z-syn-string: #a6d3a0;
-    --z-syn-number: #e6c07b;
-    --z-syn-function: #7fb3e0;
-    --z-syn-type: #e0a873;
+  --z-syn-keyword: #d3a6f5;
+  --z-syn-string: #a6d3a0;
+  --z-syn-number: #e6c07b;
+  --z-syn-function: #7fb3e0;
+  --z-syn-type: #e0a873;
 
-    --z-shadow-float: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.35);
+  --z-shadow-float: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.35);
 
-    color-scheme: dark;
-  }
+  color-scheme: dark;
 }
 
 @theme inline {

@@ -27,6 +27,7 @@ import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
 import { pinnedItems } from "./ui/Pinned";
 import { useColorScheme } from "./ui/useColorScheme";
+import { SettingsDialog } from "./ui/SettingsDialog";
 
 const platform = detectPlatform();
 const keyOf = (p: string) => pathKey(p, platform);
@@ -34,6 +35,7 @@ const PLATFORM_ENDING = platform === "windows" ? "crlf" : "lf";
 const REOPEN_HINT = platform === "mac" ? "⇧⌘T" : "Ctrl+Shift+T";
 const REVEAL_LABEL = revealLabel(platform);
 const BEAUTIFY_HINT = platform === "mac" ? "⇧⌥F" : "Shift+Alt+F";
+const SETTINGS_HINT = platform === "mac" ? "⌘," : "Ctrl+,";
 
 interface Cursor {
   id: string;
@@ -43,10 +45,20 @@ interface Cursor {
 
 export default function App() {
   const w = useWorkspace();
-  const { run, updateTab } = w;
+  const { updateTab } = w;
   const activeId = w.state.activeId;
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [picking, setPicking] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Settings is the App's own dialog; every other command is the Workspace's.
+  const workspaceRun = w.run;
+  const run = useCallback(
+    async (cmd: Command) => {
+      if (cmd.type === "openSettings") setSettingsOpen(true);
+      else await workspaceRun(cmd);
+    },
+    [workspaceRun],
+  );
   const [focusSignal, setFocusSignal] = useState(0);
   const [tabMenu, setTabMenu] = useState<{
     x: number;
@@ -88,7 +100,11 @@ export default function App() {
   const active = w.state.tabs.find((t) => t.id === activeId);
   const isCanvas = active?.kind === "canvas";
   const isImage = active?.kind === "image";
-  const theme = useColorScheme();
+  const theme = useColorScheme(w.settings.theme);
+  // The CSS palette follows <html data-theme>.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
   /** The text editor only sees text (a Canvas is JSON, an Image bytes). */
   const editorTabs = useMemo(
     () => w.state.tabs.filter((t) => t.kind === "text"),
@@ -367,6 +383,7 @@ export default function App() {
                 onFormatResult={onFormatResult}
                 fontSize={w.fontSize}
                 onZoom={w.zoomEditor}
+                lineNumbers={w.settings.lineNumbers}
               />
             </div>
           )}
@@ -427,8 +444,23 @@ export default function App() {
           onFormatClose={refocus}
           beautifyHint={BEAUTIFY_HINT}
           notice={w.notice ?? undefined}
+          onSettings={() => setSettingsOpen(true)}
+          settingsHint={SETTINGS_HINT}
         />
       </div>
+      {settingsOpen && (
+        <SettingsDialog
+          settings={w.settings}
+          fontSize={w.fontSize}
+          platform={platform}
+          onSettings={w.setSettings}
+          onFontSize={w.setFontSize}
+          onClose={() => {
+            setSettingsOpen(false);
+            refocus();
+          }}
+        />
+      )}
       <LanguagePicker
         open={picking}
         current={active?.language ?? "plaintext"}

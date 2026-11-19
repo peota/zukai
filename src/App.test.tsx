@@ -249,4 +249,22 @@ describe("App", () => {
       expect(r.getAllByText("note.ts").length).toBeGreaterThan(0),
     );
   });
+
+  it("Ctrl+, opens Settings; its Theme drives the page; Esc closes it", async () => {
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    act(() => {
+      fireEvent.keyDown(window, { key: ",", code: "Comma", ctrlKey: true });
+    });
+    const dialog = r.getByRole("dialog", { name: "Settings" });
+    fireEvent.click(r.getByRole("radio", { name: "Dark" }));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    fireEvent.click(r.getByRole("radio", { name: "Light" }));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(r.queryByRole("dialog", { name: "Settings" })).toBeNull();
+    // The status bar gear opens it too.
+    fireEvent.click(r.getByRole("button", { name: "Settings" }));
+    expect(r.getByRole("dialog", { name: "Settings" })).toBeTruthy();
+  });
 });

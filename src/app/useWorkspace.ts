@@ -40,6 +40,7 @@ import {
   toSessionFile,
 } from "../model/session";
 import { focusSidebar as focusSidebarElement } from "../ui/Sidebar";
+import { DEFAULT_SETTINGS, type Settings } from "../model/settings";
 import { useLibrary, type LibraryApi } from "./useLibrary";
 import {
   closeScratchpad,
@@ -128,6 +129,11 @@ export interface Workspace extends FilesApi {
   zoomEditor(dir: 1 | -1 | 0): void;
   /** Pins or unpins a Tab, open or in Recently Closed. */
   setPinned(id: string, pinned: boolean): void;
+  /** Sets the editor's text size (clamped to 8–40 px). */
+  setFontSize(px: number): void;
+  /** Theme, word wrap for new Tabs, line numbers; saved in the Session. */
+  settings: Settings;
+  setSettings(patch: Partial<Settings>): void;
 }
 
 export function useWorkspace(): Workspace {
@@ -137,8 +143,12 @@ export function useWorkspace(): Workspace {
   const [grantsUnchecked, setGrantsUnchecked] = useState(false);
   const [sidebar, setSidebar] = useState<SidebarState>(defaultSidebar);
   const sidebarRef = useRef(sidebar);
-  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  const [fontSize, setFontSizeState] = useState(DEFAULT_FONT_SIZE);
   const fontSizeRef = useRef(fontSize);
+  const [settings, setSettingsState] = useState<Settings>(() => ({
+    ...DEFAULT_SETTINGS,
+  }));
+  const settingsRef = useRef(settings);
   // Contents live in a map: async commands need the latest, and typing must
   // not re-render the App.
   const stateRef = useRef(state);
@@ -166,6 +176,7 @@ export function useWorkspace(): Workspace {
           stateRef.current,
           sidebarRef.current,
           fontSizeRef.current,
+          settingsRef.current,
         ),
       ),
     );
@@ -252,6 +263,7 @@ export function useWorkspace(): Workspace {
     [commit],
   );
 
+  const newTabWrap = useCallback(() => settingsRef.current.wrapNewTabs, []);
   const files = useFiles({
     state,
     ready,
@@ -267,6 +279,7 @@ export function useWorkspace(): Workspace {
     keepTitle,
     keyOf,
     newFileFormat: NEW_FILE,
+    newTabWrap,
     keptShadows,
     closing,
   });
@@ -319,7 +332,9 @@ export function useWorkspace(): Workspace {
   const newTab = useCallback(() => {
     const id = freshId();
     contents.set(id, "");
-    commit(ws.newTab(stateRef.current, id));
+    const next = ws.newTab(stateRef.current, id);
+    const wrap = settingsRef.current.wrapNewTabs;
+    commit(wrap ? ws.updateTab(next, id, { wrap }) : next);
   }, [commit, contents]);
 
   const newCanvas = useCallback(() => {
@@ -353,12 +368,23 @@ export function useWorkspace(): Workspace {
     [commit],
   );
 
-  const zoomEditor = useCallback((dir: 1 | -1 | 0) => {
-    const next =
-      dir === 0 ? DEFAULT_FONT_SIZE : clampFontSize(fontSizeRef.current + dir);
+  const setFontSize = useCallback((px: number) => {
+    const next = clampFontSize(px);
     if (next === fontSizeRef.current) return;
     fontSizeRef.current = next;
-    setFontSize(next);
+    setFontSizeState(next);
+  }, []);
+
+  const zoomEditor = useCallback(
+    (dir: 1 | -1 | 0) =>
+      setFontSize(dir === 0 ? DEFAULT_FONT_SIZE : fontSizeRef.current + dir),
+    [setFontSize],
+  );
+
+  const setSettings = useCallback((patch: Partial<Settings>) => {
+    const next = { ...settingsRef.current, ...patch };
+    settingsRef.current = next;
+    setSettingsState(next);
   }, []);
 
   const focusSidebar = useCallback(() => {
@@ -573,7 +599,11 @@ export function useWorkspace(): Workspace {
             },
             onFontSize: (px) => {
               fontSizeRef.current = px;
-              setFontSize(px);
+              setFontSizeState(px);
+            },
+            onSettings: (restored) => {
+              settingsRef.current = restored;
+              setSettingsState(restored);
             },
           }),
         );
@@ -653,7 +683,7 @@ export function useWorkspace(): Workspace {
   // Persist the Session on every state change (debounced by the saver).
   useEffect(() => {
     if (ready) scheduleSession();
-  }, [ready, state, sidebar, fontSize, scheduleSession]);
+  }, [ready, state, sidebar, fontSize, settings, scheduleSession]);
 
   // The active Tab's text is read lazily when it is first shown.
   useEffect(() => {
@@ -689,5 +719,8 @@ export function useWorkspace(): Workspace {
     fontSize,
     zoomEditor,
     setPinned,
+    setFontSize,
+    settings,
+    setSettings,
   };
 }

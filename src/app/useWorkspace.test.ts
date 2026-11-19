@@ -412,3 +412,45 @@ describe("useWorkspace pinned Tabs", () => {
     expect(tabIds(result)).toEqual(["b"]);
   });
 });
+
+describe("useWorkspace settings", () => {
+  it("changes and saves settings, and restores them", async () => {
+    const { result, unmount } = await mount();
+    expect(result.current.settings).toEqual({
+      theme: "system",
+      wrapNewTabs: false,
+      lineNumbers: true,
+    });
+    act(() =>
+      result.current.setSettings({ theme: "dark", lineNumbers: false }),
+    );
+    expect(result.current.settings).toMatchObject({
+      theme: "dark",
+      lineNumbers: false,
+    });
+    await act(() => h.flushAll?.());
+    const writes = m.writeSession.mock.calls;
+    const saved = writes[writes.length - 1][0];
+    expect(JSON.parse(saved).settings).toMatchObject({ theme: "dark" });
+    unmount();
+    m.readSession.mockResolvedValue(saved);
+    const again = await mount();
+    expect(again.result.current.settings.theme).toBe("dark");
+  });
+
+  it("new Tabs start wrapped when the setting is on", async () => {
+    const { result } = await mount();
+    act(() => result.current.setSettings({ wrapNewTabs: true }));
+    await act(() => result.current.run({ type: "newTab" }));
+    const id = result.current.state.activeId;
+    expect(result.current.state.tabs.find((t) => t.id === id)!.wrap).toBe(true);
+  });
+
+  it("setFontSize clamps the size", async () => {
+    const { result } = await mount();
+    act(() => result.current.setFontSize(99));
+    expect(result.current.fontSize).toBe(40);
+    act(() => result.current.setFontSize(15.4));
+    expect(result.current.fontSize).toBe(15);
+  });
+});

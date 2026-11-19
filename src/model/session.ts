@@ -9,6 +9,7 @@ import type {
   WorkspaceState,
 } from "./types";
 import { ensureOneTab, newTabState } from "./workspace";
+import { DEFAULT_SETTINGS, parseSettings, type Settings } from "./settings";
 
 export const SESSION_VERSION = 3;
 export const CLOSED_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -53,6 +54,7 @@ export interface SessionFile {
   sidebar: SidebarState;
   /** The editor's text size in px. */
   fontSize: number;
+  settings: Settings;
 }
 
 const LANGUAGES: readonly LanguageId[] = [
@@ -155,6 +157,7 @@ export function toSessionFile(
   s: WorkspaceState,
   sidebar: SidebarState = defaultSidebar(),
   fontSize: number = DEFAULT_FONT_SIZE,
+  settings: Settings = { ...DEFAULT_SETTINGS },
 ): SessionFile {
   return {
     version: SESSION_VERSION,
@@ -163,6 +166,7 @@ export function toSessionFile(
     closed: s.closed,
     sidebar,
     fontSize,
+    settings,
   };
 }
 
@@ -235,6 +239,7 @@ export function parseSessionFile(json: string | null): SessionFile | null {
     fontSize: isNum(data.fontSize)
       ? clampFontSize(data.fontSize)
       : DEFAULT_FONT_SIZE,
+    settings: parseSettings(data.settings),
   };
 }
 

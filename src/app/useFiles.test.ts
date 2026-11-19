@@ -681,6 +681,13 @@ describe("useFiles save and save as", () => {
     ).toBe(false);
   });
 
+  it("an opened File starts wrapped when the setting is on", async () => {
+    const { result } = await mount();
+    act(() => result.current.setSettings({ wrapNewTabs: true }));
+    await openP(result);
+    expect(fileTabOf(result)!.wrap).toBe(true);
+  });
+
   it("renameFileUpdatesPathAndTitle", async () => {
     const { result } = await mount();
     const id = await openP(result);
