@@ -15,30 +15,133 @@ use std::time::{Duration, Instant};
 #[derive(Default)]
 pub struct Grants {
     files: Mutex<HashMap<String, PathBuf>>,
-    /// The Library root and its hints, behind one lock so a recovery can't
-    /// undo a root chosen meanwhile.
-    root: Mutex<RootSlot>,
-    /// How many times `recover_root` looked at the disk (tests only).
+    /// The granted roots and their hints, behind one lock so a recovery
+    /// can't undo a root chosen meanwhile. Index 0 is always the Library
+    /// (possibly empty); the added folders follow in the order added.
+    roots: Mutex<Vec<RootSlot>>,
+    /// How many times `recover` looked at the disk (tests only).
     #[cfg(test)]
     probes: std::sync::atomic::AtomicUsize,
 }
 
 #[derive(Default)]
 struct RootSlot {
-    /// The canonical Library root, set only by Rust (`library.json` or the
-    /// folder dialog).
+    /// The canonical root, set only by Rust (`library.json` or the folder
+    /// dialog).
     root: Option<PathBuf>,
-    /// Where the Library is, even while its folder is unavailable (the
-    /// stored root of an unplugged drive): paths under it are only ever
-    /// granted, and used, through the root checks.
+    /// Where the root is, even while its folder is unavailable (the stored
+    /// root of an unplugged drive): paths under it are only ever granted,
+    /// and used, through the root checks.
     hint: Option<PathBuf>,
     /// The stored spelling of the root, kept after loading or recovering
     /// it canonicalized it differently: grants stored under that spelling
-    /// are still Library paths, re-checked on every use.
+    /// are still paths in this root, re-checked on every use.
     stored: Option<PathBuf>,
-    /// When `recover_root` last found the hint's folder missing: a dead
-    /// network share isn't asked again on every check (`RECOVER_MISS_TTL`).
+    /// When `recover` last found the hint's folder missing: a dead network
+    /// share isn't asked again on every check (`RECOVER_MISS_TTL`).
     missed: Option<Instant>,
+}
+
+impl RootSlot {
+    /// A granted root `canon`, loaded from `stored`.
+    fn granted(canon: PathBuf, stored: &Path) -> Self {
+        RootSlot {
+            root: Some(canon.clone()),
+            stored: (canon.as_os_str() != stored.as_os_str()).then(|| stored.to_path_buf()),
+            hint: Some(canon),
+            missed: None,
+        }
+    }
+
+    /// A root that can't be granted now: only its stored path is known.
+    fn hinted(stored: &Path) -> Self {
+        RootSlot {
+            hint: Some(stored.to_path_buf()),
+            ..RootSlot::default()
+        }
+    }
+
+    /// The root, or the hint while it has none: where the sidebar shows it.
+    fn place(&self) -> Option<&PathBuf> {
+        self.root.as_ref().or(self.hint.as_ref())
+    }
+
+    /// True if `p` is lexically under one of its spellings.
+    fn holds(&self, p: &Path) -> bool {
+        [&self.root, &self.hint, &self.stored]
+            .into_iter()
+            .flatten()
+            .any(|base| under_by_key(p, base))
+    }
+
+    /// True if `p` names this slot (by key): its root, hint or stored path.
+    fn named(&self, p: &Path) -> bool {
+        [&self.root, &self.hint, &self.stored]
+            .into_iter()
+            .flatten()
+            .any(|base| key(base) == key(p))
+    }
+}
+
+/// The slot `p` lexically sits under. A granted root wins over a hint or
+/// stored spelling, and among those the deepest wins, so a stale hint
+/// covering another root never decides for a path in that root.
+fn slot_of(slots: &[RootSlot], p: &Path) -> Option<usize> {
+    if let Some(i) = slots
+        .iter()
+        .position(|s| s.root.as_ref().is_some_and(|r| under_by_key(p, r)))
+    {
+        return Some(i);
+    }
+    slots
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            [&s.hint, &s.stored]
+                .into_iter()
+                .flatten()
+                .filter(|base| under_by_key(p, base))
+                .map(|base| base.components().count())
+                .max()
+                .map(|depth| (depth, std::cmp::Reverse(i)))
+        })
+        .max()
+        .map(|(_, std::cmp::Reverse(i))| i)
+}
+
+/// Why `candidate` (canonical) may not join the added folders, judged
+/// against the Library and every added slot but `except`.
+fn overlap(
+    slots: &[RootSlot],
+    candidate: &Path,
+    except: Option<usize>,
+    home: Option<&Path>,
+) -> Option<crate::library::added::Refusal> {
+    let library = slots.first().and_then(RootSlot::place);
+    let others: Vec<PathBuf> = slots
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter(|(i, _)| Some(*i) != except)
+        .filter_map(|(_, s)| s.place().cloned())
+        .collect();
+    crate::library::added::refusal(candidate, library.map(PathBuf::as_path), &others, home)
+}
+
+/// The refusal as the error the UI shows.
+fn refused(r: crate::library::added::Refusal) -> FileError {
+    FileError::Io(io::Error::other(r.message()))
+}
+
+/// The error for a folder that can't be added.
+fn unreadable() -> FileError {
+    FileError::Io(io::Error::other("That folder can't be read."))
+}
+
+/// The user's home folder, canonical where possible.
+fn home() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    Some(dunce::canonicalize(&home).unwrap_or(home))
 }
 
 /// How long a failed root recovery is remembered.
@@ -165,26 +268,83 @@ fn plain_absolute(p: &Path) -> bool {
             .all(|c| !matches!(c, Component::CurDir | Component::ParentDir))
 }
 
+/// The index of the added slot `p` names (by key).
+fn added_index(slots: &[RootSlot], p: &Path) -> Option<usize> {
+    (1..slots.len()).find(|&i| slots[i].named(p))
+}
+
+/// `canon` (already canonical) if it is `root` or inside it. Compared by
+/// components, so `/lib2` is not inside `/lib`. No root, no grant.
+fn within_root(canon: PathBuf, root: Option<&Path>) -> Result<PathBuf, FileError> {
+    let root = root.ok_or(FileError::NotGranted)?;
+    if !canon.starts_with(root) {
+        return Err(FileError::NotGranted);
+    }
+    // `canonical` resolves every existing link, so a link left in the
+    // last place is dangling: a write there would follow it anywhere.
+    if std::fs::symlink_metadata(&canon).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(FileError::NotGranted);
+    }
+    Ok(canon)
+}
+
+/// The deepest part of `p` that exists, and the rest, if `p` is a plain
+/// absolute path with no Win32 alias names.
+fn existing_part(p: &Path) -> Result<(&Path, &Path), FileError> {
+    if !plain_absolute(p) || win32_alias(p) {
+        return Err(FileError::NotGranted);
+    }
+    let mut existing = p;
+    while std::fs::symlink_metadata(existing).is_err() {
+        existing = existing.parent().ok_or(FileError::NotGranted)?;
+    }
+    let rest = p
+        .strip_prefix(existing)
+        .map_err(|_| FileError::NotGranted)?;
+    Ok((existing, rest))
+}
+
+/// Where `p` (which may not exist, nor its folder) really is, if that is
+/// provably inside the canonical root `root` (see `Grants::grant_in_root`).
+fn resolve_under(p: &Path, root: &Path) -> Result<PathBuf, FileError> {
+    let (existing, rest) = existing_part(p)?;
+    let base = canonical(existing).map_err(|_| FileError::NotGranted)?;
+    let base = within_root(base, Some(root))?;
+    let path = if rest.as_os_str().is_empty() {
+        base
+    } else {
+        base.join(rest)
+    };
+    // The final guard: exactly the path returned is inside the root.
+    within_root(path, Some(root))
+}
+
 impl Grants {
     fn map(&self) -> MutexGuard<'_, HashMap<String, PathBuf>> {
         // The map is always consistent; a panic elsewhere doesn't poison it.
         self.files.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn slot(&self) -> MutexGuard<'_, RootSlot> {
-        self.root.lock().unwrap_or_else(|e| e.into_inner())
+    fn slots(&self) -> MutexGuard<'_, Vec<RootSlot>> {
+        // The list is always consistent; a panic elsewhere doesn't poison it.
+        let mut slots = self.roots.lock().unwrap_or_else(|e| e.into_inner());
+        if slots.is_empty() {
+            slots.push(RootSlot::default());
+        }
+        slots
     }
 
     /// The canonical Library root, if one is granted.
     pub fn root(&self) -> Option<PathBuf> {
-        self.slot().root.clone()
+        self.slots()[0].root.clone()
     }
 
-    /// Makes `root` the one granted folder, replacing any earlier one, and
-    /// returns its canonical form. It must be an existing absolute folder.
+    /// Makes `root` the Library, replacing any earlier one (the added
+    /// folders stay), and returns its canonical form. It must be an existing
+    /// absolute folder.
     pub fn set_root(&self, root: &Path) -> Result<PathBuf, FileError> {
         let canon = Self::folder(root)?;
-        *self.slot() = RootSlot {
+        self.slots()[0] = RootSlot {
             root: Some(canon.clone()),
             hint: Some(canon.clone()),
             ..RootSlot::default()
@@ -204,49 +364,168 @@ impl Grants {
         Ok(canon)
     }
 
+    /// `stored` canonical, as a stored root is accepted: an existing
+    /// absolute folder that doesn't now resolve somewhere else (see
+    /// `resolves_elsewhere`).
+    fn load(stored: &Path) -> Result<PathBuf, FileError> {
+        let canon = Self::folder(stored)?;
+        if resolves_elsewhere(stored, &canon) {
+            return Err(FileError::NotGranted);
+        }
+        Ok(canon)
+    }
+
     /// Grants the stored root `stored` (from `library.json`) like
     /// `set_root`, but refuses it if it now resolves somewhere else (see
     /// `resolves_elsewhere`), and keeps its stored spelling as a Library
     /// path when canonicalizing changed it.
     pub fn load_root(&self, stored: &Path) -> Result<PathBuf, FileError> {
-        let canon = Self::folder(stored)?;
-        if resolves_elsewhere(stored, &canon) {
-            return Err(FileError::NotGranted);
-        }
-        *self.slot() = RootSlot {
-            root: Some(canon.clone()),
-            hint: Some(canon.clone()),
-            stored: (canon.as_os_str() != stored.as_os_str()).then(|| stored.to_path_buf()),
-            missed: None,
-        };
+        let canon = Self::load(stored)?;
+        self.slots()[0] = RootSlot::granted(canon.clone(), stored);
         Ok(canon)
     }
 
     /// The stored root while its folder is unavailable (it can't be granted
     /// yet): paths under it are treated as Library paths, never followed.
     pub fn set_root_hint(&self, stored: &Path) {
-        let mut slot = self.slot();
+        let slot = &mut self.slots()[0];
         slot.hint = Some(stored.to_path_buf());
         slot.missed = None;
     }
 
-    /// True if `p` is (lexically) in the Library: under the granted root,
-    /// the stored one, or the stored root's earlier spelling.
-    fn in_library(&self, p: &Path) -> bool {
-        let slot = self.slot();
-        [&slot.root, &slot.hint, &slot.stored]
-            .into_iter()
-            .flatten()
-            .any(|base| under_by_key(p, base))
+    /// Replaces every added folder with the stored list (from
+    /// `library.json`), each loaded like `load_root`; one that can't be
+    /// granted now (or overlaps the Library or an earlier entry) is kept as
+    /// a hint only. Returns each path (canonical if available, else as
+    /// stored) and whether it is available, in order.
+    #[allow(dead_code)] // until the added-folder commands call it
+    pub fn load_added(&self, stored: &[PathBuf]) -> Vec<(PathBuf, bool)> {
+        // The disk is looked at before the lock is taken.
+        let found: Vec<Option<PathBuf>> = stored.iter().map(|s| Self::load(s).ok()).collect();
+        let mut slots = self.slots();
+        slots.truncate(1);
+        let mut out = Vec::with_capacity(stored.len());
+        for (s, canon) in stored.iter().zip(found) {
+            let canon = canon.filter(|c| overlap(&slots, c, None, None).is_none());
+            let slot = match canon {
+                Some(c) => RootSlot::granted(c, s),
+                None => RootSlot::hinted(s),
+            };
+            out.push(match &slot.root {
+                Some(c) => (c.clone(), true),
+                None => (s.clone(), false),
+            });
+            slots.push(slot);
+        }
+        out
     }
 
-    /// Where `p`, a path in the Library, really leads. `recover`: whether
-    /// an unavailable root may be looked for on disk (`recover_root`).
+    /// Adds the folder `dir` beside the Library, last, and returns its
+    /// canonical form. Refused (with the message the user sees) if it
+    /// overlaps the Library or an added folder, is too broad, or can't be
+    /// read.
+    #[allow(dead_code)] // until the added-folder commands call it
+    pub fn add_root(&self, dir: &Path) -> Result<PathBuf, FileError> {
+        let canon = Self::folder(dir).map_err(|_| unreadable())?;
+        let home = home();
+        let mut slots = self.slots();
+        if let Some(r) = overlap(&slots, &canon, None, home.as_deref()) {
+            return Err(refused(r));
+        }
+        slots.push(RootSlot::granted(canon.clone(), &canon));
+        Ok(canon)
+    }
+
+    /// Puts the folder `dir` in the place of the added folder `old` (its
+    /// root, hint or stored path), keeping its position, with the same
+    /// checks as `add_root` against everything but `old`. On any error the
+    /// list is unchanged.
+    #[allow(dead_code)] // until the added-folder commands call it
+    pub fn replace_root(&self, old: &Path, dir: &Path) -> Result<PathBuf, FileError> {
+        if added_index(&self.slots(), old).is_none() {
+            return Err(FileError::NotGranted);
+        }
+        let canon = Self::folder(dir).map_err(|_| unreadable())?;
+        let home = home();
+        let mut slots = self.slots();
+        // Looked up again: the list may have changed while the lock was free.
+        let i = added_index(&slots, old).ok_or(FileError::NotGranted)?;
+        if let Some(r) = overlap(&slots, &canon, Some(i), home.as_deref()) {
+            return Err(refused(r));
+        }
+        slots[i] = RootSlot::granted(canon.clone(), &canon);
+        Ok(canon)
+    }
+
+    /// Forgets the added folder `path` (its root, hint or stored path). The
+    /// Library is never touched. Files granted on their own stay granted.
+    #[allow(dead_code)] // until the added-folder commands call it
+    pub fn remove_root(&self, path: &Path) {
+        let mut slots = self.slots();
+        if let Some(i) = added_index(&slots, path) {
+            slots.remove(i);
+        }
+    }
+
+    /// The added folders in order: each one's root, or its stored path
+    /// while it is unavailable.
+    #[allow(dead_code)] // until the added-folder commands call it
+    pub fn added(&self) -> Vec<PathBuf> {
+        self.slots()
+            .iter()
+            .skip(1)
+            .filter_map(|s| s.place().cloned())
+            .collect()
+    }
+
+    /// The canonical granted root `p` lexically sits under (the Library or
+    /// an added folder): `None` if none, or if that root is unavailable.
+    #[allow(dead_code)] // until the added-folder commands call it
+    pub fn root_of(&self, p: &Path) -> Option<PathBuf> {
+        let slots = self.slots();
+        slots[slot_of(&slots, p)?].root.clone()
+    }
+
+    /// True if `p` is (lexically) in a granted root: under it, its stored
+    /// path, or the stored path's earlier spelling.
+    fn in_library(&self, p: &Path) -> bool {
+        self.slots().iter().any(|s| s.holds(p))
+    }
+
+    /// The root a path `p` (canonical `canon`) is judged by: that of the
+    /// slot `p` lexically sits under, which may be unavailable (`None`).
+    /// Only a path under no slot at all (another spelling: `\\?\`, an 8.3
+    /// name, a link from outside) is judged by where it really leads, as
+    /// before there were several roots.
+    fn judge_root(&self, p: &Path, canon: &Path) -> Option<PathBuf> {
+        let slots = self.slots();
+        match slot_of(&slots, p) {
+            Some(i) => slots[i].root.clone(),
+            None => slots
+                .iter()
+                .filter_map(|s| s.root.as_ref())
+                .find(|r| canon.starts_with(r))
+                .cloned(),
+        }
+    }
+
+    /// Where `p`, a path in a granted root, really leads. `recover`:
+    /// whether an unavailable root may be looked for on disk (`recover`).
     fn locate(&self, p: &Path, recover: bool) -> Located {
-        let root = match self.root() {
-            Some(root) => Some(root),
-            None if recover => self.recover_root(),
-            None => None,
+        let found = {
+            let slots = self.slots();
+            slot_of(&slots, p).map(|i| (i, slots[i].root.clone()))
+        };
+        let root = match found {
+            Some((_, Some(root))) => Some(root),
+            // The list may have changed meanwhile (a slot removed shifts
+            // the others): only the root of the slot `p` sits under now
+            // may judge it.
+            Some((i, None)) if recover => self.recover(i).filter(|r| {
+                let slots = self.slots();
+                slot_of(&slots, p).and_then(|j| slots[j].root.as_ref()) == Some(r)
+            }),
+            _ => None,
         };
         let Some(root) = root else {
             return Located::Offline;
@@ -254,7 +533,7 @@ impl Grants {
         if std::fs::symlink_metadata(&root).is_err() {
             return Located::Offline;
         }
-        match self.resolve_in_root(p) {
+        match resolve_under(p, &root) {
             Ok(path) => Located::Inside(path),
             // The root went away during the check.
             Err(_) if std::fs::symlink_metadata(&root).is_err() => Located::Offline,
@@ -266,16 +545,18 @@ impl Grants {
         }
     }
 
-    /// The stored root came back (a drive plugged in again): grant it again,
-    /// with the same checks as at load, so Library paths work without
-    /// waiting for the UI to ask. A miss is remembered for
+    /// The stored root of slot `i` came back (a drive plugged in again):
+    /// grant it again, with the same checks as at load, so its paths work
+    /// without waiting for the UI to ask. A miss is remembered for
     /// `RECOVER_MISS_TTL`, so a dead network share isn't probed on every
     /// check. The disk is looked at outside the lock; the result is applied
-    /// (compare-and-set) only if the hint is still the one probed and no
-    /// root was granted meanwhile, so a concurrent `use_root` stands.
-    fn recover_root(&self) -> Option<PathBuf> {
+    /// (compare-and-set) only if the slot's hint is still the one probed and
+    /// no root was granted meanwhile, so a concurrent `use_root` stands. An
+    /// added folder that now overlaps another root stays unavailable.
+    fn recover(&self, i: usize) -> Option<PathBuf> {
         let hint = {
-            let slot = self.slot();
+            let slots = self.slots();
+            let slot = slots.get(i)?;
             if slot.root.is_some() {
                 return slot.root.clone();
             }
@@ -287,13 +568,14 @@ impl Grants {
         #[cfg(test)]
         self.probes
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let found = Self::folder(&hint)
-            .ok()
-            .filter(|canon| !resolves_elsewhere(&hint, canon));
-        let mut slot = self.slot();
+        let found = Self::load(&hint).ok();
+        let mut slots = self.slots();
+        let slot = slots.get(i)?;
         if slot.root.is_some() || slot.hint.as_ref() != Some(&hint) {
             return slot.root.clone();
         }
+        let found = found.filter(|c| i == 0 || overlap(&slots, c, Some(i), None).is_none());
+        let slot = &mut slots[i];
         let Some(canon) = found else {
             slot.missed = Some(Instant::now());
             return None;
@@ -307,46 +589,34 @@ impl Grants {
         Some(canon)
     }
 
-    /// Forgets a remembered recovery miss (tests: the drive is back now).
+    /// Forgets every remembered recovery miss (tests: the drive is back now).
     #[cfg(test)]
     pub fn forget_recover_miss(&self) {
-        self.slot().missed = None;
+        for slot in self.slots().iter_mut() {
+            slot.missed = None;
+        }
     }
 
-    /// How many times `recover_root` probed the disk (tests only).
+    /// How many times `recover` probed the disk (tests only).
     #[cfg(test)]
     pub fn recover_probes(&self) -> usize {
         self.probes.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// The canonical form of `p` if it is the Library root or inside it,
+    /// The canonical form of `p` if it is a granted root or inside one,
     /// else `NotGranted`. A path that doesn't exist yet is checked through
-    /// its parent; a link that resolves outside the root (or dangles) is
-    /// refused.
+    /// its parent; a link that resolves outside the root `p` sits under (or
+    /// dangles) is refused, even one into another granted root.
     pub fn in_root(&self, p: &Path) -> Result<PathBuf, FileError> {
         if !p.is_absolute() || win32_alias(p) {
             return Err(FileError::NotGranted);
         }
         let canon = canonical(p).map_err(|_| FileError::NotGranted)?;
-        self.within_root(canon)
+        let root = self.judge_root(p, &canon);
+        within_root(canon, root.as_deref())
     }
 
-    /// `canon` (already canonical) if it is the root or inside it. Compared
-    /// by components, so `/lib2` is not inside `/lib`.
-    fn within_root(&self, canon: PathBuf) -> Result<PathBuf, FileError> {
-        let root = self.root().ok_or(FileError::NotGranted)?;
-        if !canon.starts_with(&root) {
-            return Err(FileError::NotGranted);
-        }
-        // `canonical` resolves every existing link, so a link left in the
-        // last place is dangling: a write there would follow it anywhere.
-        if std::fs::symlink_metadata(&canon).is_ok_and(|m| m.file_type().is_symlink()) {
-            return Err(FileError::NotGranted);
-        }
-        Ok(canon)
-    }
-
-    /// Like `grant`, for a path that must be inside the Library root, which
+    /// Like `grant`, for a path that must be inside a granted root, which
     /// may not exist yet, nor its folder (a Missing File that moved with
     /// its parent). Never grants anything not provably inside the root:
     /// the deepest part that exists (a link in the last place is taken as
@@ -363,26 +633,12 @@ impl Grants {
     }
 
     /// Where `p` (which may not exist, nor its folder) really is, if that
-    /// is provably inside the root: see `grant_in_root`.
+    /// is provably inside the root it is judged by: see `grant_in_root`.
     fn resolve_in_root(&self, p: &Path) -> Result<PathBuf, FileError> {
-        if !plain_absolute(p) || win32_alias(p) {
-            return Err(FileError::NotGranted);
-        }
-        let mut existing = p;
-        while std::fs::symlink_metadata(existing).is_err() {
-            existing = existing.parent().ok_or(FileError::NotGranted)?;
-        }
-        let base = self.in_root(existing)?;
-        let rest = p
-            .strip_prefix(existing)
-            .map_err(|_| FileError::NotGranted)?;
-        let path = if rest.as_os_str().is_empty() {
-            base
-        } else {
-            base.join(rest)
-        };
-        // The final guard: exactly the path returned is inside the root.
-        self.within_root(path)
+        let (existing, _) = existing_part(p)?;
+        let canon = canonical(existing).map_err(|_| FileError::NotGranted)?;
+        let root = self.judge_root(p, &canon).ok_or(FileError::NotGranted)?;
+        resolve_under(p, &root)
     }
 
     /// A stored grant, re-checked on every use when it lies in the Library:
@@ -491,7 +747,8 @@ impl Grants {
         if win32_alias(path) {
             return Err(FileError::NotGranted);
         }
-        self.within_root(canon)
+        let root = self.judge_root(path, &canon);
+        within_root(canon, root.as_deref())
     }
 
     /// Like `check`, but `p` must be spelled exactly as the granted path (for
@@ -614,6 +871,26 @@ mod tests {
         let p = dir.join(name);
         std::fs::write(&p, "x").unwrap();
         p
+    }
+
+    #[test]
+    fn slot_of_prefers_a_root_then_the_deepest_hint() {
+        let base = if cfg!(windows) {
+            PathBuf::from(r"C:\data")
+        } else {
+            PathBuf::from("/data")
+        };
+        let (a, b) = (base.join("a"), base.join("b"));
+        // A stale Library hint covering both added folders.
+        let slots = vec![
+            RootSlot::hinted(&base),
+            RootSlot::hinted(&a),
+            RootSlot::granted(b.clone(), &b),
+        ];
+        assert_eq!(slot_of(&slots, &a.join("x")), Some(1));
+        assert_eq!(slot_of(&slots, &b.join("x")), Some(2));
+        assert_eq!(slot_of(&slots, &base.join("c")), Some(0));
+        assert_eq!(slot_of(&slots, &base.with_file_name("elsewhere")), None);
     }
 
     #[test]
