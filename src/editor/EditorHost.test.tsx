@@ -589,3 +589,101 @@ describe("EditorHost folding", () => {
     expect(container.querySelector(".cm-foldGutter")).not.toBeNull();
   });
 });
+
+describe("EditorHost with two shown views", () => {
+  function slotDiv() {
+    const d = document.createElement("div");
+    d.style.position = "relative";
+    document.body.append(d);
+    return d;
+  }
+
+  it("twoViewsKeepTheirOwnUndo", async () => {
+    const sa = slotDiv();
+    const sb = slotDiv();
+    const slots = new Map([
+      ["a", sa],
+      ["b", sb],
+    ]);
+    const { container, rerender } = setup({
+      activeId: "a",
+      shown: ["a", "b"],
+      slots,
+    });
+    await waitFor(() => {
+      expect(sa.querySelectorAll(".cm-editor")).toHaveLength(1);
+      expect(sb.querySelectorAll(".cm-editor")).toHaveLength(1);
+    });
+    const a = viewsIn(sa)[0]!;
+    const b = viewsIn(sb)[0]!;
+    expect(a.state.doc.toString()).toBe("text of a");
+    expect(b.state.doc.toString()).toBe("text of b");
+
+    act(() =>
+      b.dispatch({
+        changes: { from: 0, insert: "X" },
+        userEvent: "input.type",
+      }),
+    );
+    act(() => {
+      undo(a);
+    });
+    expect(b.state.doc.toString()).toBe("Xtext of b");
+
+    rerender({ shown: ["a"], slots: new Map() });
+    expect(viewsIn(sb)).toHaveLength(0);
+    expect(viewsIn(container)).toContain(b);
+    rerender({ shown: ["a", "b"], slots });
+    expect(viewsIn(sb)).toEqual([b]);
+    expect(viewsIn(sa)).toEqual([a]);
+    act(() => {
+      undo(b);
+    });
+    expect(b.state.doc.toString()).toBe("text of b");
+    sa.remove();
+    sb.remove();
+  });
+
+  it("onlyTheActiveViewTakesFocus", async () => {
+    const sa = slotDiv();
+    const sb = slotDiv();
+    setup({
+      activeId: "b",
+      shown: ["a", "b"],
+      slots: new Map([
+        ["a", sa],
+        ["b", sb],
+      ]),
+    });
+    await waitFor(() => {
+      expect(sa.querySelectorAll(".cm-editor")).toHaveLength(1);
+      expect(sb.querySelectorAll(".cm-editor")).toHaveLength(1);
+    });
+    await waitFor(() => expect(sb.contains(document.activeElement)).toBe(true));
+    expect(sa.contains(document.activeElement)).toBe(false);
+    sa.remove();
+    sb.remove();
+  });
+
+  it("findBarSitsInTheFocusedSlot", async () => {
+    const sa = slotDiv();
+    const sb = slotDiv();
+    const { rerender } = setup({
+      activeId: "b",
+      shown: ["a", "b"],
+      slots: new Map([
+        ["a", sa],
+        ["b", sb],
+      ]),
+    });
+    await waitFor(() =>
+      expect(sb.querySelectorAll(".cm-editor")).toHaveLength(1),
+    );
+    rerender({ findRequest: { mode: "find", seq: 1 } });
+    const input = screen.getByRole("textbox", { name: "Find" });
+    expect(sb.contains(input)).toBe(true);
+    expect(sa.contains(input)).toBe(false);
+    sa.remove();
+    sb.remove();
+  });
+});

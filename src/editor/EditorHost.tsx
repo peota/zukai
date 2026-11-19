@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Compartment,
@@ -100,6 +101,16 @@ export interface EditorHostProps {
   onZoom?(dir: 1 | -1): void;
   /** The line-number gutter (shown when unset). */
   lineNumbers?: boolean;
+  /**
+   * Tab ids whose views are visible (just `activeId` when unset). Only
+   * `activeId` takes focus and reports its cursor.
+   */
+  shown?: readonly string[];
+  /**
+   * Where each shown view goes. A shown id with no slot, and every hidden
+   * view, stays in the host's own container. A view moves, never recreated.
+   */
+  slots?: ReadonlyMap<string, HTMLElement>;
 }
 
 /** Wheel distance per zoom step: one mouse notch, or a short pinch. */
@@ -458,7 +469,11 @@ export function EditorHost(props: EditorHostProps) {
     if (!e) return;
     const last = findStates.current.get(id) ?? EMPTY_FIND;
     // Pressed again while typing in the bar: keep its text, just refocus.
-    const inBar = barBox.current?.contains(document.activeElement) ?? false;
+    const at = document.activeElement;
+    const slot = latest.current.slots?.get(id);
+    const inBar =
+      (barBox.current?.contains(at) ?? false) ||
+      ((slot?.contains(at) ?? false) && !!at?.closest('[role="search"]'));
     const initial = inBar ? last : initialFindState(e.view, last);
     setBar({ tabId: id, view: e.view, mode, initial, seq: ++barSeq.current });
   };
@@ -538,18 +553,31 @@ export function EditorHost(props: EditorHostProps) {
     views.current.delete(id);
   };
 
-  /** Show only the active view, restoring its scroll offset. */
-  const showActive = () => {
-    const { activeId: active } = latest.current;
+  /** The ids to show: `shown`, always with the active Tab. */
+  const wantedIds = () => {
+    const { shown, activeId: active } = latest.current;
+    const ids = new Set(shown ?? []);
+    if (active) ids.add(active);
+    return ids;
+  };
+
+  /** Show the shown views (each in its slot), restoring scroll offsets. */
+  const showShown = () => {
+    const { activeId: active, slots } = latest.current;
+    const wanted = wantedIds();
     for (const [id, e] of views.current) {
-      const visible = id === active;
+      const visible = wanted.has(id);
       const was = e.wrapper.style.display !== "none";
       if (!visible && was) {
         e.scrollTop = e.view.scrollDOM.scrollTop;
         flushPatch(id, e);
       }
+      const target = (visible && slots?.get(id)) || container.current;
+      const moved = !!target && e.wrapper.parentElement !== target;
+      if (moved && was) e.scrollTop = e.view.scrollDOM.scrollTop;
+      if (moved) target.appendChild(e.wrapper);
       e.wrapper.style.display = visible ? "" : "none";
-      if (visible && !was) {
+      if (visible && (!was || moved)) {
         const top = e.scrollTop;
         e.view.scrollDOM.scrollTop = top;
         e.view.requestMeasure();
@@ -558,26 +586,18 @@ export function EditorHost(props: EditorHostProps) {
         requestAnimationFrame(() => {
           if (e.view.dom.isConnected) e.view.scrollDOM.scrollTop = top;
         });
-        // Not while typing in the sidebar (a new item's name, the search).
-        if (!sidebarFieldFocused()) e.view.focus();
-        reportCursor(e.view);
+        if (id === active) {
+          // Not while typing in the sidebar (a new item's name, the search).
+          if (!sidebarFieldFocused()) e.view.focus();
+          reportCursor(e.view);
+        }
       }
     }
   };
 
-  // Create the active view (after its text loads), hide the others, and
-  // destroy the views of closed Tabs.
-  useEffect(() => {
-    const ids = new Set(tabs.map((t) => t.id));
-    for (const [id, e] of views.current) if (!ids.has(id)) destroy(id, e);
-    for (const id of heldConverts.current.keys()) {
-      if (!ids.has(id)) heldConverts.current.delete(id);
-    }
-
-    showActive();
-    if (!activeId || views.current.has(activeId)) return;
-    if (creating.current.has(activeId)) return;
-    const id = activeId;
+  /** Create a shown view once its text has loaded. */
+  const createLoaded = (id: string) => {
+    if (views.current.has(id) || creating.current.has(id)) return;
     creating.current.add(id);
     // The loaded text already has every replace issued before this point;
     // only newer ones are applied on top of it.
@@ -599,13 +619,27 @@ export function EditorHost(props: EditorHostProps) {
         heldConverts.current.delete(id);
         if (patch && tab.file)
           applyConvert(e, tabOf(id)?.file ?? tab.file, patch);
-        showActive();
+        showShown();
       })
       .catch((err: unknown) => console.error("load scratchpad failed", err))
       .finally(() => creating.current.delete(id));
+  };
+
+  // Create the shown views (after their text loads), hide the others, and
+  // destroy the views of closed Tabs.
+  const shownKey = [...(props.shown ?? [])].join(" ");
+  useEffect(() => {
+    const ids = new Set(tabs.map((t) => t.id));
+    for (const [id, e] of views.current) if (!ids.has(id)) destroy(id, e);
+    for (const id of heldConverts.current.keys()) {
+      if (!ids.has(id)) heldConverts.current.delete(id);
+    }
+
+    showShown();
+    for (const id of wantedIds()) if (ids.has(id)) createLoaded(id);
     // Helpers read the latest props through a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabs, activeId]);
+  }, [tabs, activeId, shownKey, props.slots]);
 
   // Keep each view's Language, wrapping, read-only state and format in step.
   useEffect(() => {
@@ -745,24 +779,27 @@ export function EditorHost(props: EditorHostProps) {
 
   const showBar =
     bar && bar.tabId === activeId && tabs.some((t) => t.id === bar.tabId);
+  const barSlot = bar ? props.slots?.get(bar.tabId) : undefined;
+  const findBar = showBar && (
+    <FindBar
+      key={bar.seq}
+      view={bar.view}
+      mode={bar.mode}
+      initial={bar.initial}
+      onChange={(s) => rememberFind(bar.tabId, s)}
+      onClose={(s) => {
+        findStates.current.set(bar.tabId, s);
+        setBar(null);
+      }}
+    />
+  );
   return (
     <div ref={outer} className="relative size-full">
       <div ref={container} className="size-full" />
       <div ref={barBox} className="contents">
-        {showBar && (
-          <FindBar
-            key={bar.seq}
-            view={bar.view}
-            mode={bar.mode}
-            initial={bar.initial}
-            onChange={(s) => rememberFind(bar.tabId, s)}
-            onClose={(s) => {
-              findStates.current.set(bar.tabId, s);
-              setBar(null);
-            }}
-          />
-        )}
+        {barSlot ? null : findBar}
       </div>
+      {barSlot && findBar && createPortal(findBar, barSlot)}
     </div>
   );
 }
