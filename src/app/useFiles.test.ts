@@ -2343,3 +2343,215 @@ describe("useFiles close prompt", () => {
     expect(f.fileWrite).not.toHaveBeenCalled();
   });
 });
+
+describe("useFiles final review fixes (manual save)", () => {
+  /** fileRead refuses (a permission error) while `denied.on` is true. */
+  function denyReads() {
+    const denied = { on: true };
+    const read = f.fileRead.getMockImplementation()!;
+    f.fileRead.mockImplementation(async (path) => {
+      if (denied.on) throw { kind: "denied", message: "no" };
+      return read(path);
+    });
+    return denied;
+  }
+
+  it("Save all after restore saves a Tab that was never shown", async () => {
+    disk[Q] = { text: "q", hash: "q1" };
+    shadows.f = "A2";
+    shadows.g = "B2";
+    s.readSession.mockResolvedValue(
+      sessionJson([
+        fileTab("f", P, { unsaved: true }),
+        fileTab("g", Q, { unsaved: true, fingerprint: fp("q1") }),
+      ]),
+    );
+    const { result } = await mount(false);
+    expect(result.current.state.activeId).toBe("f");
+    await act(() => result.current.saveAll());
+    expect(disk[P].text).toBe("A2");
+    expect(disk[Q].text).toBe("B2");
+    expect(fileTabOf(result, Q)!.file!.unsaved).toBeUndefined();
+    expect(shadows.g).toBeUndefined();
+  });
+
+  it("Save all names a never-shown Tab that loads as a conflict", async () => {
+    disk[Q] = { text: "q-theirs", hash: "q2" };
+    shadows.g = "B2";
+    s.readSession.mockResolvedValue(
+      sessionJson([
+        newTabState("a"),
+        fileTab("g", Q, { unsaved: true, fingerprint: fp("q1") }),
+      ]),
+    );
+    const { result } = await mount(false);
+    await act(() => result.current.saveAll());
+    expect(fileTabOf(result, Q)!.file!.held).toBe("conflict");
+    expect(disk[Q].text).toBe("q-theirs");
+    expect(shadows.g).toBe("B2");
+    expect(result.current.notice).toBe("Not saved (conflict): notes.txt");
+  });
+
+  it("a failing save on Mod+S shows a notice and keeps the dot", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "typed"));
+    await settle();
+    f.fileWrite.mockRejectedValue({ kind: "io", message: "disk full" });
+    await act(() => result.current.run({ type: "save" }));
+    expect(result.current.notice).toBe("Can't save A.json: disk full");
+    expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+    expect(shadows[id]).toBe("typed");
+    expect(disk[P].text).toBe("{}");
+  });
+
+  it("Don't save with an unknown disk text never writes empty text", async () => {
+    // The disk read at restore failed: the disk's text is unknown.
+    const denied = denyReads();
+    shadows.f = "mine";
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), fileTab("f", P, { unsaved: true })]),
+    );
+    const { result } = await mount(true);
+    expect(await result.current.loadContent("f")).toBe("mine");
+    expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+    denied.on = false;
+    vi.useFakeTimers();
+    // An edit still waiting for its (autosave) write.
+    act(() => result.current.setContent("f", "mine2"));
+    let closed!: Promise<void>;
+    act(() => {
+      closed = result.current.closeTab("f");
+    });
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(result.current.closePrompt).toEqual({ id: "f", name: "A.json" });
+    act(() => result.current.answerClosePrompt("discard"));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    await act(() => closed);
+    vi.useRealTimers();
+    expect(fileTabOf(result)).toBeUndefined();
+    expect(disk[P].text).toBe("{}");
+    expect(f.fileWrite).not.toHaveBeenCalledWith(
+      P,
+      "",
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(
+      result.current.replaceRequests.some((r) => r.id === "f" && r.text === ""),
+    ).toBe(false);
+    expect(shadows.f).toBeUndefined();
+    await act(() => result.current.reopenEntry("f"));
+    expect(await result.current.loadContent("f")).toBe("{}");
+    expect(fileTabOf(result)!.file!.unsaved).toBeUndefined();
+  });
+
+  it("Don't save waits for a write in flight before dropping the shadow", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    await act(() => result.current.loadContent(id));
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    f.shadowWrite.mockImplementation(async (sid, text) => {
+      await gate;
+      shadows[sid] = text;
+    });
+    act(() => result.current.setContent(id, "mine"));
+    // The debounce ran: the shadow write is in flight, held at the gate.
+    await settle();
+    let closed!: Promise<void>;
+    act(() => {
+      closed = result.current.closeTab(id);
+    });
+    await waitFor(() => expect(result.current.closePrompt).not.toBeNull());
+    act(() => result.current.answerClosePrompt("discard"));
+    await act(() => new Promise((res) => setTimeout(res, 0)));
+    release();
+    await act(() => closed);
+    expect(fileTabOf(result)).toBeUndefined();
+    const entry = result.current.state.closed[0].tab.file!;
+    expect(entry.unsaved).toBeUndefined();
+    expect(shadows[id]).toBeUndefined();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+  });
+
+  it("an unsaved Tab without a shadow whose File can't be read isn't unsaved", async () => {
+    const denied = denyReads();
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), fileTab("f", P, { unsaved: true })]),
+    );
+    const { result } = await mount(false);
+    expect(await result.current.loadContent("f")).toBe("");
+    const file = fileTabOf(result)!.file!;
+    expect(file.held).toBe("readonly");
+    expect(file.unsaved).toBeUndefined();
+    await act(() => result.current.closeTab("f"));
+    expect(shadows.f).toBeUndefined();
+    denied.on = false;
+    await act(() => result.current.reopenEntry("f"));
+    expect(await result.current.loadContent("f")).toBe("{}");
+  });
+
+  it("reopening an unsaved entry without a shadow whose File is gone isn't unsaved", async () => {
+    delete disk[P];
+    s.readSession.mockResolvedValue(
+      sessionJson(
+        [newTabState("a")],
+        [
+          {
+            tab: fileTab("f", P, { unsaved: true }),
+            index: 1,
+            closedAt: Date.now(),
+          },
+        ],
+      ),
+    );
+    const { result } = await mount(false);
+    await act(() => result.current.reopenEntry("f"));
+    const file = fileTabOf(result)!.file!;
+    expect(file.held).toBe("missing");
+    expect(file.unsaved).toBeUndefined();
+  });
+
+  it("Don't save on a Tab that became a conflict while asking keeps its text", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    await settle();
+    let closed!: Promise<void>;
+    act(() => {
+      closed = result.current.closeTab(id);
+    });
+    await waitFor(() => expect(result.current.closePrompt).not.toBeNull());
+    disk[P] = { text: "theirs", hash: "h2" };
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
+    act(() => result.current.answerClosePrompt("discard"));
+    await act(() => closed);
+    expect(fileTabOf(result)).toBeUndefined();
+    expect(result.current.state.closed[0].tab.file!.held).toBe("conflict");
+    expect(shadows[id]).toBe("mine");
+    expect(disk[P].text).toBe("theirs");
+  });
+
+  it("saves the Session at once when a Convert lands on an unsaved Tab", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    await settle();
+    expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+    // Past the Session debounce of the edit itself.
+    await act(() => new Promise((res) => setTimeout(res, 600)));
+    s.writeSession.mockClear();
+    const file = fileTabOf(result)!.file!;
+    const crlf = { ...FMT, lineEnding: "crlf" as const };
+    act(() =>
+      result.current.updateTab(id, { file: { ...file, format: crlf } }),
+    );
+    // Well inside the 500 ms Session debounce.
+    await act(() => new Promise((res) => setTimeout(res, 50)));
+    expect(
+      s.writeSession.mock.calls.some(([json]) => json.includes('"diskFormat"')),
+    ).toBe(true);
+  });
+});

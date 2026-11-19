@@ -10,6 +10,7 @@ import {
   fileInfoOf,
   openFailure,
   readDisk,
+  settledFile,
   unsavedDisk,
   type FilesContext,
 } from "./context";
@@ -116,7 +117,7 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
         info =
           r.kind === "ok"
             ? fileInfoOf(file.path, r.read)
-            : { ...file, held: "missing" };
+            : { ...settledFile(file), held: "missing" };
         disk = text;
       }
       const i = at();

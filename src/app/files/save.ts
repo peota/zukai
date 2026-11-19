@@ -190,14 +190,33 @@ export function useSave(c: FilesContext, d: SaveDeps) {
       const tab = tabOf(id);
       if (!tab || tab.kind === "image") return;
       if (!tab.file) return saveAs(id);
-      switch (tab.file.held) {
+      // The same notice as Keep mine: an explicit save never fails silently.
+      const failed = (err: unknown) => {
+        logError("save")(err);
+        const path = tabOf(id)?.file?.path ?? tab.file!.path;
+        showNotice(`Can't save ${baseName(path)}: ${asFileError(err).message}`);
+      };
+      try {
+        // A Tab restored but never shown has no text yet, and its held state
+        // is known only once it loaded (the disk may have changed meanwhile).
+        await loadContent(id);
+      } catch (err) {
+        return failed(err);
+      }
+      const file = tabOf(id)?.file;
+      if (!file) return;
+      switch (file.held) {
         case "conflict":
           return showNotice("Resolve the conflict first");
         case "missing":
-          return saveToOriginal(id);
+          try {
+            return await saveToOriginal(id);
+          } catch (err) {
+            return failed(err);
+          }
         case "unencodable":
           return showNotice(
-            `Can't save: some characters can't be written in ${tab.file.format.encoding}`,
+            `Can't save: some characters can't be written in ${file.format.encoding}`,
           );
         case "readonly":
           return;
@@ -206,15 +225,17 @@ export function useSave(c: FilesContext, d: SaveDeps) {
       }
       try {
         await saver.flush(id);
+        const text = contents.get(id);
         // saveNow takes the Tab's lock itself (it isn't re-entrant).
-        if (hasPending(id)) await saveNow(id, contents.get(id) ?? "");
+        if (text !== undefined && hasPending(id)) await saveNow(id, text);
       } catch (err) {
-        logError("save")(err);
+        failed(err);
       }
     },
     [
       contents,
       hasPending,
+      loadContent,
       saveAs,
       saveNow,
       saveToOriginal,
@@ -227,18 +248,23 @@ export function useSave(c: FilesContext, d: SaveDeps) {
   /** Saves every File Tab with edits not yet in its File, in tab order. */
   const saveAll = useCallback(async () => {
     const skipped: string[] = [];
-    for (const tab of stateRef.current.tabs) {
-      if (!tab.file || tab.kind === "image" || !hasPending(tab.id)) continue;
-      if (tab.file.held === "conflict") {
-        skipped.push(tab.title);
+    for (const { id } of stateRef.current.tabs) {
+      const tab = tabOf(id);
+      if (!tab?.file || tab.kind === "image" || !hasPending(id)) continue;
+      // A Tab restored but never shown: loading it may find a conflict.
+      await loadContent(id).catch(logError("load for save"));
+      const now = tabOf(id);
+      if (!now) continue;
+      if (now.file?.held === "conflict") {
+        skipped.push(now.title);
         continue;
       }
-      await save(tab.id);
+      await save(id);
     }
     if (skipped.length > 0) {
       showNotice(`Not saved (conflict): ${skipped.join(", ")}`);
     }
-  }, [hasPending, save, showNotice, stateRef]);
+  }, [hasPending, loadContent, save, showNotice, stateRef, tabOf]);
 
   /**
    * Renames Tab `id`'s File with `rename` (Rust's call, given its path),

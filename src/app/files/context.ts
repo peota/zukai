@@ -134,6 +134,17 @@ export const fileInfoOf = (path: string, r: FileRead): FileInfo => ({
   held: r.readable ? null : "readonly",
 });
 
+/**
+ * A File whose text is the disk's (no shadow): nothing unsaved, and its
+ * format the disk's.
+ */
+export function settledFile(file: FileInfo): FileInfo {
+  const next: FileInfo = { ...file, format: file.diskFormat ?? file.format };
+  delete next.unsaved;
+  delete next.diskFormat;
+  return next;
+}
+
 export const sameFingerprint = (f: FileInfo, d: Fingerprint) =>
   f.fingerprint !== null &&
   f.fingerprint.mtimeMs === d.mtimeMs &&
