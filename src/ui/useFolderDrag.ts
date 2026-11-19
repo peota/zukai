@@ -154,6 +154,11 @@ export function useFolderDrag({
     watchRelease(e.pointerId);
   };
 
+  /** True unless `source` is an entry outside the Library (an added folder). */
+  const fromLibrary = (source: DragSource): boolean =>
+    source.kind !== "entry" ||
+    (root !== null && rootOf(source.entry.path, roots) === rootOf(root, roots));
+
   /** Where a drop at (x, y) lands: the row under the pointer, or the root. */
   const destAt = (source: DragSource, x: number, y: number): string | null => {
     const tree = treeRef.current;
@@ -161,8 +166,10 @@ export function useFolderDrag({
     if (!tree || !hit || !tree.contains(hit)) return null;
     const rowEl = hit.closest<HTMLElement>("[data-row]");
     if (!rowEl) {
-      // The tree's own empty part (not an inline card) is the root.
-      return hit === tree ? allowed(source, root) : null;
+      // The tree's own empty part (not an inline card) is the Library root,
+      // only for a drag from the Library: from an added folder it would be
+      // a copy into the Library with no row to show "Copy" on.
+      return hit === tree && fromLibrary(source) ? allowed(source, root) : null;
     }
     const i = Number(rowEl.dataset.row);
     const r = rows[i];

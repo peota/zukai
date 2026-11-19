@@ -1056,6 +1056,35 @@ describe("Sidebar added folders", () => {
     expect(p.onMove).toHaveBeenLastCalledWith(A_MD.path, A_DIR.path);
   });
 
+  it("blank tree space takes only drags from the Library", () => {
+    const { p } = setupAdded();
+    layOut();
+    const BLANK = 590;
+    // From an added folder: no silent copy into the Library root.
+    const a = row("a.md");
+    fireEvent.pointerDown(a, {
+      button: 0,
+      pointerId: 1,
+      clientY: yOf("a.md"),
+    });
+    fireEvent.pointerMove(a, { pointerId: 1, buttons: 1, clientY: BLANK });
+    expect(tree().querySelector("[data-drop-target]")).toBeNull();
+    expect(screen.queryByText("Copy")).toBeNull();
+    fireEvent.pointerUp(a, { pointerId: 1, clientY: BLANK });
+    expect(p.onMove).not.toHaveBeenCalled();
+
+    // From the Library: blank space is still the Library root.
+    const notes = row("notes.md");
+    fireEvent.pointerDown(notes, {
+      button: 0,
+      pointerId: 2,
+      clientY: yOf("notes.md"),
+    });
+    fireEvent.pointerMove(notes, { pointerId: 2, buttons: 1, clientY: BLANK });
+    fireEvent.pointerUp(notes, { pointerId: 2, clientY: BLANK });
+    expect(p.onMove).toHaveBeenCalledWith(NOTES.path, ROOT);
+  });
+
   it("a missing heading is not a drop target", () => {
     const { p } = setupAdded(false);
     layOut();
