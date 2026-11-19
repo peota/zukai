@@ -201,22 +201,34 @@ pub(crate) fn use_root(
     Ok(state)
 }
 
-/// Adds the folder `dir` beside the Library, last, and saves the list.
+/// Adds the folder `dir` beside the Library, last, and saves the list. If
+/// the list can't be saved, it is taken out again: nothing changes.
 pub(crate) fn add_folder(g: &Grants, data: &Path, dir: &Path) -> Result<RootState, FileError> {
-    g.add_root(dir)?;
-    root::save_added(data, &g.added())?;
+    let canon = g.add_root(dir)?;
+    if let Err(e) = root::save_added(data, &g.added()) {
+        g.remove_root(&canon);
+        return Err(e.into());
+    }
     Ok(root_state(g, data))
 }
 
-/// Points the added folder `old` at `dir` instead, in the same place.
+/// Points the added folder `old` at `dir` instead, in the same place. If
+/// the list can't be saved, the old entry is put back as it was (it may be
+/// offline, so it is restored, not located again): nothing changes.
 pub(crate) fn locate_folder(
     g: &Grants,
     data: &Path,
     old: &str,
     dir: &Path,
 ) -> Result<RootState, FileError> {
-    g.replace_root(Path::new(old), dir)?;
-    root::save_added(data, &g.added())?;
+    let before = g.added_slot(Path::new(old));
+    let canon = g.replace_root(Path::new(old), dir)?;
+    if let Err(e) = root::save_added(data, &g.added()) {
+        if let Some(before) = before {
+            g.restore_added(&canon, before);
+        }
+        return Err(e.into());
+    }
     Ok(root_state(g, data))
 }
 
@@ -1958,6 +1970,27 @@ mod tests {
             Refusal::ContainsAdded.message()
         );
         assert_eq!(root::load_added(data.path()).unwrap(), [a, b]);
+    }
+
+    /// The added list can't be saved: adding or locating changes nothing,
+    /// so no folder is granted that the sidebar never shows.
+    #[test]
+    fn add_and_locate_roll_back_when_the_list_cannot_be_saved() {
+        let (_tmp, g, _root, added, outside) = crate::library::tests::library_with_added();
+        let data = tempfile::tempdir().unwrap();
+        fs::create_dir(data.path().join(root::LIBRARY_FILE)).unwrap();
+        let other = outside.join("other");
+        fs::create_dir(&other).unwrap();
+        fs::write(other.join("x.md"), "x").unwrap();
+
+        assert!(add_folder(&g, data.path(), &other).is_err());
+        assert_eq!(g.added(), [added.clone()]);
+        assert!(g.in_root(&other.join("x.md")).is_err());
+
+        assert!(locate_folder(&g, data.path(), s(&added), &other).is_err());
+        assert_eq!(g.added(), [added.clone()]);
+        assert!(g.in_root(&other.join("x.md")).is_err());
+        assert_eq!(g.root_of(&added.join("a.md")), Some(added));
     }
 
     #[test]
