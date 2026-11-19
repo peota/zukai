@@ -454,3 +454,30 @@ describe("useWorkspace settings", () => {
     expect(result.current.fontSize).toBe(15);
   });
 });
+
+describe("useWorkspace Markdown preview", () => {
+  it("Mod+Shift+V cycles Edit, Split and Preview on a Markdown Tab only", async () => {
+    const { result } = await mount();
+    const preview = () =>
+      result.current.state.tabs.find(
+        (t) => t.id === result.current.state.activeId,
+      )!.preview;
+    // Plain text: nothing to preview.
+    await act(() => result.current.run({ type: "togglePreview" }));
+    expect(preview()).toBeUndefined();
+    act(() =>
+      result.current.updateTab("a", {
+        language: "markdown",
+        languagePicked: true,
+      }),
+    );
+    await act(() => result.current.run({ type: "togglePreview" }));
+    expect(preview()).toBe("split");
+    await act(() => result.current.run({ type: "togglePreview" }));
+    expect(preview()).toBe("only");
+    await act(() => result.current.run({ type: "togglePreview" }));
+    expect(preview()).toBeUndefined();
+    act(() => result.current.setPreview("a", "only"));
+    expect(preview()).toBe("only");
+  });
+});

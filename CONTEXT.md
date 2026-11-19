@@ -66,9 +66,8 @@ A log in the app data folder where a Huge File's edits are appended as they happ
 A searchable list of every command, opened with Mod+Shift+P. It's the main way to reach editing commands (line operations, case changes, toggles, Convert encoding and so on) without menus or toolbars.
 
 **Settings**
-Changed through the **Settings UI**, which opens as a Tab (Mod+, or "Settings" in the Command palette).
-- A search box filters settings by name, description and keywords as you type.
-- Settings are grouped into Editor, Appearance, Files, Tables, Quick capture and Keybindings.
+Changed in the **Settings** dialog, opened by the gear at the left of the status bar or Mod+, (a dialog, not a Tab: decided 2026-11-19). Its General section holds the Theme (System, Light or Dark), the editor font size, word wrap in new Tabs and line numbers, applied at once and stored in the Session (`settings`, with `fontSize` beside it). Its Keyboard shortcuts section lists every shortcut for the platform, searchable; they can't be changed yet.
+- Later: a search box over all settings, and groups for Editor, Appearance, Files, Tables, Quick capture and Keybindings as those settings arrive.
 - Each setting is one row with a checkbox, dropdown or text field. Changes apply immediately. A Reset link appears only when the value differs from the default.
 - Keybindings are a searchable list where you press a key combination to record it, with conflict warnings.
 - The UI writes only the values you changed into `settings.json` in the app data folder. An "Open settings.json" link opens it as a normal Tab for editing by hand or keeping in dotfiles. Edits to the file update the UI live, and invalid JSON keeps the last valid settings active.
@@ -101,8 +100,8 @@ _Avoid_: Inbox (its earlier name), Drafts.
 **Pinned**
 A Tab marked to stay at hand: it sits at the start of the tab bar, with a pin in place of its close button, and in the Sidebar's Pinned list. Closing it keeps it in the Pinned list, dimmed, and in Recently Closed, where it never expires; reopening it keeps the pin. Stored on the Tab in the Session (`pinned`).
 
-**Settings**
-The dialog opened by the gear at the left of the status bar or Mod+,. Its General section holds the Theme (System, Light or Dark), the editor font size, word wrap in new Tabs and line numbers, applied at once and stored in the Session (`settings`, with `fontSize` beside it). Its Keyboard shortcuts section lists every shortcut for the platform, searchable; they can't be changed yet.
+**Markdown preview**
+A Markdown Tab's rendered view, in one of three modes: **Edit** (the editor only), **Split** (editor and preview side by side) or **Preview** (the preview only). Mod+Shift+V cycles them, and the status bar has a switch; the mode is stored on the Tab in the Session (`preview`). The preview follows typing, shows GitHub-flavored Markdown with raw HTML cut down to a safe subset, opens web and mail links in the browser, jumps to headings for `#` links, and shows an image's alt text instead of loading it.
 
 **Open with default app**
 A button on the read-only bar of a File Zukai can't show, which hands it to the operating system. It never launches executables or scripts: the refused list is in `src-tauri/src/files/exec.rs`, plus files with the Unix execute bit and what Windows calls dangerous. For those, only **Show in Explorer / Finder** is offered. It's never triggered by a click in the tree.

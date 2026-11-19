@@ -154,6 +154,12 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "View",
+    action: "Markdown preview: edit / split / preview",
+    keys: [["Mod", "Shift", "V"]],
+    command: "togglePreview",
+  },
+  {
+    group: "View",
     action: "Settings",
     keys: [["Mod", ","]],
     command: "openSettings",

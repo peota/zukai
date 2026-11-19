@@ -56,6 +56,31 @@ describe("StatusBar", () => {
     expect(p.onSettings).toHaveBeenCalled();
   });
 
+  it("a Markdown Tab's preview switch shows and sets the mode", () => {
+    const onChange = vi.fn();
+    setup({
+      language: "markdown",
+      preview: { mode: "split", onChange, hint: "Ctrl+Shift+V" },
+    });
+    const group = screen.getByRole("radiogroup", { name: "Markdown preview" });
+    expect(group.getAttribute("title")).toBe("Markdown preview (Ctrl+Shift+V)");
+    expect(screen.getByRole("radio", { name: "Split" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Preview" }));
+    expect(onChange).toHaveBeenCalledWith("only");
+    fireEvent.click(screen.getByRole("radio", { name: "Edit" }));
+    expect(onChange).toHaveBeenCalledWith("edit");
+  });
+
+  it("other Tabs have no preview switch", () => {
+    setup();
+    expect(
+      screen.queryByRole("radiogroup", { name: "Markdown preview" }),
+    ).toBeNull();
+  });
+
   it("a Scratchpad shows UTF-8 and the platform ending, not clickable", () => {
     setup();
     expect(screen.getByText("UTF-8").tagName).not.toBe("BUTTON");

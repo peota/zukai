@@ -21,7 +21,8 @@ import { FileFormatMenu } from "./ui/FileFormatMenu";
 import { EncodingPicker } from "./ui/EncodingPicker";
 import { convertPatch } from "./ui/encodings";
 import { folderHints } from "./ui/tabFolders";
-import { fileReadBytes, openDefault, pathKey } from "./files/api";
+import { fileReadBytes, openDefault, openUrl, pathKey } from "./files/api";
+import { createTextFeed, MarkdownPreview } from "./markdown/MarkdownPreview";
 import { baseName, languageRename } from "./files/paths";
 import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
@@ -36,6 +37,7 @@ const REOPEN_HINT = platform === "mac" ? "⇧⌘T" : "Ctrl+Shift+T";
 const REVEAL_LABEL = revealLabel(platform);
 const BEAUTIFY_HINT = platform === "mac" ? "⇧⌥F" : "Shift+Alt+F";
 const SETTINGS_HINT = platform === "mac" ? "⌘," : "Ctrl+,";
+const PREVIEW_HINT = platform === "mac" ? "⇧⌘V" : "Ctrl+Shift+V";
 
 interface Cursor {
   id: string;
@@ -50,6 +52,16 @@ export default function App() {
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [picking, setPicking] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Edits reach a Markdown preview without re-rendering the App. */
+  const [feed] = useState(createTextFeed);
+  const { setContent } = w;
+  const onEditorChange = useCallback(
+    (id: string, text: string) => {
+      setContent(id, text);
+      feed.publish(id, text);
+    },
+    [setContent, feed],
+  );
   // Settings is the App's own dialog; every other command is the Workspace's.
   const workspaceRun = w.run;
   const run = useCallback(
@@ -100,6 +112,9 @@ export default function App() {
   const active = w.state.tabs.find((t) => t.id === activeId);
   const isCanvas = active?.kind === "canvas";
   const isImage = active?.kind === "image";
+  const isMarkdown = active?.kind === "text" && active.language === "markdown";
+  /** A Markdown Tab's preview; any other Tab is just edited. */
+  const previewMode = (isMarkdown && active?.preview) || "edit";
   const theme = useColorScheme(w.settings.theme);
   // The CSS palette follows <html data-theme>.
   useEffect(() => {
@@ -365,26 +380,52 @@ export default function App() {
         )}
         <main className="min-h-0 flex-1 bg-editor">
           {w.ready && (
-            <div className={isCanvas || isImage ? "hidden" : "size-full"}>
-              <EditorHost
-                tabs={editorTabs}
-                activeId={isCanvas || isImage ? "" : activeId}
-                loadContent={w.loadContent}
-                onChange={w.setContent}
-                onTabPatch={updateTab}
-                onCursor={onCursor}
-                isClosing={w.isClosing}
-                focusSignal={focusSignal}
-                findRequest={w.findRequest}
-                formatRequest={w.formatRequest}
-                convertRequest={w.convertRequest}
-                replaceRequests={w.replaceRequests}
-                shadowUnreadable={w.shadowUnreadable}
-                onFormatResult={onFormatResult}
-                fontSize={w.fontSize}
-                onZoom={w.zoomEditor}
-                lineNumbers={w.settings.lineNumbers}
-              />
+            <div className={isCanvas || isImage ? "hidden" : "flex size-full"}>
+              <div
+                className={
+                  previewMode === "only" ? "hidden" : "size-full min-w-0 flex-1"
+                }
+              >
+                <EditorHost
+                  tabs={editorTabs}
+                  activeId={isCanvas || isImage ? "" : activeId}
+                  loadContent={w.loadContent}
+                  onChange={onEditorChange}
+                  onTabPatch={updateTab}
+                  onCursor={onCursor}
+                  isClosing={w.isClosing}
+                  focusSignal={focusSignal}
+                  findRequest={w.findRequest}
+                  formatRequest={w.formatRequest}
+                  convertRequest={w.convertRequest}
+                  replaceRequests={w.replaceRequests}
+                  shadowUnreadable={w.shadowUnreadable}
+                  onFormatResult={onFormatResult}
+                  fontSize={w.fontSize}
+                  onZoom={w.zoomEditor}
+                  lineNumbers={w.settings.lineNumbers}
+                />
+              </div>
+              {active && previewMode !== "edit" && (
+                <div
+                  className={
+                    "size-full min-w-0 flex-1 bg-editor " +
+                    (previewMode === "split" ? "border-l border-hairline" : "")
+                  }
+                >
+                  <MarkdownPreview
+                    key={active.id}
+                    id={active.id}
+                    loadContent={w.loadContent}
+                    feed={feed}
+                    onOpenLink={(url) =>
+                      void openUrl(url).catch(() =>
+                        w.showNotice(`Can't open ${url}`),
+                      )
+                    }
+                  />
+                </div>
+              )}
             </div>
           )}
           {w.ready && (
@@ -446,6 +487,16 @@ export default function App() {
           notice={w.notice ?? undefined}
           onSettings={() => setSettingsOpen(true)}
           settingsHint={SETTINGS_HINT}
+          preview={
+            isMarkdown && active
+              ? {
+                  mode: previewMode,
+                  hint: PREVIEW_HINT,
+                  onChange: (mode) =>
+                    w.setPreview(active.id, mode === "edit" ? null : mode),
+                }
+              : undefined
+          }
         />
       </div>
       {settingsOpen && (

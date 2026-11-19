@@ -55,6 +55,10 @@ export type OpenOutcome = { kind: "opened" } | { kind: "refused_exec" };
 export const openDefault = (path: string): Promise<OpenOutcome> =>
   invoke<OpenOutcome>("open_default", { path });
 
+/** A web or mail link, in the browser or mail app (Rust refuses others). */
+export const openUrl = (url: string): Promise<void> =>
+  invoke<void>("open_url", { url });
+
 export const fileRereadAs = (
   path: string,
   encoding: string,

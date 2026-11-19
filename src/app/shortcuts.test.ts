@@ -40,6 +40,13 @@ describe.each(["mac", "other"] as Platform[])("matchShortcut (%s)", (p) => {
       matchShortcut(ev("Minus", { ...m, key: "-", altKey: true }), p),
     ).toBeNull();
   });
+  it("markdown preview", () => {
+    expect(matchShortcut(ev("KeyV", { ...m, shiftKey: true }), p)).toEqual({
+      type: "togglePreview",
+    });
+    // Plain Mod+V is paste.
+    expect(matchShortcut(ev("KeyV", m), p)).toBeNull();
+  });
   it("settings", () => {
     expect(matchShortcut(ev("Comma", { ...m, key: "," }), p)).toEqual({
       type: "openSettings",

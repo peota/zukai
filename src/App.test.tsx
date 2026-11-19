@@ -286,4 +286,53 @@ describe("App", () => {
     });
     expect(s.closeScratchpad).toHaveBeenCalledWith("a");
   });
+
+  it("Ctrl+Shift+V shows a Markdown Tab's preview beside it, then alone", async () => {
+    s.readScratchpad.mockResolvedValue("# Hello");
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile({
+          tabs: [
+            {
+              ...newTabState("a"),
+              title: "Hello",
+              language: "markdown",
+              languagePicked: true,
+            },
+          ],
+          activeId: "a",
+          closed: [],
+        }),
+      ),
+    );
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    const v = () =>
+      fireEvent.keyDown(window, {
+        key: "V",
+        code: "KeyV",
+        ctrlKey: true,
+        shiftKey: true,
+      });
+    act(() => v());
+    const preview = await r.findByRole("article", { name: "Markdown preview" });
+    await waitFor(() =>
+      expect(preview.querySelector("h1")?.textContent).toBe("Hello"),
+    );
+    // Split: the editor is still shown.
+    expect(r.getByTestId("editor").closest(".hidden")).toBeNull();
+    expect(r.getByRole("radio", { name: "Split" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    act(() => v());
+    expect(r.getByTestId("editor").closest(".hidden")).not.toBeNull();
+    act(() => v());
+    expect(r.queryByRole("article", { name: "Markdown preview" })).toBeNull();
+    // The status bar switch does the same.
+    fireEvent.click(r.getByRole("radio", { name: "Preview" }));
+    expect(
+      r.getByRole("article", { name: "Markdown preview" }),
+    ).toBeInTheDocument();
+  });
 });
