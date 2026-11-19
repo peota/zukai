@@ -294,6 +294,8 @@ export function EditorHost(props: EditorHostProps) {
   const [bar, setBar] = useState<OpenBar | null>(null);
   const views = useRef(new Map<string, Entry>());
   const creating = useRef(new Set<string>());
+  /** The active Tab at the last showShown, to notice a switch. */
+  const shownActive = useRef<string | undefined>(undefined);
   /**
    * Converts issued before the Tab's view existed, applied (undoably) once it
    * does. Never patched directly: that couldn't be undone, and the Tab's
@@ -565,16 +567,20 @@ export function EditorHost(props: EditorHostProps) {
   const showShown = () => {
     const { activeId: active, slots } = latest.current;
     const wanted = wantedIds();
+    const switched = shownActive.current !== active;
+    shownActive.current = active;
     for (const [id, e] of views.current) {
       const visible = wanted.has(id);
       const was = e.wrapper.style.display !== "none";
+      // A detached subtree (its slot removed) reads 0: keep the saved offset.
+      const live = e.wrapper.isConnected;
       if (!visible && was) {
-        e.scrollTop = e.view.scrollDOM.scrollTop;
+        if (live) e.scrollTop = e.view.scrollDOM.scrollTop;
         flushPatch(id, e);
       }
       const target = (visible && slots?.get(id)) || container.current;
       const moved = !!target && e.wrapper.parentElement !== target;
-      if (moved && was) e.scrollTop = e.view.scrollDOM.scrollTop;
+      if (moved && was && live) e.scrollTop = e.view.scrollDOM.scrollTop;
       if (moved) target.appendChild(e.wrapper);
       e.wrapper.style.display = visible ? "" : "none";
       if (visible && (!was || moved)) {
@@ -586,11 +592,11 @@ export function EditorHost(props: EditorHostProps) {
         requestAnimationFrame(() => {
           if (e.view.dom.isConnected) e.view.scrollDOM.scrollTop = top;
         });
-        if (id === active) {
-          // Not while typing in the sidebar (a new item's name, the search).
-          if (!sidebarFieldFocused()) e.view.focus();
-          reportCursor(e.view);
-        }
+      }
+      if (visible && id === active && (!was || moved || switched)) {
+        // Not while typing in the sidebar (a new item's name, the search).
+        if (!sidebarFieldFocused()) e.view.focus();
+        reportCursor(e.view);
       }
     }
   };
@@ -627,7 +633,7 @@ export function EditorHost(props: EditorHostProps) {
 
   // Create the shown views (after their text loads), hide the others, and
   // destroy the views of closed Tabs.
-  const shownKey = [...(props.shown ?? [])].join(" ");
+  const shownKey = [...(props.shown ?? [])].join("|");
   useEffect(() => {
     const ids = new Set(tabs.map((t) => t.id));
     for (const [id, e] of views.current) if (!ids.has(id)) destroy(id, e);

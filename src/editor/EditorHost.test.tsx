@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   fireEvent,
@@ -591,10 +591,15 @@ describe("EditorHost folding", () => {
 });
 
 describe("EditorHost with two shown views", () => {
+  const made: HTMLElement[] = [];
+  afterEach(() => {
+    for (const d of made.splice(0)) d.remove();
+  });
   function slotDiv() {
     const d = document.createElement("div");
     d.style.position = "relative";
     document.body.append(d);
+    made.push(d);
     return d;
   }
 
@@ -640,8 +645,6 @@ describe("EditorHost with two shown views", () => {
       undo(b);
     });
     expect(b.state.doc.toString()).toBe("text of b");
-    sa.remove();
-    sb.remove();
   });
 
   it("onlyTheActiveViewTakesFocus", async () => {
@@ -661,8 +664,6 @@ describe("EditorHost with two shown views", () => {
     });
     await waitFor(() => expect(sb.contains(document.activeElement)).toBe(true));
     expect(sa.contains(document.activeElement)).toBe(false);
-    sa.remove();
-    sb.remove();
   });
 
   it("findBarSitsInTheFocusedSlot", async () => {
@@ -683,7 +684,88 @@ describe("EditorHost with two shown views", () => {
     const input = screen.getByRole("textbox", { name: "Find" });
     expect(sb.contains(input)).toBe(true);
     expect(sa.contains(input)).toBe(false);
-    sa.remove();
-    sb.remove();
+  });
+
+  it("switching the active half focuses it and reports its cursor", async () => {
+    const sa = slotDiv();
+    const sb = slotDiv();
+    const slots = new Map([
+      ["a", sa],
+      ["b", sb],
+    ]);
+    const { rerender, props } = setup({
+      activeId: "a",
+      shown: ["a", "b"],
+      slots,
+    });
+    await waitFor(() => {
+      expect(sa.querySelectorAll(".cm-editor")).toHaveLength(1);
+      expect(sb.querySelectorAll(".cm-editor")).toHaveLength(1);
+    });
+    await waitFor(() => expect(sa.contains(document.activeElement)).toBe(true));
+    vi.mocked(props.onCursor).mockClear();
+    const b = viewsIn(sb)[0]!;
+    act(() => b.dispatch({ selection: { anchor: 3 } }));
+    vi.mocked(props.onCursor).mockClear();
+    rerender({ activeId: "b" });
+    expect(sb.contains(document.activeElement)).toBe(true);
+    expect(props.onCursor).toHaveBeenCalledWith(1, 4);
+  });
+
+  it("a slot removed from the DOM keeps the saved scroll offset", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const sa = slotDiv();
+      const sb = slotDiv();
+      const { rerender, props } = setup({
+        activeId: "a",
+        shown: ["a", "b"],
+        slots: new Map([
+          ["a", sa],
+          ["b", sb],
+        ]),
+      });
+      await vi.waitFor(() => {
+        expect(sa.querySelectorAll(".cm-editor")).toHaveLength(1);
+        expect(sb.querySelectorAll(".cm-editor")).toHaveLength(1);
+      });
+      const b = viewsIn(sb)[0]!;
+      b.scrollDOM.scrollTop = 120;
+      b.scrollDOM.dispatchEvent(new Event("scroll"));
+      expect(b.scrollDOM.scrollTop).toBe(120);
+      // Like a browser: a detached scroller reads 0.
+      let top = 120;
+      Object.defineProperty(b.scrollDOM, "scrollTop", {
+        configurable: true,
+        get: () => (b.scrollDOM.isConnected ? top : 0),
+        set: (n: number) => {
+          top = n;
+        },
+      });
+      vi.mocked(props.onTabPatch).mockClear();
+      sb.remove(); // Unsplit: React detaches the slot with the wrapper in it
+      rerender({ shown: ["a"], slots: new Map([["a", sa]]) });
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      const patches = vi
+        .mocked(props.onTabPatch)
+        .mock.calls.filter(([id]) => id === "b")
+        .map(([, patch]) => patch.scrollTop)
+        .filter((n) => n !== undefined);
+      expect(patches).toEqual([120]);
+      // Shown again in a new slot, the view returns to the saved offset.
+      const sb2 = slotDiv();
+      rerender({
+        shown: ["a", "b"],
+        slots: new Map([
+          ["a", sa],
+          ["b", sb2],
+        ]),
+      });
+      expect(b.scrollDOM.scrollTop).toBe(120);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
