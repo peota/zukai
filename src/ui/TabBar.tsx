@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type {
   KeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -37,6 +37,37 @@ export interface TabBarProps {
   onContextMenu(id: string | null, x: number, y: number): void;
   /** The pin on a pinned Tab was clicked. */
   onUnpin(id: string): void;
+  /** Joined Tabs (each pair adjacent, a then b): one tab in the bar. */
+  splits?: readonly { a: string; b: string; focus: "a" | "b" }[];
+  /** The × (or middle-click) on a joined tab; `a` is its first member. */
+  onCloseSplit(a: string): void;
+}
+
+/** One tab in the bar: a Tab, or two joined ones (a Split). */
+interface Item {
+  members: TabBarItem[];
+  /** The member a click outside the titles activates. */
+  focused: TabBarItem;
+}
+
+function itemsOf(
+  tabs: TabBarItem[],
+  splits: TabBarProps["splits"] = [],
+): Item[] {
+  const byId = new Map(tabs.map((t) => [t.id, t]));
+  const second = new Set(splits.map((sp) => sp.b));
+  const items: Item[] = [];
+  for (const t of tabs) {
+    if (second.has(t.id)) continue;
+    const sp = splits.find((x) => x.a === t.id);
+    const b = sp && byId.get(sp.b);
+    if (sp && b) {
+      items.push({ members: [t, b], focused: sp.focus === "a" ? t : b });
+    } else {
+      items.push({ members: [t], focused: t });
+    }
+  }
+  return items;
 }
 
 /** Pointer travel (px) before a press becomes a drag; less is a click. */
@@ -71,7 +102,10 @@ export function TabBar({
   onRename,
   onContextMenu,
   onUnpin,
+  splits,
+  onCloseSplit,
 }: TabBarProps) {
+  const items = itemsOf(tabs, splits);
   const barRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -134,13 +168,13 @@ export function TabBar({
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>, index: number) => {
     swallowClick.current = false;
-    if (e.button !== 0 || editing === tabs[index].id) return;
+    if (e.button !== 0 || editing === items[index].members[0].id) return;
     if ((e.target as Element).closest("button, input")) return;
     const els = barRef.current?.querySelectorAll<HTMLElement>("[role=tab]");
     if (!els) return;
     const rects = [...els].map((el) => el.getBoundingClientRect());
     drag.current = {
-      id: tabs[index].id,
+      id: items[index].members[0].id,
       pointerId: e.pointerId,
       startX: e.clientX,
       from: index,
@@ -213,22 +247,33 @@ export function TabBar({
       onWheel={onWheel}
       onContextMenu={(e) => openMenu(e, null)}
     >
-      {tabs.map((tab, index) => {
+      {items.map((item, index) => {
+        const tab = item.members[0];
+        const joined = item.members.length === 2;
+        const active = item.members.some((m) => m.active);
+        const label = item.members.map((m) => m.title).join(" | ");
+        const closeItem = () =>
+          joined ? onCloseSplit(tab.id) : onClose(tab.id);
         const shift = shiftOf(index);
         const lifted = dragView?.moving && dragView.from === index;
         return (
           <div
             key={tab.id}
-            ref={tab.active ? activeRef : undefined}
+            ref={active ? activeRef : undefined}
             role="tab"
-            aria-selected={tab.active}
-            title={tab.file ? tab.file.path : tab.title}
-            onClick={() => {
+            aria-selected={active}
+            aria-label={joined ? label : undefined}
+            title={joined ? label : tab.file ? tab.file.path : tab.title}
+            onClick={(e) => {
               if (swallowClick.current) {
                 swallowClick.current = false;
                 return;
               }
-              onActivate(tab.id);
+              // A click on a joined tab's title activates that member.
+              const id = (e.target as Element).closest<HTMLElement>(
+                "[data-member]",
+              )?.dataset.member;
+              onActivate(id ?? item.focused.id);
             }}
             onMouseDown={(e) => {
               if (e.button === 1) e.preventDefault(); // no autoscroll
@@ -236,11 +281,11 @@ export function TabBar({
             onAuxClick={(e) => {
               if (e.button === 1) {
                 e.preventDefault();
-                onClose(tab.id);
+                closeItem();
               }
             }}
             onDoubleClick={() => {
-              if (!tab.locked) setEditing(tab.id);
+              if (!joined && !tab.locked) setEditing(tab.id);
             }}
             onContextMenu={(e) => openMenu(e, tab.id)}
             onPointerDown={(e) => onPointerDown(e, index)}
@@ -251,19 +296,41 @@ export function TabBar({
               shift !== 0 ? { transform: `translateX(${shift}px)` } : undefined
             }
             className={
-              "group flex h-7 min-w-[120px] max-w-[200px] flex-[0_1_200px] cursor-default select-none items-center gap-1 rounded-tab pl-2.5 pr-1 " +
+              "group flex h-7 min-w-[120px] flex-[0_1_200px] cursor-default select-none items-center gap-1 rounded-tab pl-2.5 pr-1 " +
+              (joined ? "max-w-[360px] " : "max-w-[200px] ") +
               (lifted ? "relative z-10 shadow-float " : "") +
-              (tab.active
+              (active
                 ? "bg-surface text-text shadow-float"
                 : "text-muted hover:text-text")
             }
           >
-            {editing === tab.id ? (
+            {editing === tab.id && !joined ? (
               <RenameInput
                 tab={tab}
                 onSubmit={(name) => onRename(tab.id, name)}
                 onClose={() => setEditing(null)}
               />
+            ) : joined ? (
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                {item.members.map((m, i) => (
+                  <Fragment key={m.id}>
+                    {i === 1 && (
+                      <span aria-hidden="true" className="text-faint">
+                        |
+                      </span>
+                    )}
+                    <span
+                      data-member={m.id}
+                      className={
+                        "min-w-0 flex-1 truncate " +
+                        (active && m !== item.focused ? "text-muted" : "")
+                      }
+                    >
+                      {m.title}
+                    </span>
+                  </Fragment>
+                ))}
+              </span>
             ) : (
               <>
                 <span className="min-w-0 flex-1 truncate">
@@ -288,7 +355,7 @@ export function TabBar({
             {tab.pinned ? (
               <button
                 type="button"
-                aria-label={`Unpin ${tab.title}`}
+                aria-label={`Unpin ${joined ? label : tab.title}`}
                 title="Unpin"
                 tabIndex={-1}
                 onClick={(e) => {
@@ -303,16 +370,16 @@ export function TabBar({
             ) : (
               <button
                 type="button"
-                aria-label={`Close ${tab.title}`}
+                aria-label={`Close ${joined ? label : tab.title}`}
                 tabIndex={-1}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onClose(tab.id);
+                  closeItem();
                 }}
                 onDoubleClick={(e) => e.stopPropagation()}
                 className={
                   "flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-chrome hover:text-text " +
-                  (tab.active ? "" : "invisible group-hover:visible")
+                  (active ? "" : "invisible group-hover:visible")
                 }
               >
                 <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
