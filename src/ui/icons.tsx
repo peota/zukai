@@ -142,6 +142,17 @@ export function PlusIcon() {
   );
 }
 
+/** ⋯: a heading's menu. */
+export function MoreIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <circle cx="2.5" cy="6" r="1" fill="currentColor" />
+      <circle cx="6" cy="6" r="1" fill="currentColor" />
+      <circle cx="9.5" cy="6" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function SearchIcon() {
   return (
     <svg

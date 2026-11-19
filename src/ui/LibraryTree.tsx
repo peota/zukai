@@ -6,8 +6,8 @@ import type {
 } from "react";
 import type { Entry } from "../library/api";
 import type { Row } from "../library/tree";
-import { Chevron, fileIcon, Icon } from "./icons";
-import { splitName } from "./libraryEntries";
+import { Chevron, fileIcon, Icon, MoreIcon } from "./icons";
+import { parentOf, splitName } from "./libraryEntries";
 import type { PointerHandlers } from "./useFolderDrag";
 
 /** A folder delete waiting for the inline confirmation. */
@@ -37,12 +37,17 @@ export interface LibraryTreeProps {
   onCancelTrash(): void;
   /** The folder a drag would drop into, highlighted. */
   dropTarget: string | null;
+  /** The drop would copy into another tree: the target shows "Copy". */
+  dropCopy: boolean;
   onOpen(entry: Entry): void;
   onToggle(dir: string): void;
   onRename(path: string, name: string): Promise<string | null>;
   onRequestTrash(entry: Entry): void;
   onLeave(): void;
-  /** Right-click on a row, or (entry null) on the tree's empty part. */
+  /**
+   * Right-click on a row, or (entry null) on the tree's empty part; also an
+   * added folder heading's ⋯ button.
+   */
   onContextMenu(entry: Entry | null, x: number, y: number): void;
   dragHandlers(entry: Entry): PointerHandlers;
   swallowClick(): boolean;
@@ -64,6 +69,7 @@ export function LibraryTree({
   onConfirmTrash,
   onCancelTrash,
   dropTarget,
+  dropCopy,
   onOpen,
   onToggle,
   onRename,
@@ -85,9 +91,14 @@ export function LibraryTree({
       ?.scrollIntoView?.({ block: "nearest" });
   };
 
+  /** Why a row can't be acted on: a blocked entry, or a missing folder. */
+  const rowBlocked = (r: Row): boolean =>
+    blockedOf(r.entry) !== null || r.heading?.available === false;
+
   /** Enter or a click: open a File, or open/close a folder. */
-  const activate = (e: Entry) => {
-    if (blockedOf(e)) return;
+  const activate = (r: Row) => {
+    const e = r.entry;
+    if (rowBlocked(r)) return;
     if (!e.isDir) onOpen(e);
     else if (!searching) onToggle(e.path);
   };
@@ -96,7 +107,9 @@ export function LibraryTree({
     if (e.target !== e.currentTarget) return; // the rename field or a button
     const r = index >= 0 ? rows[index] : undefined;
     const entry = r?.entry;
-    const blocked = entry ? blockedOf(entry) !== null : true;
+    const blocked = r ? rowBlocked(r) : true;
+    // An added folder's heading is never renamed or trashed.
+    const fixed = blocked || r?.heading !== undefined;
     switch (e.key) {
       case "ArrowDown":
         moveTo(index < 0 ? 0 : index + 1);
@@ -133,13 +146,13 @@ export function LibraryTree({
         break;
       }
       case "Enter":
-        if (entry) activate(entry);
+        if (r) activate(r);
         break;
       case "F2":
-        if (entry && !blocked) onEditing(entry.path);
+        if (entry && !fixed) onEditing(entry.path);
         break;
       case "Delete":
-        if (entry && !blocked) onRequestTrash(entry);
+        if (entry && !fixed) onRequestTrash(entry);
         break;
       case "Escape":
         onLeave();
@@ -193,6 +206,85 @@ export function LibraryTree({
         const active = e.path === activePath;
         const isCursor = i === index;
         const target = dropTarget === e.path;
+        const copyHint = target && dropCopy && (
+          <span
+            data-copy-hint=""
+            className="shrink-0 rounded-[4px] bg-accent-soft px-1 text-[10.5px] text-text"
+          >
+            Copy
+          </span>
+        );
+        if (r.heading) {
+          const missing = !r.heading.available;
+          return (
+            <div
+              key={e.path}
+              id={`z-lib-row-${i}`}
+              role="treeitem"
+              data-row={i}
+              data-path={e.path}
+              data-dir="true"
+              data-heading=""
+              data-drop-target={target ? "true" : undefined}
+              aria-label={e.name}
+              aria-level={r.depth + 1}
+              aria-expanded={missing ? false : open}
+              aria-selected={isCursor}
+              aria-disabled={missing ? "true" : undefined}
+              title={e.path}
+              style={{ paddingLeft: 8 }}
+              onClick={() => {
+                if (swallowClick()) return;
+                onCursor(e.path);
+                activate(r);
+              }}
+              onContextMenu={(ev) => openMenu(ev, e)}
+              {...dragHandlers(e)}
+              className={
+                "mt-2 flex h-[26px] cursor-default items-center gap-[7px] rounded-[6px] pr-1 whitespace-nowrap " +
+                (missing ? "text-faint " : "text-muted ") +
+                (target
+                  ? "bg-row-sel shadow-[inset_0_0_0_1px_var(--z-accent)] "
+                  : "hover:bg-row-hover ") +
+                (isCursor
+                  ? "group-focus/tree:shadow-[inset_0_0_0_1px_var(--z-accent-soft)]"
+                  : "")
+              }
+            >
+              <span className="flex w-2.5 shrink-0 justify-center text-faint">
+                <Chevron open={!missing && open} />
+              </span>
+              <span className="max-w-[70%] min-w-0 shrink-0 truncate">
+                {e.name}
+              </span>
+              {/* The parent path, cut from the left so its end shows. */}
+              <span className="min-w-0 flex-1 truncate text-left text-[11px] text-faint [direction:rtl]">
+                <bdi>{parentOf(e.path)}</bdi>
+              </span>
+              {missing && (
+                <span className="shrink-0 text-[11px] text-faint">
+                  Not found
+                </span>
+              )}
+              {copyHint}
+              <button
+                type="button"
+                aria-label={`${e.name} actions`}
+                title={`${e.name} actions`}
+                tabIndex={-1}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  onCursor(e.path);
+                  const b = ev.currentTarget.getBoundingClientRect();
+                  onContextMenu(e, b.left, b.bottom + 4);
+                }}
+                className="flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-row-hover hover:text-text"
+              >
+                <MoreIcon />
+              </button>
+            </div>
+          );
+        }
         return (
           <div key={e.path}>
             <div
@@ -213,7 +305,7 @@ export function LibraryTree({
               onClick={() => {
                 if (swallowClick()) return;
                 onCursor(e.path);
-                activate(e);
+                activate(r);
               }}
               onContextMenu={(ev) => openMenu(ev, e)}
               {...dragHandlers(e)}
@@ -260,6 +352,7 @@ export function LibraryTree({
                   <Icon name="link" size={10} />
                 </span>
               )}
+              {copyHint}
             </div>
             {pendingTrash?.path === e.path && (
               <TrashConfirm

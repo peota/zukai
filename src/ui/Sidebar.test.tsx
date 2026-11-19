@@ -78,6 +78,10 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     onPinnedOpen: vi.fn(),
     onUnpin: vi.fn(),
     onLeave: vi.fn(),
+    added: tree.added,
+    onAddFolder: vi.fn(),
+    onLocateFolder: vi.fn(),
+    onRemoveFolder: vi.fn(),
     platform: "windows",
     ...over,
   };
@@ -839,6 +843,236 @@ describe("Sidebar", () => {
   it("renders nothing when closed", () => {
     const { container } = setup({ open: false });
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("Sidebar added folders", () => {
+  const ADDED = "D:\\work\\Notes";
+  const A_MD = file(`${ADDED}\\a.md`);
+  const A_DIR = dir(`${ADDED}\\Sub`);
+
+  function addedTree(available = true): TreeState {
+    return makeTree({
+      children: {
+        ...makeTree().children,
+        [ADDED]: [A_DIR, A_MD],
+      },
+      expanded: new Set([IDEAS.path, ADDED]),
+      added: [{ path: ADDED, available }],
+    });
+  }
+  function setupAdded(available = true, over: Partial<SidebarProps> = {}) {
+    const t = addedTree(available);
+    return setup({
+      tree: t,
+      rows: visibleRows(t),
+      added: t.added,
+      ...over,
+    });
+  }
+  const menuItems = () =>
+    within(screen.getByRole("menu"))
+      .getAllByRole("menuitem")
+      .map((el) => el.textContent);
+  const actions = (name: string) =>
+    screen.getByRole("button", { name: `${name} actions` });
+
+  it("added_heading_shows_name_parent_and_tooltip", () => {
+    setupAdded();
+    const names = screen
+      .getAllByRole("treeitem")
+      .map((el) => el.getAttribute("aria-label"));
+    // The Library's rows first, then the heading and its rows.
+    expect(names.slice(-3)).toEqual(["Notes", "Sub", "a.md"]);
+    const head = row("Notes");
+    expect(head).toHaveAttribute("title", ADDED);
+    expect(head).toHaveAttribute("aria-level", "1");
+    expect(head).toHaveAttribute("aria-expanded", "true");
+    expect(row("a.md")).toHaveAttribute("aria-level", "2");
+    const parent = within(head).getByText("D:\\work");
+    expect(parent.closest(".text-faint")).not.toBeNull();
+    expect(within(head).getByText("Notes")).toBeInTheDocument();
+  });
+
+  it("heading_menu_items", () => {
+    const { p } = setupAdded();
+    fireEvent.click(actions("Notes"));
+    expect(menuItems()).toEqual([
+      "New file",
+      "New folder",
+      "Show in Explorer",
+      "Remove from sidebar",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "New file" }));
+    expect(p.onCreate).toHaveBeenCalledWith(ADDED, "file");
+    // The ⋯ button doesn't toggle the folder.
+    expect(p.onToggle).not.toHaveBeenCalled();
+
+    // A right-click shows the same menu.
+    fireEvent.contextMenu(row("Notes"));
+    expect(menuItems()).toEqual([
+      "New file",
+      "New folder",
+      "Show in Explorer",
+      "Remove from sidebar",
+    ]);
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Remove from sidebar" }),
+    );
+    expect(p.onRemoveFolder).toHaveBeenCalledWith(ADDED);
+    fireEvent.click(actions("Notes"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Show in Explorer" }));
+    expect(p.onReveal).toHaveBeenCalledWith(ADDED);
+
+    // A click on the heading opens and closes it.
+    fireEvent.click(row("Notes"));
+    expect(p.onToggle).toHaveBeenCalledWith(ADDED);
+  });
+
+  it("missing_heading_offers_locate_and_remove", () => {
+    const { p } = setupAdded(false);
+    const head = row("Notes");
+    expect(head).toHaveAttribute("aria-disabled", "true");
+    expect(head).toHaveTextContent("Not found");
+    expect(screen.queryByRole("treeitem", { name: "a.md" })).toBeNull();
+    fireEvent.click(head);
+    expect(p.onToggle).not.toHaveBeenCalled();
+
+    fireEvent.click(actions("Notes"));
+    expect(menuItems()).toEqual(["Locate…", "Remove from sidebar"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Locate…" }));
+    expect(p.onLocateFolder).toHaveBeenCalledWith(ADDED);
+
+    fireEvent.contextMenu(head);
+    expect(menuItems()).toEqual(["Locate…", "Remove from sidebar"]);
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Remove from sidebar" }),
+    );
+    expect(p.onRemoveFolder).toHaveBeenCalledWith(ADDED);
+  });
+
+  it("add_folder_in_library_menu_and_empty_space_menu", () => {
+    const { p } = setupAdded();
+    fireEvent.click(actions("Library"));
+    expect(menuItems()).toEqual(["Add folder…"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add folder…" }));
+    expect(p.onAddFolder).toHaveBeenCalledTimes(1);
+
+    // Right-click on the tree's empty part: Add folder… comes last.
+    fireEvent.contextMenu(tree());
+    const items = menuItems();
+    expect(items[items.length - 1]).toBe("Add folder…");
+    expect(items).toContain("Choose Library folder…");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add folder…" }));
+    expect(p.onAddFolder).toHaveBeenCalledTimes(2);
+  });
+
+  it("heading_cannot_be_renamed_or_trashed", () => {
+    const { p } = setupAdded();
+    fireEvent.click(row("Notes")); // the cursor goes to the heading
+    expect(row("Notes")).toHaveAttribute("aria-selected", "true");
+    key(tree(), "F2");
+    expect(screen.queryByRole("textbox", { name: "Rename" })).toBeNull();
+    key(tree(), "Delete");
+    expect(p.onTrash).not.toHaveBeenCalled();
+    expect(screen.queryByRole("group", { name: "Confirm delete" })).toBeNull();
+
+    // Its menu has no Rename or Delete either.
+    fireEvent.contextMenu(row("Notes"));
+    expect(menuItems()).not.toContain("Rename");
+    expect(menuItems()).not.toContain("Delete");
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+
+    // And it can't be dragged.
+    layOut();
+    const head = row("Notes");
+    fireEvent.pointerDown(head, {
+      button: 0,
+      pointerId: 1,
+      clientY: yOf("Notes"),
+    });
+    fireEvent.pointerMove(head, {
+      pointerId: 1,
+      buttons: 1,
+      clientY: yOf("Roadmap"),
+    });
+    expect(row("Roadmap")).not.toHaveAttribute("data-drop-target");
+    fireEvent.pointerUp(head, { pointerId: 1, clientY: yOf("Roadmap") });
+    expect(p.onMove).not.toHaveBeenCalled();
+  });
+
+  it("cross_tree_drag_shows_copy_hint", () => {
+    const { p } = setupAdded();
+    layOut();
+    // Within the Library: a move, no hint.
+    const src = row("todo.txt");
+    fireEvent.pointerDown(src, {
+      button: 0,
+      pointerId: 1,
+      clientY: yOf("todo.txt"),
+    });
+    fireEvent.pointerMove(src, {
+      pointerId: 1,
+      buttons: 1,
+      clientY: yOf("Roadmap"),
+    });
+    expect(row("Roadmap")).toHaveAttribute("data-drop-target", "true");
+    expect(within(row("Roadmap")).queryByText("Copy")).toBeNull();
+
+    // Onto the added folder's heading: the heading is the target, with Copy.
+    fireEvent.pointerMove(src, {
+      pointerId: 1,
+      buttons: 1,
+      clientY: yOf("Notes"),
+    });
+    expect(row("Notes")).toHaveAttribute("data-drop-target", "true");
+    expect(within(row("Notes")).getByText("Copy")).toBeInTheDocument();
+    fireEvent.pointerUp(src, { pointerId: 1, clientY: yOf("Notes") });
+    expect(p.onMove).toHaveBeenCalledWith(TODO.path, ADDED);
+    expect(screen.queryByText("Copy")).toBeNull();
+
+    // From the added folder onto a Library folder: Copy too.
+    const a = row("a.md");
+    fireEvent.pointerDown(a, {
+      button: 0,
+      pointerId: 2,
+      clientY: yOf("a.md"),
+    });
+    fireEvent.pointerMove(a, {
+      pointerId: 2,
+      buttons: 1,
+      clientY: yOf("Roadmap"),
+    });
+    expect(within(row("Roadmap")).getByText("Copy")).toBeInTheDocument();
+    // Within the added folder: no hint.
+    fireEvent.pointerMove(a, {
+      pointerId: 2,
+      buttons: 1,
+      clientY: yOf("Sub"),
+    });
+    expect(row("Sub")).toHaveAttribute("data-drop-target", "true");
+    expect(screen.queryByText("Copy")).toBeNull();
+    fireEvent.pointerUp(a, { pointerId: 2, clientY: yOf("Sub") });
+    expect(p.onMove).toHaveBeenLastCalledWith(A_MD.path, A_DIR.path);
+  });
+
+  it("a missing heading is not a drop target", () => {
+    const { p } = setupAdded(false);
+    layOut();
+    const src = row("todo.txt");
+    fireEvent.pointerDown(src, {
+      button: 0,
+      pointerId: 1,
+      clientY: yOf("todo.txt"),
+    });
+    fireEvent.pointerMove(src, {
+      pointerId: 1,
+      buttons: 1,
+      clientY: yOf("Notes"),
+    });
+    expect(row("Notes")).not.toHaveAttribute("data-drop-target");
+    fireEvent.pointerUp(src, { pointerId: 1, clientY: yOf("Notes") });
+    expect(p.onMove).not.toHaveBeenCalled();
   });
 });
 

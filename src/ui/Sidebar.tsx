@@ -1,9 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
-import type { Entry } from "../library/api";
+import type { AddedState, Entry } from "../library/api";
 import type { Row, TreeState } from "../library/tree";
 import { detectPlatform, type Platform } from "../app/shortcuts";
-import { PlusIcon, SearchIcon } from "./icons";
+import { MoreIcon, PlusIcon, SearchIcon } from "./icons";
 import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
 import { Pinned, type PinnedItem } from "./Pinned";
 import { LibraryTree, type PendingTrash } from "./LibraryTree";
@@ -69,6 +69,14 @@ export interface SidebarProps {
   onUnpin(id: string): void;
   /** Esc: give the keyboard back to the editor. */
   onLeave(): void;
+  /** The folders added beside the Library, in the order added. */
+  added: AddedState[];
+  /** Add folder…: the OS folder picker, run by Rust. */
+  onAddFolder(): void;
+  /** Locate…: picks the folder that replaces a missing added one. */
+  onLocateFolder(path: string): void;
+  /** Remove from sidebar: forgets the folder; nothing on disk changes. */
+  onRemoveFolder(path: string): void;
   /** Decides the Windows-only name rule and the "Show in …" label. */
   platform?: Platform;
 }
@@ -111,7 +119,7 @@ function SidebarPanel({
   root,
   available,
   tree,
-  rows,
+  rows: allRows,
   searching,
   search,
   onSearch,
@@ -134,8 +142,18 @@ function SidebarPanel({
   onPinnedOpen,
   onUnpin,
   onLeave,
+  added,
+  onAddFolder,
+  onLocateFolder,
+  onRemoveFolder,
   platform: platformProp,
 }: SidebarProps) {
+  // With the Library offline its rows are stale: only the added folders show.
+  const rows = useMemo(() => {
+    if (available) return allRows;
+    const first = allRows.findIndex((r) => r.heading !== undefined);
+    return first < 0 ? [] : allRows.slice(first);
+  }, [allRows, available]);
   const platform = platformProp ?? detectPlatform();
   const windows = platform === "windows";
   const blockedReason = (e: Entry) => entryBlocked(e, windows);
@@ -203,11 +221,19 @@ function SidebarPanel({
     setMenu(m);
   };
 
+  const addedOf = (path: string) => added.find((a) => a.path === path);
+  const roots = useMemo(
+    () => [...(root === null ? [] : [root]), ...added.map((a) => a.path)],
+    [root, added],
+  );
+
   const drag = useFolderDrag({
     treeRef,
     rows,
     root: available ? root : null,
+    roots,
     blocked: (e) => blockedReason(e) !== null,
+    fixed: (e) => addedOf(e.path) !== undefined,
     onDrop: (source, dest) => {
       if (source.kind === "entry") onMove(source.entry.path, dest);
       else onScratchpadMove(source.id, dest);
@@ -251,6 +277,36 @@ function SidebarPanel({
     { label: "Choose Library folder…", onSelect: onChooseRoot },
   ];
 
+  const addFolderItem: MenuItem = {
+    label: "Add folder…",
+    onSelect: onAddFolder,
+  };
+
+  /** An added folder heading's menu (its ⋯ button and a right-click). */
+  const headingItems = (a: AddedState): MenuItem[] => {
+    const remove: MenuItem = {
+      label: "Remove from sidebar",
+      separated: true,
+      onSelect: () => onRemoveFolder(a.path),
+    };
+    if (!a.available) {
+      return [
+        { label: "Locate…", onSelect: () => onLocateFolder(a.path) },
+        remove,
+      ];
+    }
+    return [
+      { label: "New file", onSelect: () => void create(a.path, "file") },
+      { label: "New folder", onSelect: () => void create(a.path, "folder") },
+      {
+        label: revealLabel(platform),
+        separated: true,
+        onSelect: () => onReveal(a.path),
+      },
+      remove,
+    ];
+  };
+
   const entryItems = (e: Entry): MenuItem[] => {
     const blocked = blockedReason(e);
     const off = blocked !== null;
@@ -292,11 +348,35 @@ function SidebarPanel({
 
   const showTreeMenu = (entry: Entry | null, x: number, y: number) => {
     const from = treeRef.current;
+    const heading = entry ? addedOf(entry.path) : undefined;
     if (entry) {
-      openMenu({ label: entry.name, x, y, items: entryItems(entry) }, from);
-    } else if (root) {
-      openMenu({ label: "Library", x, y, items: rootItems(root) }, from);
+      const items = heading ? headingItems(heading) : entryItems(entry);
+      openMenu({ label: entry.name, x, y, items }, from);
+    } else {
+      // The empty part of the tree: the Library's menu, then Add folder…
+      const library = root !== null && available;
+      const items: MenuItem[] = [
+        ...(library ? rootItems(root) : []),
+        { ...addFolderItem, separated: library },
+      ];
+      openMenu({ label: "Library", x, y, items }, from);
     }
+  };
+
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const toggleMoreMenu = () => {
+    if (menu?.ignore) return setMenu(null);
+    const b = moreRef.current?.getBoundingClientRect();
+    openMenu(
+      {
+        label: "Library",
+        x: b?.left ?? 0,
+        y: (b?.bottom ?? 0) + 4,
+        items: [addFolderItem],
+        ignore: "[data-z-library-more]",
+      },
+      moreRef.current,
+    );
   };
 
   const togglePlusMenu = () => {
@@ -371,13 +451,46 @@ function SidebarPanel({
     }
   };
 
-  const rootListed = root !== null && Array.isArray(tree.children[root]);
+  const rootList = root === null ? undefined : tree.children[root];
   let status: string | null = null;
   if (searching && !search.ready) status = "Searching…";
   else if (searching && rows.length === 0) status = "No matches";
-  else if (!searching && rootListed && rows.length === 0) {
+  else if (!searching && Array.isArray(rootList) && rootList.length === 0) {
     status = "Nothing here yet. Use + to add a note.";
   }
+
+  const libraryTree = (
+    <LibraryTree
+      treeRef={treeRef}
+      rows={rows}
+      searching={searching}
+      isOpen={(p) => tree.expanded.has(p)}
+      activePath={activePath}
+      blocked={blockedReason}
+      cursor={cursor}
+      onCursor={setCursor}
+      editing={editing}
+      onEditing={setEditing}
+      pendingTrash={pendingTrash}
+      onConfirmTrash={() => {
+        setPendingTrash(null);
+        if (!pendingTrash) return;
+        if (pendingTrash.count === null) onTrash(pendingTrash.path);
+        else onTrash(pendingTrash.path, pendingTrash.count);
+      }}
+      onCancelTrash={() => setPendingTrash(null)}
+      dropTarget={drag.dropTarget}
+      dropCopy={drag.dropCopy}
+      onOpen={onOpen}
+      onToggle={onToggle}
+      onRename={onRename}
+      onRequestTrash={requestTrash}
+      onLeave={onLeave}
+      onContextMenu={showTreeMenu}
+      dragHandlers={(entry) => drag.handlers({ kind: "entry", entry })}
+      swallowClick={drag.swallowClick}
+    />
+  );
 
   return (
     <aside
@@ -411,6 +524,17 @@ function SidebarPanel({
       <div className="flex shrink-0 items-center px-2 pt-2.5 pb-1 text-[10.5px] tracking-[0.02em] text-faint">
         <span className="flex-1">LIBRARY</span>
         <button
+          ref={moreRef}
+          type="button"
+          aria-label="Library actions"
+          title="Library actions"
+          data-z-library-more=""
+          onClick={toggleMoreMenu}
+          className="flex size-5 items-center justify-center rounded-[4px] text-faint hover:bg-row-hover hover:text-text"
+        >
+          <MoreIcon />
+        </button>
+        <button
           ref={plusRef}
           type="button"
           aria-label="New in Library"
@@ -428,63 +552,43 @@ function SidebarPanel({
           {status && (
             <div className="shrink-0 px-2 py-1 text-faint">{status}</div>
           )}
-          <LibraryTree
-            treeRef={treeRef}
-            rows={rows}
-            searching={searching}
-            isOpen={(p) => tree.expanded.has(p)}
-            activePath={activePath}
-            blocked={blockedReason}
-            cursor={cursor}
-            onCursor={setCursor}
-            editing={editing}
-            onEditing={setEditing}
-            pendingTrash={pendingTrash}
-            onConfirmTrash={() => {
-              setPendingTrash(null);
-              if (!pendingTrash) return;
-              if (pendingTrash.count === null) onTrash(pendingTrash.path);
-              else onTrash(pendingTrash.path, pendingTrash.count);
-            }}
-            onCancelTrash={() => setPendingTrash(null)}
-            dropTarget={drag.dropTarget}
-            onOpen={onOpen}
-            onToggle={onToggle}
-            onRename={onRename}
-            onRequestTrash={requestTrash}
-            onLeave={onLeave}
-            onContextMenu={showTreeMenu}
-            dragHandlers={(entry) => drag.handlers({ kind: "entry", entry })}
-            swallowClick={drag.swallowClick}
-          />
+          {libraryTree}
         </>
       ) : (
-        <div className="min-h-0 flex-1 px-2 py-1 text-muted">
-          <p className="m-0">The Library folder isn't available.</p>
-          {root && (
-            <p className="m-0 mt-1 text-[11.5px] break-all text-faint">
-              {root}
-            </p>
-          )}
-          <div className="mt-3 flex flex-col items-start gap-1.5">
-            <button
-              type="button"
-              onClick={onChooseRoot}
-              className="rounded-[5px] bg-bar-btn-primary-bg px-2 py-[3px] text-bar-btn-primary-fg"
-            >
-              Choose Library folder…
-            </button>
+        <>
+          <div
+            className={
+              "px-2 py-1 text-muted " +
+              (rows.length > 0 ? "shrink-0" : "min-h-0 flex-1")
+            }
+          >
+            <p className="m-0">The Library folder isn't available.</p>
             {root && (
+              <p className="m-0 mt-1 text-[11.5px] break-all text-faint">
+                {root}
+              </p>
+            )}
+            <div className="mt-3 flex flex-col items-start gap-1.5">
               <button
                 type="button"
-                onClick={onRecreateRoot}
-                className="rounded-[5px] px-2 py-[3px] text-muted hover:bg-row-hover hover:text-text"
+                onClick={onChooseRoot}
+                className="rounded-[5px] bg-bar-btn-primary-bg px-2 py-[3px] text-bar-btn-primary-fg"
               >
-                Create it again
+                Choose Library folder…
               </button>
-            )}
+              {root && (
+                <button
+                  type="button"
+                  onClick={onRecreateRoot}
+                  className="rounded-[5px] px-2 py-[3px] text-muted hover:bg-row-hover hover:text-text"
+                >
+                  Create it again
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+          {rows.length > 0 && libraryTree}
+        </>
       )}
 
       <ScratchpadList
