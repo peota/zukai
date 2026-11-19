@@ -91,11 +91,15 @@ A project folder inside the Library: an ordinary folder whose notes, canvases an
 _Avoid_: project, notebook.
 
 **Sidebar**
-The panel left of the tab bar that shows the Library tree and the Inbox. Mod+B toggles it (hidden, Zukai looks as before), and Mod+Shift+E focuses it. It is 240 px wide by default and its width can be dragged. Whether it's open, its width and which folders are expanded are stored in the Session (`sidebar { open, width, expanded }`).
+The panel left of the tab bar that shows, top to bottom, the Pinned list, the Library tree and the Scratchpads list. Mod+B toggles it (hidden, Zukai looks as before), and Mod+Shift+E focuses it. It is 240 px wide by default and its width can be dragged. Whether it's open, its width and which folders are expanded are stored in the Session (`sidebar { open, width, expanded }`).
 _Avoid_: explorer, file tree (when you mean the whole panel).
 
-**Inbox**
-The Sidebar's list of open Scratchpads, by Title. Scratchpads stay loose until moved into the Library with **Move to Library…** or by dragging onto a Library folder; both are Save As into that folder.
+**Scratchpads list**
+The Sidebar's list of open, unpinned Scratchpads, by Title, headed SCRATCHPADS. Scratchpads stay loose until moved into the Library with **Move to Library…** or by dragging onto a Library folder; both are Save As into that folder.
+_Avoid_: Inbox (its earlier name), Drafts.
+
+**Pinned**
+A Tab marked to stay at hand: it sits at the start of the tab bar, with a pin in place of its close button, and in the Sidebar's Pinned list. Closing it keeps it in the Pinned list, dimmed, and in Recently Closed, where it never expires; reopening it keeps the pin. Stored on the Tab in the Session (`pinned`).
 
 **Open with default app**
 A button on the read-only bar of a File Zukai can't show, which hands it to the operating system. It never launches executables or scripts: the refused list is in `src-tauri/src/files/exec.rs`, plus files with the Unix execute bit and what Windows calls dangerous. For those, only **Show in Explorer / Finder** is offered. It's never triggered by a click in the tree.
@@ -210,4 +214,4 @@ Every way of opening a File goes to the one running instance: drag and drop, `zu
 
 - Save As turns a Scratchpad into a File.
 - The tab bar is the user's active set, Recently Closed is the archive, and the Library is where projects live as real folders (see [ADR 0011](docs/adr/0011-library-sidebar.md)).
-- Save As into a Library folder moves a Scratchpad from the Inbox into the Library.
+- Save As into a Library folder moves a Scratchpad from the Scratchpads list into the Library.

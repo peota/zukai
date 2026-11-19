@@ -2,14 +2,14 @@ import type { Kind } from "../model/kinds";
 import { Icon } from "./icons";
 import type { PointerHandlers } from "./useFolderDrag";
 
-export interface InboxItem {
+export interface ScratchpadItem {
   id: string;
   title: string;
   kind: Kind;
 }
 
-export interface InboxProps {
-  items: InboxItem[];
+export interface ScratchpadListProps {
+  items: ScratchpadItem[];
   activeId: string | null;
   onActivate(id: string): void;
   /** `from` gets the keyboard back when the menu closes. */
@@ -19,23 +19,23 @@ export interface InboxProps {
 }
 
 /** The open Scratchpads, below the Library tree (spec 5.2). */
-export function Inbox({
+export function ScratchpadList({
   items,
   activeId,
   onActivate,
   onContextMenu,
   dragHandlers,
   swallowClick,
-}: InboxProps) {
+}: ScratchpadListProps) {
   if (items.length === 0) return null;
   // One stop in the Tab order: the active Scratchpad, else the first.
   const stop = items.some((i) => i.id === activeId) ? activeId : items[0].id;
   return (
     <section className="flex max-h-[40%] min-h-0 shrink-0 flex-col">
       <div className="px-2 pt-2.5 pb-1 text-[10.5px] tracking-[0.02em] text-faint">
-        INBOX
+        SCRATCHPADS
       </div>
-      <ul aria-label="Inbox" className="min-h-0 overflow-y-auto pb-2">
+      <ul aria-label="Scratchpads" className="min-h-0 overflow-y-auto pb-2">
         {items.map((item) => {
           const active = item.id === activeId;
           return (

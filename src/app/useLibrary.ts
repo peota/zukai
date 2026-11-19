@@ -41,7 +41,7 @@ import type { FileError } from "../files/api";
 import { baseName } from "../files/paths";
 import type { SidebarState, TabState, WorkspaceState } from "../model/types";
 import { movedPath } from "../model/workspace";
-import type { InboxItem, NewItem } from "../ui/Sidebar";
+import type { ScratchpadItem, NewItem } from "../ui/Sidebar";
 import { isUnder, parentOf, splitName } from "../ui/libraryEntries";
 import type { SaveAsOptions } from "./files/save";
 import { asFileError } from "./files/context";
@@ -91,7 +91,7 @@ export interface LibraryApi {
   /** The rows are search results. */
   searching: boolean;
   search: { query: string; results: Entry[]; ready: boolean };
-  inbox: InboxItem[];
+  scratchpads: ScratchpadItem[];
   /** The active Tab's File path. */
   activePath: string | null;
   /** A folder toggles; a File opens in a Tab (or its Tab activates). */
@@ -109,7 +109,7 @@ export interface LibraryApi {
   recreateRoot(): Promise<void>;
   setQuery(q: string): void;
   /** `destDir` null: Move to Library… (the save dialog, in the root). */
-  inboxMove(id: string, destDir: string | null): Promise<void>;
+  scratchpadMove(id: string, destDir: string | null): Promise<void>;
 }
 
 const EMPTY_TREE: TreeState = {
@@ -159,7 +159,7 @@ function dropDirAt(p: DragPoint, root: string | null): string | null {
 }
 
 /**
- * The Library: its root, the lazily listed tree, search, the Inbox, and
+ * The Library: its root, the lazily listed tree, search, the Scratchpads list, and
  * every operation, wired to the Workspace's Tabs (spec 5.1–5.4).
  */
 export function useLibrary(d: LibraryDeps): LibraryApi {
@@ -704,7 +704,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     [stateRef],
   );
 
-  const inboxMove = useCallback(
+  const scratchpadMove = useCallback(
     async (id: string, destDir: string | null) => {
       const tab = tabOf(id);
       if (!tab || tab.file) return;
@@ -753,7 +753,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     [query, results],
   );
   const { tabs, activeId } = state;
-  const inbox = useMemo(
+  const scratchpads = useMemo(
     () =>
       tabs
         // A pinned Scratchpad is listed under Pinned instead.
@@ -774,7 +774,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     rows,
     searching,
     search,
-    inbox,
+    scratchpads,
     activePath,
     open: openEntry,
     toggle,
@@ -787,6 +787,6 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     chooseRoot,
     recreateRoot,
     setQuery,
-    inboxMove,
+    scratchpadMove,
   };
 }

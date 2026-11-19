@@ -55,7 +55,7 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     searching: false,
     search: { query: "", results: [], ready: true },
     onSearch: vi.fn(),
-    inbox: [
+    scratchpads: [
       { id: "s1", title: "Untitled", kind: "text" },
       { id: "s2", title: "Sketch", kind: "canvas" },
     ],
@@ -71,8 +71,8 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     onCopyPath: vi.fn(),
     onChooseRoot: vi.fn(),
     onRecreateRoot: vi.fn(),
-    onInboxActivate: vi.fn(),
-    onInboxMove: vi.fn(),
+    onScratchpadActivate: vi.fn(),
+    onScratchpadMove: vi.fn(),
     pinned: [],
     onPinnedOpen: vi.fn(),
     onUnpin: vi.fn(),
@@ -113,7 +113,7 @@ const yOf = (name: string) =>
   screen.getAllByRole("treeitem").findIndex((el) => el === row(name)) * 26 + 13;
 
 describe("Sidebar", () => {
-  it("rendersTreeWithIconsAndInbox", () => {
+  it("rendersTreeWithIconsAndScratchpads", () => {
     const { p } = setup();
     expect(screen.getByPlaceholderText("Search Library")).toBeInTheDocument();
     expect(screen.getByText("LIBRARY")).toBeInTheDocument();
@@ -166,21 +166,21 @@ describe("Sidebar", () => {
     fireEvent.click(row("Roadmap"));
     expect(p.onToggle).toHaveBeenCalledWith(ROADMAP.path);
 
-    // Inbox at the bottom.
-    const inbox = screen.getByRole("list", { name: "Inbox" });
-    expect(screen.getByText("INBOX")).toBeInTheDocument();
-    const items = within(inbox).getAllByRole("listitem");
+    // The Scratchpads list at the bottom.
+    const scratchpads = screen.getByRole("list", { name: "Scratchpads" });
+    expect(screen.getByText("SCRATCHPADS")).toBeInTheDocument();
+    const items = within(scratchpads).getAllByRole("listitem");
     expect(items.map((el) => el.textContent)).toEqual(["Untitled", "Sketch"]);
     expect(iconOf(items[0])).toBe("scratchpad");
     expect(iconOf(items[1])).toBe("canvas");
     fireEvent.click(items[1]);
-    expect(p.onInboxActivate).toHaveBeenCalledWith("s2");
+    expect(p.onScratchpadActivate).toHaveBeenCalledWith("s2");
   });
 
-  it("highlights the active Scratchpad in the Inbox", () => {
+  it("highlights the active Scratchpad in its list", () => {
     setup({ activeId: "s1", activePath: null });
     const items = within(
-      screen.getByRole("list", { name: "Inbox" }),
+      screen.getByRole("list", { name: "Scratchpads" }),
     ).getAllByRole("listitem");
     expect(items[0]).toHaveAttribute("aria-current", "true");
     expect(items[1]).not.toHaveAttribute("aria-current");
@@ -509,11 +509,11 @@ describe("Sidebar", () => {
     expect(p.onMove).not.toHaveBeenCalled();
   });
 
-  it("dragging an Inbox item onto a folder saves it there", () => {
+  it("dragging a Scratchpad item onto a folder saves it there", () => {
     const { p } = setup();
     layOut();
     const item = within(
-      screen.getByRole("list", { name: "Inbox" }),
+      screen.getByRole("list", { name: "Scratchpads" }),
     ).getAllByRole("listitem")[0];
     fireEvent.pointerDown(item, { button: 0, pointerId: 1, clientY: 700 });
     fireEvent.pointerMove(item, {
@@ -523,8 +523,8 @@ describe("Sidebar", () => {
     });
     fireEvent.pointerUp(item, { pointerId: 1, clientY: yOf("Ideas") });
     fireEvent.click(item);
-    expect(p.onInboxMove).toHaveBeenCalledWith("s1", IDEAS.path);
-    expect(p.onInboxActivate).not.toHaveBeenCalled();
+    expect(p.onScratchpadMove).toHaveBeenCalledWith("s1", IDEAS.path);
+    expect(p.onScratchpadActivate).not.toHaveBeenCalled();
   });
 
   it("rootUnavailableShowsChooseAndRecreate", () => {
@@ -538,8 +538,10 @@ describe("Sidebar", () => {
     expect(p.onChooseRoot).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Create it again" }));
     expect(p.onRecreateRoot).toHaveBeenCalled();
-    // Open Tabs (the Inbox) are unaffected.
-    expect(screen.getByRole("list", { name: "Inbox" })).toBeInTheDocument();
+    // Open Tabs (the Scratchpads list) are unaffected.
+    expect(
+      screen.getByRole("list", { name: "Scratchpads" }),
+    ).toBeInTheDocument();
   });
 
   it("contextMenuNewItems", async () => {
@@ -610,13 +612,13 @@ describe("Sidebar", () => {
     }
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
 
-    // Inbox: Move to Library… goes through the save dialog (null folder).
+    // Scratchpads list: Move to Library… goes through the save dialog (null folder).
     const item = within(
-      screen.getByRole("list", { name: "Inbox" }),
+      screen.getByRole("list", { name: "Scratchpads" }),
     ).getAllByRole("listitem")[1];
     fireEvent.contextMenu(item);
     fireEvent.click(screen.getByRole("menuitem", { name: "Move to Library…" }));
-    expect(pr.onInboxMove).toHaveBeenCalledWith("s2", null);
+    expect(pr.onScratchpadMove).toHaveBeenCalledWith("s2", null);
   });
 
   it("widthHandleClamps", () => {
@@ -749,10 +751,10 @@ describe("Sidebar", () => {
     expect(document.activeElement).toBe(tree());
   });
 
-  it("Inbox items work from the keyboard", () => {
+  it("Scratchpad items work from the keyboard", () => {
     const { p } = setup();
     const items = within(
-      screen.getByRole("list", { name: "Inbox" }),
+      screen.getByRole("list", { name: "Scratchpads" }),
     ).getAllByRole("listitem");
     expect(items[0]).toHaveAttribute("tabindex", "0");
     expect(items[1]).toHaveAttribute("tabindex", "-1");
@@ -760,7 +762,7 @@ describe("Sidebar", () => {
     key(items[0], "ArrowDown");
     expect(document.activeElement).toBe(items[1]);
     key(items[1], "Enter");
-    expect(p.onInboxActivate).toHaveBeenCalledWith("s2");
+    expect(p.onScratchpadActivate).toHaveBeenCalledWith("s2");
 
     // The context-menu key (no pointer position) opens the item's menu.
     fireEvent.contextMenu(items[1]);
@@ -768,7 +770,7 @@ describe("Sidebar", () => {
     expect(document.activeElement).toBe(items[1]);
     fireEvent.contextMenu(items[1]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Move to Library…" }));
-    expect(p.onInboxMove).toHaveBeenCalledWith("s2", null);
+    expect(p.onScratchpadMove).toHaveBeenCalledWith("s2", null);
   });
 
   it("the cursor moves to a neighbour when its row goes away", () => {
