@@ -469,6 +469,31 @@ mod tests {
         assert!(rx2.recv_timeout(Duration::from_millis(100)).is_err());
     }
 
+    /// Spec §7: an added folder's watcher reports its changes through the
+    /// same sink as the Library's (`zukai://library-changed`), naming the
+    /// folder that changed, and stops when the folder is removed.
+    #[test]
+    fn added_root_watcher_reports_changes() {
+        let (_tmp, _g, _root, added, _outside) = crate::library::tests::library_with_added();
+        let sub = added.join("sub");
+        fs::create_dir(&sub).unwrap();
+        let w = AddedWatchers::default();
+        let (sink, rx) = sink_pair();
+        w.sync(std::slice::from_ref(&added), &sink);
+        drain(&rx);
+
+        fs::write(sub.join("a.md"), "a").unwrap();
+        expect_dir(&rx, &sub, "create in an added folder");
+        drain(&rx);
+        fs::write(added.join("top.md"), "t").unwrap();
+        expect_dir(&rx, &added, "create at an added root");
+        drain(&rx);
+
+        w.sync(&[], &sink);
+        fs::write(sub.join("late.md"), "l").unwrap();
+        assert!(rx.recv_timeout(Duration::from_millis(600)).is_err());
+    }
+
     /// Polls `index` until `cond` holds, at most 3 s.
     fn eventually(index: &NameIndex, what: &str, cond: impl Fn(&NameIndex) -> bool) {
         let start = Instant::now();
