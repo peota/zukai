@@ -1,6 +1,12 @@
 import { languageOf } from "../files/paths";
 import type { Kind } from "./kinds";
-import { itemsOf, normalizeSplits, otherHalf, splitOf } from "./split";
+import {
+  itemsOf,
+  normalizeSplits,
+  otherHalf,
+  pinnedFirst,
+  splitOf,
+} from "./split";
 import type { TabState, WorkspaceState } from "./types";
 
 export function newTabState(id: string, kind: Kind = "text"): TabState {
@@ -16,21 +22,6 @@ export function newTabState(id: string, kind: Kind = "text"): TabState {
     scrollTop: 0,
     wrap: false,
   };
-}
-
-/** Pinned items first (a Split stays whole), each group in its own order. */
-function pinnedFirst(s: WorkspaceState): WorkspaceState {
-  const byId = new Map(s.tabs.map((t) => [t.id, t]));
-  const items = itemsOf(s.tabs, s.splits);
-  const pinned = items.filter((it) => byId.get(it[0])?.pinned);
-  if (
-    pinned.length === 0 ||
-    items.slice(0, pinned.length).every((it) => byId.get(it[0])?.pinned)
-  ) {
-    return s;
-  }
-  const order = [...pinned, ...items.filter((it) => !pinned.includes(it))];
-  return { ...s, tabs: order.flat().map((id) => byId.get(id)!) };
 }
 
 /** Puts `tabs` in, settles Splits and keeps pinned items first. */
