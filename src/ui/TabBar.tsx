@@ -327,7 +327,7 @@ export function TabBar({
             ref={active ? activeRef : undefined}
             role="tab"
             aria-selected={active}
-            aria-label={joined ? label : undefined}
+            aria-label={joined ? label + note : undefined}
             title={
               (joined ? label : tab.file ? tab.file.path : tab.title) + note
             }
