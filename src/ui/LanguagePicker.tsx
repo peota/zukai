@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import type { LanguageId } from "../model/types";
 import { LANGUAGES } from "../editor/languages";
@@ -134,7 +135,7 @@ function PickerList({
           setIndex(0);
         }}
         onKeyDown={onKeyDown}
-        className="mb-1 w-full rounded-[4px] bg-chrome px-2 py-1 text-text outline-none placeholder:text-faint"
+        className="mb-1.5 h-8 w-full rounded-[6px] border border-hairline bg-sunken px-2.5 text-text outline-none placeholder:text-faint focus:border-accent"
       />
       <ul role="listbox">
         {items.map((l, i) => (
@@ -147,7 +148,7 @@ function PickerList({
               e.preventDefault();
               choose(l);
             }}
-            className={`flex cursor-default items-center rounded-[4px] px-2 py-1 ${
+            className={`flex cursor-default items-center rounded-[6px] px-2.5 py-[6px] ${
               i === sel ? "bg-accent-soft text-text" : "text-muted"
             } ${l.rename ? "mb-1 border-b border-hairline" : ""}`}
             title={l.rename ? l.label : undefined}
@@ -158,8 +159,8 @@ function PickerList({
               l.label
             )}
             {!l.rename && l.id === current && (
-              <span className="ml-auto text-faint" aria-hidden>
-                ✓
+              <span className="ml-auto text-accent" aria-hidden>
+                <Check size={15} strokeWidth={2} />
               </span>
             )}
           </li>

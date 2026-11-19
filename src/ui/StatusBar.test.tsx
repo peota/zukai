@@ -100,7 +100,7 @@ describe("StatusBar", () => {
     expect(screen.queryByText("JSON")).toBeNull();
     expect(screen.queryByText("UTF-8")).toBeNull();
     expect(screen.queryByText("LF")).toBeNull();
-    expect(screen.queryByText("{ } Format")).toBeNull();
+    expect(screen.queryByText("Format")).toBeNull();
     expect(screen.queryAllByRole("button")).toHaveLength(0);
     // Status messages still show.
     expect(screen.getByText("Saved elsewhere")).toBeInTheDocument();
@@ -168,10 +168,10 @@ describe("StatusBar", () => {
 
   it("the Format chip opens Beautify and Minify", () => {
     const p = setup({ showFormat: true });
-    fireEvent.click(screen.getByRole("button", { name: "{ } Format" }));
+    fireEvent.click(screen.getByRole("button", { name: "Format" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Beautify/ }));
     expect(p.onFormat).toHaveBeenCalledWith("beautify");
-    fireEvent.click(screen.getByRole("button", { name: "{ } Format" }));
+    fireEvent.click(screen.getByRole("button", { name: "Format" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Minify/ }));
     expect(p.onFormat).toHaveBeenCalledWith("minify");
   });
@@ -179,7 +179,7 @@ describe("StatusBar", () => {
   it("dismissing the Format menu hands focus back", () => {
     const onFormatClose = vi.fn();
     setup({ showFormat: true, onFormatClose });
-    fireEvent.click(screen.getByRole("button", { name: "{ } Format" }));
+    fireEvent.click(screen.getByRole("button", { name: "Format" }));
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
     expect(onFormatClose).toHaveBeenCalledTimes(1);

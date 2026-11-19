@@ -207,7 +207,7 @@ function sidebarFieldFocused(): boolean {
 const wrapExt = (on: boolean): Extension => (on ? EditorView.lineWrapping : []);
 const readOnlyExt = (on: boolean): Extension => [EditorState.readOnly.of(on)];
 
-const DEFAULT_FONT_SIZE = 13;
+const DEFAULT_FONT_SIZE = 14;
 /**
  * The text size as a theme: a theme change makes CodeMirror re-measure its
  * line heights, so the gutter follows (a plain CSS change can leave the

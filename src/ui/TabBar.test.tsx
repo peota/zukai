@@ -137,13 +137,15 @@ describe("TabBar", () => {
     expect(p.onNew).toHaveBeenCalled();
   });
 
-  it("a File Tab shows the FILE badge and its path on hover", () => {
+  it("a File Tab shows its file icon and its path on hover", () => {
     setup(FILE_TABS);
+    const icon = (t: Element) =>
+      t.querySelector("[data-icon]")?.getAttribute("data-icon");
     const tab = screen.getByText("config.json").closest("[role=tab]")!;
-    expect(tab).toHaveTextContent("FILE");
+    expect(icon(tab)).toBe("data");
     expect(tab).toHaveAttribute("title", "C:/data/config.json");
     const scratch = screen.getByText("First").closest("[role=tab]")!;
-    expect(scratch).not.toHaveTextContent("FILE");
+    expect(icon(scratch)).toBe("scratchpad");
   });
 
   it("a missing File's title is struck through", () => {

@@ -1,0 +1,294 @@
+/**
+ * Dev-only browser preview: fakes the Rust side (Tauri IPC) with an in-memory
+ * notebook so the UI can be seen and designed in a plain browser at
+ * http://localhost:1420/preview.html. Never part of the app build.
+ */
+import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+
+const ROOT = "C:\\Users\\dev\\Zukai";
+const sep = "\\";
+const join = (a: string, b: string) => `${a}${sep}${b}`;
+
+const md = `# Redis failover, 12 Nov
+
+Primary in **eu-west-1b** stopped answering at 14:02. Sentinel promoted the
+replica after 31s, but the app kept a pooled connection to the old primary.
+
+## What we tried
+
+- [x] Confirm the replica was promoted: \`redis-cli -p 26379 sentinel get-master-addr-by-name cache\`
+- [x] Restart the checkout workers
+- [ ] Lower \`socket_timeout\` in the pool to 2s
+- [ ] Add a failover drill to the runbook
+
+## Timeline
+
+| Time  | Event                          | Owner |
+| ----- | ------------------------------ | ----- |
+| 14:02 | p99 on /checkout jumps to 4.1s | alert |
+| 14:03 | Sentinel marks primary down    | auto  |
+| 14:09 | Workers restarted              | Dana  |
+| 14:11 | Latency back to normal         |       |
+
+> The pool never re-resolved the master. That's the real bug.
+
+\`\`\`python
+pool = redis.ConnectionPool(
+    host=sentinel.discover_master("cache")[0],
+    socket_timeout=2,
+    health_check_interval=10,
+)
+\`\`\`
+`;
+
+const sh = `#!/usr/bin/env bash
+# Things I keep looking up.
+
+# Pods sorted by restarts
+kubectl get pods -A --sort-by='.status.containerStatuses[0].restartCount'
+
+# Tail a deployment across all pods
+kubectl logs -f deploy/checkout --all-containers --since=10m
+
+# Port-forward the read replica
+kubectl port-forward svc/postgres-replica 5433:5432 -n data
+
+# Which process holds a port
+lsof -iTCP:8080 -sTCP:LISTEN
+`;
+
+const sql = `-- Slowest queries in the last day (pg_stat_statements)
+SELECT
+  round(mean_exec_time::numeric, 1) AS mean_ms,
+  calls,
+  left(query, 120) AS query
+FROM pg_stat_statements
+WHERE calls > 50
+ORDER BY mean_exec_time DESC
+LIMIT 20;
+
+-- Bloated indexes
+SELECT schemaname, relname, indexrelname, pg_size_pretty(pg_relation_size(indexrelid))
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0
+ORDER BY pg_relation_size(indexrelid) DESC;
+`;
+
+const json = `{
+  "id": "evt_01JD3K8Q2V",
+  "type": "order.paid",
+  "created": "2026-11-12T14:09:31Z",
+  "data": {
+    "order_id": 48213,
+    "amount": { "value": 12900, "currency": "EUR" },
+    "items": [
+      { "sku": "KB-75-BRN", "qty": 1 },
+      { "sku": "CBL-USBC-1M", "qty": 2 }
+    ],
+    "retry": false
+  }
+}
+`;
+
+const csv = `endpoint,p50_ms,p95_ms,p99_ms,requests,errors
+/checkout,182,640,4100,18234,41
+/cart,64,210,380,52011,3
+/search,95,310,720,88120,12
+/product/:id,41,120,260,140932,0
+/login,120,300,510,9120,7
+`;
+
+const notes = `Onboarding notes
+
+- VPN: use the "eng" profile, not "corp"
+- Staging DB is read-only for us; ask #data for writes
+- Feature flags live in flags.yaml, deployed with the service
+- On-call handbook: wiki/oncall (rotation starts week 3)
+`;
+
+const files: Record<string, string> = {
+  [join(ROOT, "incidents\\2026-11-12 redis failover.md")]: md,
+  [join(ROOT, "incidents\\checkout-latency.csv")]: csv,
+  [join(ROOT, "snippets\\k8s.sh")]: sh,
+  [join(ROOT, "snippets\\slow-queries.sql")]: sql,
+  [join(ROOT, "order-paid.json")]: json,
+  [join(ROOT, "onboarding.txt")]: notes,
+};
+const dirs = new Set([
+  ROOT,
+  join(ROOT, "incidents"),
+  join(ROOT, "snippets"),
+  join(ROOT, "drafts"),
+]);
+
+const scratch: Record<string, { ext: "txt" | "excalidraw"; text: string }> = {
+  s1: {
+    ext: "txt",
+    text: "curl -s localhost:8080/health | jq .\n\nTODO: ask Dana about the pool timeout\n",
+  },
+};
+
+const KEY = "zukai-preview-session";
+const fmt = { encoding: "utf-8", bom: false, lineEnding: "lf", mixed: false };
+const fp = (text: string) => ({ mtimeMs: 1, size: text.length, hash: "h" });
+
+function list(dir: string) {
+  const out: { name: string; path: string; isDir: boolean; link: null }[] = [];
+  const kids = new Set<string>();
+  for (const p of [...dirs, ...Object.keys(files)]) {
+    if (p !== dir && p.startsWith(dir + sep)) {
+      const name = p.slice(dir.length + 1).split(sep)[0];
+      kids.add(name);
+    }
+  }
+  for (const name of kids) {
+    const path = join(dir, name);
+    out.push({ name, path, isDir: dirs.has(path), link: null });
+  }
+  return out;
+}
+
+type Args = Record<string, unknown>;
+
+const handlers: Record<string, (a: Args) => unknown> = {
+  app_startup_mark: () => null,
+  session_read: () => localStorage.getItem(KEY),
+  session_write: (a) => localStorage.setItem(KEY, a.json as string),
+  session_backup: () => null,
+  scratchpad_list: () =>
+    Object.entries(scratch).map(([id, s]) => ({ id, ext: s.ext })),
+  scratchpad_list_closed: () => [],
+  scratchpad_read: (a) => scratch[a.id as string]?.text ?? "",
+  scratchpad_write: (a) => {
+    scratch[a.id as string] = {
+      ext: a.ext as "txt",
+      text: a.content as string,
+    };
+  },
+  shadow_list: () => [],
+  shadow_read: () => null,
+  take_launch_paths: () => ({ paths: [], folders: [], missing: [] }),
+  grants_filter: (a) => a.paths,
+  library_root: () => ({ root: ROOT, available: true, added: [] }),
+  library_list: (a) => list(a.dir as string),
+  library_search: (a) => ({
+    entries: Object.keys(files)
+      .filter((p) => p.toLowerCase().includes(String(a.query).toLowerCase()))
+      .map((p) => ({
+        name: p.split(sep).pop(),
+        path: p,
+        isDir: false,
+        link: null,
+      })),
+    ready: true,
+  }),
+  library_resolve: (a) => a.path,
+  file_read: (a) => {
+    const text = files[a.path as string] ?? "";
+    return { text, format: fmt, readable: true, fingerprint: fp(text) };
+  },
+  file_write: (a) => {
+    files[a.path as string] = a.text as string;
+    return { kind: "written", fingerprint: fp(a.text as string) };
+  },
+  file_fingerprint: (a) => fp(files[a.path as string] ?? ""),
+  file_fingerprint_quick: (a) => a.expected,
+};
+
+mockWindows("main");
+mockIPC(
+  (cmd, payload) => {
+    const h = handlers[cmd];
+    if (h) return h((payload ?? {}) as Args);
+    if (cmd.startsWith("plugin:")) return null;
+    return null;
+  },
+  { shouldMockEvents: true },
+);
+
+/**
+ * ?demo opens a ready-made workspace (sidebar open, a note, a script and a
+ * Scratchpad), for screenshots. ?mode=light|dark, ?light=, ?dark= and
+ * ?accent= pick the theme. ?reset starts empty.
+ */
+function demoSession(params: URLSearchParams): string {
+  const fileTab = (id: string, rel: string, language: string) => {
+    const path = join(ROOT, rel);
+    return {
+      id,
+      kind: "text",
+      title: rel.split(sep).pop(),
+      renamed: false,
+      language,
+      languagePicked: false,
+      languageGuessed: false,
+      selection: { anchor: 0, head: 0 },
+      scrollTop: 0,
+      wrap: false,
+      file: {
+        path,
+        format: fmt,
+        fingerprint: fp(files[path] ?? ""),
+        held: null,
+      },
+      ...(language === "markdown" ? { markdownMode: "rich" } : {}),
+    };
+  };
+  const s1 = {
+    ...fileTab("s1", "x", "plaintext"),
+    title: "curl -s localhost:8080/health …",
+  };
+  delete (s1 as { file?: unknown }).file;
+  return JSON.stringify({
+    version: 3,
+    tabs: [
+      { ...fileTab("f1", "snippets\\k8s.sh", "shell"), pinned: true },
+      s1,
+      fileTab("f2", "incidents\\2026-11-12 redis failover.md", "markdown"),
+    ],
+    activeId: params.get("tab") ?? "f2",
+    closed: [],
+    splits: [],
+    sidebar: {
+      open: true,
+      width: 260,
+      expanded: [join(ROOT, "incidents"), join(ROOT, "snippets")],
+    },
+    fontSize: 14,
+    settings: {
+      theme: params.get("mode") ?? "dark",
+      lightTheme: params.get("light") ?? "paper",
+      darkTheme: params.get("dark") ?? "graphite",
+      accent: params.get("accent") ?? "blue",
+      wrapNewTabs: false,
+      lineNumbers: true,
+      previewSplit: 0.5,
+      markdownDefault: "rich",
+    },
+  });
+}
+
+const params = new URLSearchParams(location.search);
+if (params.has("reset")) localStorage.removeItem(KEY);
+if (params.has("demo")) localStorage.setItem(KEY, demoSession(params));
+
+// The rich editor is lazy in the app; loading it first lets a screenshot
+// of ?demo show the note without waiting.
+if (params.has("demo")) await import("../rich/RichEditor");
+await import("../main");
+
+// ?settings opens Settings once the app is up (Mod+,), for screenshots.
+if (params.has("settings")) {
+  setTimeout(() => {
+    const mac = navigator.userAgent.includes("Mac");
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: ",",
+        code: "Comma",
+        ctrlKey: !mac,
+        metaKey: mac,
+        bubbles: true,
+      }),
+    );
+  }, 1500);
+}

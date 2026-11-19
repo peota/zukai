@@ -3,112 +3,235 @@
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/700.css";
 
-/* "Paper" palette (spec section 6). Every color in the app comes from here. */
+/*
+ * Themes. <html> carries three attributes, set by App from Settings:
+ *   data-theme   light | dark (the scheme; Excalidraw and CodeMirror follow it)
+ *   data-palette paper | solar-light | graphite | midnight | solar-dark
+ *   data-accent  blue | violet | green | orange | pink
+ * Every color in the app comes from these tokens. Grounds step from the
+ * chrome (tab bar, sidebar, status bar) to the editor to raised surfaces
+ * (menus, dialogs, the active tab's controls).
+ */
+
+/* Paper: the default light theme. */
 :root {
+  --z-chrome: #f4f4f5;
+  --z-side: #f4f4f5;
   --z-editor: #ffffff;
-  --z-chrome: #f7f6f3;
   --z-surface: #ffffff;
-  --z-hairline: #ebeae6;
-  --z-text: #37352f;
-  --z-muted: #787774;
-  --z-faint: #b4b3af;
-  --z-accent: #2383e2;
-  --z-accent-soft: rgb(35 131 226 / 0.2);
-  --z-search-current: rgb(35 131 226 / 0.4);
-  --z-danger: #c4554d;
-  --z-active-line: rgb(55 53 47 / 0.03);
-  --z-selection-match: rgb(35 131 226 / 0.1);
+  --z-sunken: #f4f4f5;
+  --z-hairline: #e4e4e7;
+  --z-hairline-strong: #d4d4d8;
+  --z-text: #18181b;
+  --z-muted: #52525b;
+  --z-faint: #6e6e78;
+  --z-row-hover: rgb(24 24 27 / 0.05);
+  --z-row-sel: rgb(24 24 27 / 0.08);
+  --z-active-line: rgb(24 24 27 / 0.025);
 
-  /* Library sidebar (spec 5.2): a slightly tinted panel, soft row fills. */
-  --z-side: #fbfbfa;
-  --z-row-hover: #efeeeb;
-  --z-row-sel: #e9e8e4;
-
-  /* File bars (spec section 6): amber conflict, soft red missing, grey info. */
-  --z-bar-warn-bg: #fbf3db;
-  --z-bar-warn-fg: #7a5a12;
-  --z-bar-err-bg: #fbe4e4;
-  --z-bar-err-fg: #9f2f2d;
-  --z-bar-info-bg: #f7f6f3;
-  --z-bar-info-fg: #787774;
-  --z-bar-btn-bg: rgb(255 255 255 / 0.7);
+  --z-danger: #be123c;
+  --z-danger-fg: #ffffff;
+  --z-bar-warn-bg: #fdf3d8;
+  --z-bar-warn-fg: #7a5208;
+  --z-bar-err-bg: #fde6e4;
+  --z-bar-err-fg: #a12a20;
+  --z-bar-info-bg: #f4f4f5;
+  --z-bar-info-fg: #52525b;
+  --z-bar-btn-bg: rgb(255 255 255 / 0.8);
   --z-bar-btn-hover: #ffffff;
-  --z-bar-btn-ring: rgb(0 0 0 / 0.08);
-  --z-bar-btn-primary-bg: #37352f;
+  --z-bar-btn-ring: rgb(0 0 0 / 0.1);
+  --z-bar-btn-primary-bg: #18181b;
   --z-bar-btn-primary-fg: #ffffff;
 
-  /* Syntax colors: muted and warm, like Notion's code blocks. */
-  --z-syn-keyword: #9b51e0;
-  --z-syn-string: #448361;
-  --z-syn-number: #c47f17;
-  --z-syn-function: #2383e2;
-  --z-syn-type: #b35c1e;
+  --z-syn-keyword: #8b3fd9;
+  --z-syn-string: #2f7d4f;
+  --z-syn-number: #b4580f;
+  --z-syn-function: #1d63c9;
+  --z-syn-type: #a3480f;
+  --z-syn-comment: #8a8a93;
 
-  --z-shadow-float: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 12px rgb(0 0 0 / 0.08);
-  --z-radius-tab: 6px;
-  --z-radius-float: 8px;
-  --z-font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --z-shadow-float:
+    0 0 0 1px rgb(0 0 0 / 0.06), 0 2px 4px rgb(0 0 0 / 0.04),
+    0 8px 24px rgb(0 0 0 / 0.1);
+  --z-shadow-tab: 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.06);
+
+  /* Accent (blue on light). */
+  --z-accent: #2563eb;
+  --z-accent-fg: #ffffff;
+
+  --z-radius-tab: 8px;
+  --z-radius-float: 10px;
+  --z-font-mono:
+    "JetBrains Mono", "Cascadia Code", ui-monospace, "SF Mono", monospace;
+  --z-font-ui:
+    "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    "Inter Variable", system-ui, sans-serif;
 
   color-scheme: light;
 }
 
-/*
- * Dark: set by the app on <html data-theme="dark">, from Settings > Theme
- * ("System" follows the OS, live; main.tsx sets it before the first paint).
- */
+/* Solar Light: warm paper for long reading. */
+:root[data-palette="solar-light"] {
+  --z-chrome: #f1ece1;
+  --z-side: #f1ece1;
+  --z-editor: #fbf8f2;
+  --z-surface: #fffdf9;
+  --z-sunken: #f1ece1;
+  --z-hairline: #e3dccd;
+  --z-hairline-strong: #d3cab8;
+  --z-text: #2a251e;
+  --z-muted: #5c5446;
+  --z-faint: #6b6252;
+  --z-row-hover: rgb(60 45 20 / 0.06);
+  --z-row-sel: rgb(60 45 20 / 0.1);
+  --z-active-line: rgb(60 45 20 / 0.03);
+  --z-bar-info-bg: #f1ece1;
+  --z-bar-info-fg: #5c5446;
+  --z-bar-btn-primary-bg: #2a251e;
+  --z-syn-comment: #9d9381;
+}
+
+/* Graphite: the default dark theme. */
 :root[data-theme="dark"] {
-  --z-editor: #191919;
-  --z-chrome: #202020;
-  --z-surface: #2c2c2c;
-  --z-hairline: #2a2a2a;
-  --z-text: #e6e3de;
-  --z-muted: #9b9893;
-  --z-faint: #5f5d59;
-  --z-accent: #529cca;
-  --z-accent-soft: rgb(82 156 202 / 0.2);
-  --z-search-current: rgb(82 156 202 / 0.42);
-  --z-danger: #df8a83;
-  --z-active-line: rgb(255 255 255 / 0.03);
-  --z-selection-match: rgb(82 156 202 / 0.12);
+  --z-chrome: #18181b;
+  --z-side: #18181b;
+  --z-editor: #1f1f23;
+  --z-surface: #27272b;
+  --z-sunken: #141416;
+  --z-hairline: #2c2c31;
+  --z-hairline-strong: #3a3a40;
+  --z-text: #e7e7ea;
+  --z-muted: #a1a1aa;
+  --z-faint: #85858f;
+  --z-row-hover: rgb(255 255 255 / 0.05);
+  --z-row-sel: rgb(255 255 255 / 0.08);
+  --z-active-line: rgb(255 255 255 / 0.025);
 
-  --z-side: #1d1d1d;
-  --z-row-hover: #262626;
-  --z-row-sel: #2e2e2e;
-
-  --z-bar-warn-bg: #3a3122;
-  --z-bar-warn-fg: #e6c07b;
-  --z-bar-err-bg: #3d2523;
-  --z-bar-err-fg: #ef9a92;
-  --z-bar-info-bg: #262626;
-  --z-bar-info-fg: #9b9893;
+  --z-danger: #f87171;
+  --z-danger-fg: #2a0707;
+  --z-bar-warn-bg: #3a2f17;
+  --z-bar-warn-fg: #f2c86b;
+  --z-bar-err-bg: #3d2020;
+  --z-bar-err-fg: #f5a3a3;
+  --z-bar-info-bg: #232327;
+  --z-bar-info-fg: #a1a1aa;
   --z-bar-btn-bg: rgb(255 255 255 / 0.06);
   --z-bar-btn-hover: rgb(255 255 255 / 0.12);
   --z-bar-btn-ring: rgb(255 255 255 / 0.1);
-  --z-bar-btn-primary-bg: #e6e3de;
-  --z-bar-btn-primary-fg: #191919;
+  --z-bar-btn-primary-bg: #e7e7ea;
+  --z-bar-btn-primary-fg: #18181b;
 
-  --z-syn-keyword: #d3a6f5;
-  --z-syn-string: #a6d3a0;
-  --z-syn-number: #e6c07b;
-  --z-syn-function: #7fb3e0;
-  --z-syn-type: #e0a873;
+  --z-syn-keyword: #c79bf2;
+  --z-syn-string: #9fd49b;
+  --z-syn-number: #f0b46e;
+  --z-syn-function: #7fb6ff;
+  --z-syn-type: #f2a77a;
+  --z-syn-comment: #73737d;
 
-  --z-shadow-float: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.35);
+  --z-shadow-float:
+    0 0 0 1px rgb(255 255 255 / 0.07), 0 2px 4px rgb(0 0 0 / 0.3),
+    0 12px 32px rgb(0 0 0 / 0.45);
+  --z-shadow-tab: 0 0 0 1px rgb(255 255 255 / 0.05);
+
+  --z-accent: #5b8def;
+  --z-accent-fg: #ffffff;
 
   color-scheme: dark;
+}
+
+/* Midnight: a cooler, blue-black dark. */
+:root[data-theme="dark"][data-palette="midnight"] {
+  --z-chrome: #0e121a;
+  --z-side: #0e121a;
+  --z-editor: #131925;
+  --z-surface: #1b2232;
+  --z-sunken: #0b0e15;
+  --z-hairline: #212a3b;
+  --z-hairline-strong: #2d384d;
+  --z-text: #e1e6ef;
+  --z-muted: #98a2b6;
+  --z-faint: #7f899d;
+  --z-bar-info-bg: #182030;
+  --z-bar-info-fg: #98a2b6;
+  --z-bar-btn-primary-bg: #e1e6ef;
+  --z-bar-btn-primary-fg: #0e121a;
+  --z-syn-comment: #637089;
+}
+
+/* Solar Dark: warm and low-glare. */
+:root[data-theme="dark"][data-palette="solar-dark"] {
+  --z-chrome: #1a1815;
+  --z-side: #1a1815;
+  --z-editor: #211f1b;
+  --z-surface: #2b2823;
+  --z-sunken: #151310;
+  --z-hairline: #322e28;
+  --z-hairline-strong: #423d35;
+  --z-text: #ebe4d8;
+  --z-muted: #ada392;
+  --z-faint: #938a7a;
+  --z-bar-info-bg: #27241f;
+  --z-bar-info-fg: #ada392;
+  --z-bar-btn-primary-bg: #ebe4d8;
+  --z-bar-btn-primary-fg: #1a1815;
+  --z-syn-comment: #81786a;
+}
+
+/* Accents: one hue per choice, a light-ground and a dark-ground value. */
+:root[data-accent="violet"] {
+  --z-accent: #7c3aed;
+}
+:root[data-accent="green"] {
+  --z-accent: #15803d;
+}
+:root[data-accent="orange"] {
+  --z-accent: #c2410c;
+}
+:root[data-accent="pink"] {
+  --z-accent: #db2777;
+}
+:root[data-theme="dark"][data-accent="violet"] {
+  --z-accent: #a183f7;
+  --z-accent-fg: #160b33;
+}
+:root[data-theme="dark"][data-accent="green"] {
+  --z-accent: #4cc47a;
+  --z-accent-fg: #06210f;
+}
+:root[data-theme="dark"][data-accent="orange"] {
+  --z-accent: #f39a4c;
+  --z-accent-fg: #2a1302;
+}
+:root[data-theme="dark"][data-accent="pink"] {
+  --z-accent: #f27aae;
+  --z-accent-fg: #2e0818;
+}
+
+/* Derived from the accent, so every theme and accent pair agrees. */
+:root {
+  --z-accent-soft: color-mix(in srgb, var(--z-accent) 22%, transparent);
+  --z-accent-tint: color-mix(in srgb, var(--z-accent) 12%, transparent);
+  --z-search-current: color-mix(in srgb, var(--z-accent) 42%, transparent);
+  --z-selection-match: color-mix(in srgb, var(--z-accent) 14%, transparent);
+  --z-focus: color-mix(in srgb, var(--z-accent) 70%, transparent);
 }
 
 @theme inline {
   --color-editor: var(--z-editor);
   --color-chrome: var(--z-chrome);
   --color-surface: var(--z-surface);
+  --color-sunken: var(--z-sunken);
   --color-hairline: var(--z-hairline);
+  --color-hairline-strong: var(--z-hairline-strong);
   --color-text: var(--z-text);
   --color-muted: var(--z-muted);
   --color-faint: var(--z-faint);
   --color-accent: var(--z-accent);
   --color-accent-soft: var(--z-accent-soft);
+  --color-accent-tint: var(--z-accent-tint);
+  --color-accent-fg: var(--z-accent-fg);
   --color-danger: var(--z-danger);
+  --color-danger-fg: var(--z-danger-fg);
   --color-side: var(--z-side);
   --color-row-hover: var(--z-row-hover);
   --color-row-sel: var(--z-row-sel);
@@ -124,10 +247,11 @@
   --color-bar-btn-primary-fg: var(--z-bar-btn-primary-fg);
 
   --shadow-float: var(--z-shadow-float);
+  --shadow-tab: var(--z-shadow-tab);
   --radius-tab: var(--z-radius-tab);
   --radius-float: var(--z-radius-float);
 
-  --font-sans: "Inter Variable", system-ui, sans-serif;
+  --font-sans: var(--z-font-ui);
   --font-mono: var(--z-font-mono);
 }
 
@@ -142,12 +266,53 @@ body {
   background: var(--z-chrome);
   color: var(--z-text);
   font-family: var(--font-sans);
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.4;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 ::selection {
   background: var(--z-accent-soft);
+}
+
+/*
+ * Keyboard focus is always visible, in the accent. In the base layer, so a
+ * control's own outline-none (a utility) still wins.
+ */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--z-focus);
+    outline-offset: 1px;
+  }
+  [tabindex="-1"]:focus-visible,
+  .cm-editor:focus-visible,
+  .ProseMirror:focus-visible,
+  [role="tab"]:focus-visible {
+    outline: none;
+  }
+}
+
+/* Scrollbars: thin, rounded, in the theme's ink. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--z-hairline-strong);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--z-faint);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .z-no-scrollbar {
@@ -158,26 +323,47 @@ body {
   display: none;
 }
 
-/* The only motion: floating pieces fade in. */
+/* The only motion: floating pieces fade and settle in. */
 .z-fade-in {
-  animation: z-fade-in 120ms ease-out;
+  animation: z-fade-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes z-fade-in {
   from {
     opacity: 0;
+    transform: translateY(-2px) scale(0.99);
   }
 }
 
-/* The Markdown preview: the Paper palette, readable measure. */
+@media (prefers-reduced-motion: reduce) {
+  .z-fade-in {
+    animation: none;
+  }
+}
+
+/*
+ * Notes: the Markdown preview and the rich editor share one reading style:
+ * a 15px body, a 720px measure and a clear heading scale.
+ */
 .z-md {
   color: var(--z-text);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.65;
   user-select: text;
 }
-.z-md > * {
-  max-width: 760px;
+.z-md > *,
+.z-rich .ProseMirror > * {
+  max-width: 720px;
+}
+.z-md > p,
+.z-md > ul,
+.z-md > ol,
+.z-md > blockquote,
+.z-rich .ProseMirror > p,
+.z-rich .ProseMirror > ul,
+.z-rich .ProseMirror > ol,
+.z-rich .ProseMirror > blockquote {
+  max-width: 70ch;
 }
 .z-md > :first-child {
   margin-top: 0;
@@ -188,20 +374,27 @@ body {
 .z-md h4,
 .z-md h5,
 .z-md h6 {
-  margin: 1.4em 0 0.5em;
-  font-weight: 600;
-  line-height: 1.3;
+  margin: 1.6em 0 0.45em;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
 }
 .z-md h1 {
-  font-size: 1.9em;
+  font-size: 1.85em;
+  letter-spacing: -0.02em;
+  margin-top: 0.4em;
 }
 .z-md h2 {
-  font-size: 1.45em;
-  padding-bottom: 0.25em;
-  border-bottom: 1px solid var(--z-hairline);
+  font-size: 1.35em;
 }
 .z-md h3 {
-  font-size: 1.2em;
+  font-size: 1.12em;
+}
+.z-md h4,
+.z-md h5,
+.z-md h6 {
+  font-size: 1em;
 }
 .z-md p,
 .z-md ul,
@@ -209,11 +402,11 @@ body {
 .z-md blockquote,
 .z-md pre,
 .z-md table {
-  margin: 0 0 0.9em;
+  margin: 0 0 0.85em;
 }
 .z-md ul,
 .z-md ol {
-  padding-left: 1.6em;
+  padding-left: 1.5em;
 }
 .z-md ul {
   list-style: disc;
@@ -221,63 +414,120 @@ body {
 .z-md ol {
   list-style: decimal;
 }
+.z-md li {
+  margin: 0.2em 0;
+}
+.z-md li::marker {
+  color: var(--z-faint);
+}
 .z-md li > ul,
 .z-md li > ol {
   margin: 0.2em 0;
 }
-.z-md li:has(> input[type="checkbox"]) {
-  list-style: none;
-  margin-left: -1.3em;
-}
-.z-md input[type="checkbox"] {
-  margin-right: 0.45em;
-  accent-color: var(--z-accent);
+.z-md strong {
+  font-weight: 650;
 }
 .z-md a {
   color: var(--z-accent);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--z-accent) 40%, transparent);
+  text-underline-offset: 3px;
   cursor: pointer;
+}
+.z-md a:hover {
+  text-decoration-color: var(--z-accent);
 }
 .z-md code {
   font-family: var(--z-font-mono);
-  font-size: 0.88em;
-  padding: 0.12em 0.35em;
-  border-radius: 4px;
-  background: var(--z-chrome);
+  font-size: 0.87em;
+  padding: 0.12em 0.4em;
+  border-radius: 5px;
+  background: var(--z-sunken);
+  border: 1px solid var(--z-hairline);
+  font-variant-ligatures: none;
+}
+/* A command or identifier never splits mid-token; the chip moves whole. */
+.z-md :not(pre) > code {
+  white-space: nowrap;
 }
 .z-md pre {
-  padding: 12px 14px;
-  border-radius: 6px;
-  background: var(--z-chrome);
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--z-sunken);
+  border: 1px solid var(--z-hairline);
   overflow-x: auto;
+  line-height: 1.55;
 }
 .z-md pre code {
   padding: 0;
+  border: 0;
   background: none;
-  font-size: 0.86em;
+  font-size: 0.87em;
 }
 .z-md blockquote {
-  padding-left: 1em;
-  border-left: 3px solid var(--z-hairline);
+  padding: 2px 0 2px 1em;
+  border-left: 3px solid var(--z-hairline-strong);
   color: var(--z-muted);
 }
 .z-md hr {
-  margin: 1.5em 0;
+  margin: 2em 0;
   border: 0;
   border-top: 1px solid var(--z-hairline);
 }
+
+/* Tables: rows, not boxes. A tinted header, hairline rows, no cell grid. */
 .z-md table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  max-width: 720px;
+  font-size: 0.93em;
+  line-height: 1.45;
+  border: 1px solid var(--z-hairline);
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
 }
 .z-md th,
 .z-md td {
-  padding: 4px 10px;
-  border: 1px solid var(--z-hairline);
+  padding: 7px 14px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--z-hairline);
+  min-width: 64px;
+}
+.z-md tr:last-child > td {
+  border-bottom: 0;
 }
 .z-md th {
-  background: var(--z-chrome);
+  background: var(--z-sunken);
+  color: var(--z-muted);
   font-weight: 600;
+}
+.z-md tr:first-child > th:first-child {
+  border-top-left-radius: 7px;
+}
+.z-md tr:first-child > th:last-child {
+  border-top-right-radius: 7px;
+}
+.z-md tbody tr:hover > td {
+  background: var(--z-row-hover);
+}
+.z-md th > p,
+.z-md td > p {
+  margin: 0;
+}
+
+/* Checklists: drawn boxes in the accent, never glyphs. */
+.z-md li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.5em;
+}
+.z-md input[type="checkbox"] {
+  margin: 0 0.55em 0 0;
+  width: 15px;
+  height: 15px;
+  vertical-align: -2px;
+  accent-color: var(--z-accent);
 }
 .z-md .z-md-img {
   color: var(--z-faint);
@@ -293,10 +543,7 @@ body {
   outline: none;
   white-space: pre-wrap;
   word-wrap: break-word;
-  caret-color: var(--z-text);
-}
-.z-rich .ProseMirror > * {
-  max-width: 760px;
+  caret-color: var(--z-accent);
 }
 .z-rich .ProseMirror > :first-child {
   margin-top: 0;
@@ -308,16 +555,50 @@ body {
   list-style: none;
   position: relative;
 }
+/* The box sits left of the item, where a click ticks it (RichEditor). */
 .z-rich .ProseMirror li[data-item-type="task"]::before {
-  content: "☐";
+  content: "";
   position: absolute;
-  left: -1.3em;
-  color: var(--z-muted);
+  left: -1.45em;
+  top: 0.3em;
+  width: 15px;
+  height: 15px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--z-faint);
+  border-radius: 4px;
   cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+.z-rich .ProseMirror li[data-item-type="task"]:hover::before {
+  border-color: var(--z-accent);
 }
 .z-rich .ProseMirror li[data-item-type="task"][data-checked="true"]::before {
-  content: "☑";
-  color: var(--z-accent);
+  border-color: var(--z-accent);
+  background-color: var(--z-accent);
+}
+/* The tick, drawn in the accent's own foreground color. */
+.z-rich .ProseMirror li[data-item-type="task"][data-checked="true"]::after {
+  content: "";
+  position: absolute;
+  left: -1.45em;
+  top: 0.3em;
+  width: 15px;
+  height: 15px;
+  background-color: var(--z-accent-fg);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.2l2.6 2.6L12 5.4' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 13px no-repeat;
+  pointer-events: none;
+}
+.z-rich .ProseMirror li[data-item-type="task"][data-checked="true"] > p {
+  color: var(--z-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--z-faint);
+}
+.z-rich .ProseMirror td.selectedCell,
+.z-rich .ProseMirror th.selectedCell {
+  background: var(--z-accent-tint);
 }
 .z-rich .z-rich-raw {
   white-space: pre-wrap;

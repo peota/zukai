@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Check, ChevronRight } from "lucide-react";
 import type { CSSProperties, KeyboardEvent } from "react";
 
 export interface MenuItem {
@@ -39,10 +40,10 @@ export interface MenuProps {
 
 /** The menu's panel and its rows, for lists that look like a Menu. */
 export const MENU_PANEL =
-  "z-fade-in min-w-48 max-w-[360px] select-none rounded-float bg-surface p-1 text-[12px] text-text shadow-float outline-none";
+  "z-fade-in min-w-48 max-w-[360px] select-none rounded-float bg-surface p-1.5 text-[13px] text-text shadow-float outline-none";
 export const menuRow = (active: boolean, disabled = false) =>
-  "flex cursor-default items-start gap-3 rounded-[5px] px-2 py-[5px] " +
-  (disabled ? "text-faint" : active ? "bg-chrome text-text" : "");
+  "flex cursor-default items-start gap-3 rounded-[6px] px-2.5 py-[6px] " +
+  (disabled ? "text-faint" : active ? "bg-row-sel text-text" : "");
 
 /** Zukai's floating menu in the Paper style (spec section 6). */
 export function Menu({
@@ -197,13 +198,15 @@ function MenuList({
       }
     >
       {heading && (
-        <div className="px-2 pt-1 pb-0.5 text-[10.5px] tracking-wide text-faint">
+        <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold tracking-[0.04em] text-faint">
           {heading}
         </div>
       )}
       {items.map((item, i) => (
         <div key={`${i}:${item.label}`} className="relative">
-          {item.separated && <div className="mx-1 my-1 h-px bg-hairline" />}
+          {item.separated && (
+            <div className="-mx-1.5 my-1.5 h-px bg-hairline" />
+          )}
           <div
             role="menuitem"
             aria-disabled={item.disabled || undefined}
@@ -221,29 +224,29 @@ function MenuList({
             <span className="min-w-0 flex-1">
               <span className="block truncate">{item.label}</span>
               {item.detail && (
-                <span className="block truncate text-[11px] text-faint">
+                <span className="block truncate text-[12px] text-faint">
                   {item.detail}
                 </span>
               )}
               {item.disabled && item.reason && (
-                <span className="block text-[11px] text-faint">
+                <span className="block text-[12px] text-faint">
                   {item.reason}
                 </span>
               )}
             </span>
             {item.checked && (
-              <span className="text-faint" aria-hidden>
-                ✓
+              <span className="self-center text-accent" aria-hidden>
+                <Check size={15} strokeWidth={2} />
               </span>
             )}
             {item.hint && (
-              <span className="shrink-0 text-[11px] text-faint">
+              <span className="shrink-0 text-[12px] text-faint">
                 {item.hint}
               </span>
             )}
             {item.submenu && (
-              <span className="text-faint" aria-hidden>
-                ▸
+              <span className="self-center text-faint" aria-hidden>
+                <ChevronRight size={15} strokeWidth={1.8} />
               </span>
             )}
           </div>
@@ -263,7 +266,7 @@ function MenuList({
         </div>
       ))}
       {items.length === 0 && empty && (
-        <div className="px-2 py-[5px] text-faint">{empty}</div>
+        <div className="px-2.5 py-[6px] text-faint">{empty}</div>
       )}
     </div>
   );

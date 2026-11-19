@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { Icon } from "./icons";
 import type { ReactNode } from "react";
 import type {
   FileFormat,
@@ -28,7 +29,7 @@ export interface StatusBarProps {
   onLineEndingMenu(anchor: DOMRect): void;
   /** Which of those menus is open, to highlight its chip. */
   openMenu?: "encoding" | "lineEnding" | null;
-  /** The `{ } Format` chip, for JSON. */
+  /** The Format chip, for JSON. */
   showFormat: boolean;
   onFormat(kind: FormatKind): void;
   /** The Format menu closed (picked or dismissed): refocus the editor. */
@@ -83,7 +84,7 @@ export const LANGUAGE_LABELS: Record<LanguageId, string> = {
 };
 
 const CHIP =
-  "rounded-[4px] px-1.5 py-0.5 hover:bg-surface hover:text-muted aria-expanded:bg-surface aria-expanded:text-text aria-expanded:shadow-float";
+  "rounded-[5px] px-2 py-[3px] hover:bg-row-hover hover:text-text aria-expanded:bg-row-sel aria-expanded:text-text";
 
 export function StatusBar({
   line,
@@ -117,7 +118,7 @@ export function StatusBar({
   const scratchEnding = platformLineEnding === "crlf" ? "CRLF" : "LF";
 
   return (
-    <div className="flex h-6 shrink-0 select-none items-center gap-3 bg-chrome px-3 text-[11px] text-faint">
+    <div className="flex h-7 shrink-0 select-none items-center gap-3 border-t border-hairline bg-chrome px-3 text-[12px] text-muted">
       {onSettings && (
         <button
           type="button"
@@ -125,23 +126,9 @@ export function StatusBar({
           aria-label="Settings"
           title={settingsHint ? `Settings (${settingsHint})` : "Settings"}
           onClick={onSettings}
-          className="-ml-1.5 flex size-5 shrink-0 items-center justify-center rounded-[4px] hover:bg-surface hover:text-muted"
+          className="-ml-1.5 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 14 14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.1"
-            aria-hidden="true"
-          >
-            <circle cx="7" cy="7" r="2" />
-            <path
-              d="M7 1.2v1.6M7 11.2v1.6M1.2 7h1.6M11.2 7h1.6M2.9 2.9l1.1 1.1M10 10l1.1 1.1M2.9 11.1 4 10M10 4l1.1-1.1"
-              strokeLinecap="round"
-            />
-          </svg>
+          <Icon name="settings" size={14} />
         </button>
       )}
       {kindLabel === undefined && !rich ? (
@@ -171,13 +158,22 @@ export function StatusBar({
         <div className="ml-auto flex items-center gap-1.5">
           {markdownMode && <ModeSwitch {...markdownMode} />}
           {preview && !rich && <PreviewSwitch {...preview} />}
+          {(markdownMode || preview) && (
+            <span
+              aria-hidden="true"
+              className="mx-1.5 h-3.5 w-px bg-hairline-strong"
+            />
+          )}
           {showFormat && (
             <Chip
               anchor="format"
               expanded={formatAt !== null}
               onClick={(r) => (formatAt ? closeFormat() : setFormatAt(r))}
             >
-              {"{ } Format"}
+              <span className="flex items-center gap-1.5">
+                <Icon name="data" size={13} />
+                Format
+              </span>
             </Chip>
           )}
           <button
@@ -312,7 +308,7 @@ function Radios<T extends string>({
       role="radiogroup"
       aria-label={label}
       title={hint ? `${label} (${hint})` : label}
-      className="flex items-center rounded-[4px]"
+      className="flex items-center gap-px rounded-[6px] bg-row-hover p-px"
     >
       {options.map((m) => (
         <button
@@ -323,10 +319,10 @@ function Radios<T extends string>({
           aria-checked={value === m.id}
           onClick={() => onChange(m.id)}
           className={
-            "rounded-[4px] px-1.5 py-0.5 " +
+            "rounded-[5px] px-2 py-px " +
             (value === m.id
-              ? "bg-surface text-text shadow-float"
-              : "hover:bg-surface hover:text-muted")
+              ? "bg-surface text-text shadow-tab"
+              : "hover:text-text")
           }
         >
           {m.label}

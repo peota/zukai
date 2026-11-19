@@ -205,7 +205,7 @@ describe("App", () => {
     // Left of the tab bar and editor, at its default width.
     expect(root.firstElementChild).toBe(side);
     expect(side.nextElementSibling).toBe(workspace);
-    expect(side.style.width).toBe("240px");
+    expect(side.style.width).toBe("260px");
     await waitFor(() => expect(l.libraryList).toHaveBeenCalledWith(R));
 
     act(() => modB());

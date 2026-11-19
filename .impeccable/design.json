@@ -1,0 +1,1680 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-19T16:05:30.777Z",
+  "title": "Design System: Zukai",
+  "extensions": {
+    "colorMeta": {
+      "accent-blue": {
+        "role": "primary",
+        "displayName": "Accent Blue",
+        "canonical": "#2563eb",
+        "oklch": "oklch(54.6% 0.215 262.9)",
+        "tonalRamp": [
+          "#000330",
+          "#001274",
+          "#002db5",
+          "#1a57de",
+          "#3e7eff",
+          "#7aacff",
+          "#b4d2ff",
+          "#e4efff"
+        ]
+      },
+      "accent-blue-dark": {
+        "role": "primary",
+        "displayName": "Accent Blue Dark",
+        "canonical": "#5b8def",
+        "oklch": "oklch(65.5% 0.156 262.5)",
+        "tonalRamp": [
+          "#010826",
+          "#031f5f",
+          "#113c97",
+          "#3260be",
+          "#5485e7",
+          "#89aef4",
+          "#bcd2fa",
+          "#e7effe"
+        ]
+      },
+      "accent-violet": {
+        "role": "primary",
+        "displayName": "Accent Violet",
+        "canonical": "#7c3aed",
+        "oklch": "oklch(54.1% 0.247 293.0)",
+        "tonalRamp": [
+          "#110031",
+          "#320076",
+          "#5500b8",
+          "#732de2",
+          "#955bff",
+          "#b496ff",
+          "#d3c6ff",
+          "#efebff"
+        ]
+      },
+      "accent-violet-dark": {
+        "role": "primary",
+        "displayName": "Accent Violet Dark",
+        "canonical": "#a183f7",
+        "oklch": "oklch(68.8% 0.167 293.4)",
+        "tonalRamp": [
+          "#0e0325",
+          "#2c0f5c",
+          "#4d2693",
+          "#6d4cbb",
+          "#9071e3",
+          "#b19ff1",
+          "#d2caf9",
+          "#efecfd"
+        ]
+      },
+      "accent-green": {
+        "role": "primary",
+        "displayName": "Accent Green",
+        "canonical": "#15803d",
+        "oklch": "oklch(52.7% 0.137 150.1)",
+        "tonalRamp": [
+          "#001101",
+          "#003304",
+          "#005715",
+          "#097b38",
+          "#3fa05b",
+          "#81bf8e",
+          "#b9dcbf",
+          "#e6f2e8"
+        ]
+      },
+      "accent-green-dark": {
+        "role": "primary",
+        "displayName": "Accent Green Dark",
+        "canonical": "#4cc47a",
+        "oklch": "oklch(73.4% 0.152 153.2)",
+        "tonalRamp": [
+          "#001201",
+          "#003404",
+          "#005a15",
+          "#007d38",
+          "#1fa35b",
+          "#76c28e",
+          "#b4ddbf",
+          "#e4f3e8"
+        ]
+      },
+      "accent-orange": {
+        "role": "primary",
+        "displayName": "Accent Orange",
+        "canonical": "#c2410c",
+        "oklch": "oklch(55.3% 0.174 38.4)",
+        "tonalRamp": [
+          "#220000",
+          "#550000",
+          "#8a0000",
+          "#b33200",
+          "#dd5a2d",
+          "#f09274",
+          "#fac2b1",
+          "#fee9e3"
+        ]
+      },
+      "accent-orange-dark": {
+        "role": "primary",
+        "displayName": "Accent Orange Dark",
+        "canonical": "#f39a4c",
+        "oklch": "oklch(76.3% 0.141 59.3)",
+        "tonalRamp": [
+          "#1c0300",
+          "#491100",
+          "#782800",
+          "#9e4c00",
+          "#c67118",
+          "#dd9f6d",
+          "#edc9ad",
+          "#f9ece2"
+        ]
+      },
+      "accent-pink": {
+        "role": "primary",
+        "displayName": "Accent Pink",
+        "canonical": "#db2777",
+        "oklch": "oklch(59.2% 0.218 0.6)",
+        "tonalRamp": [
+          "#240009",
+          "#5b0022",
+          "#93003f",
+          "#be0060",
+          "#e93882",
+          "#fa81a9",
+          "#ffbace",
+          "#ffe6ed"
+        ]
+      },
+      "accent-pink-dark": {
+        "role": "primary",
+        "displayName": "Accent Pink Dark",
+        "canonical": "#f27aae",
+        "oklch": "oklch(73.1% 0.157 354.4)",
+        "tonalRamp": [
+          "#1e000d",
+          "#4d002a",
+          "#7e044a",
+          "#a6356c",
+          "#cf5b8f",
+          "#e590b2",
+          "#f3c1d3",
+          "#fbe9ef"
+        ]
+      },
+      "accent-fg": {
+        "role": "primary",
+        "displayName": "Accent Fg",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#262626",
+          "#454545",
+          "#666666",
+          "#898989",
+          "#aeaeae",
+          "#d1d1d1",
+          "#eeeeee"
+        ]
+      },
+      "accent-fg-violet-dark": {
+        "role": "primary",
+        "displayName": "Accent Fg Violet Dark",
+        "canonical": "#160b33",
+        "oklch": "oklch(19.4% 0.075 290.4)",
+        "tonalRamp": [
+          "#0b0917",
+          "#262140",
+          "#453d6a",
+          "#665e8e",
+          "#8882b4",
+          "#ada9cd",
+          "#d0cee3",
+          "#eeedf5"
+        ]
+      },
+      "accent-fg-green-dark": {
+        "role": "primary",
+        "displayName": "Accent Fg Green Dark",
+        "canonical": "#06210f",
+        "oklch": "oklch(22.1% 0.048 151.7)",
+        "tonalRamp": [
+          "#050e07",
+          "#182c1d",
+          "#314d38",
+          "#526e58",
+          "#74927b",
+          "#9fb4a4",
+          "#c8d5cb",
+          "#ebf0ec"
+        ]
+      },
+      "accent-fg-orange-dark": {
+        "role": "primary",
+        "displayName": "Accent Fg Orange Dark",
+        "canonical": "#2a1302",
+        "oklch": "oklch(21.6% 0.048 56.8)",
+        "tonalRamp": [
+          "#120904",
+          "#342214",
+          "#593e2b",
+          "#7c5f4b",
+          "#a0826d",
+          "#bfa99a",
+          "#dbcec5",
+          "#f2edea"
+        ]
+      },
+      "accent-fg-pink-dark": {
+        "role": "primary",
+        "displayName": "Accent Fg Pink Dark",
+        "canonical": "#2e0818",
+        "oklch": "oklch(21.0% 0.065 358.3)",
+        "tonalRamp": [
+          "#14060b",
+          "#391c26",
+          "#613645",
+          "#855666",
+          "#aa7989",
+          "#c7a3ae",
+          "#e0cad1",
+          "#f4ecee"
+        ]
+      },
+      "paper-chrome": {
+        "role": "neutral",
+        "displayName": "Paper Chrome",
+        "canonical": "#f4f4f5",
+        "oklch": "oklch(96.7% 0.001 286.4)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#262627",
+          "#454546",
+          "#666667",
+          "#89898a",
+          "#aeaeae",
+          "#d1d1d1",
+          "#eeeeee"
+        ]
+      },
+      "paper-editor": {
+        "role": "neutral",
+        "displayName": "Paper Editor",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#262626",
+          "#454545",
+          "#666666",
+          "#898989",
+          "#aeaeae",
+          "#d1d1d1",
+          "#eeeeee"
+        ]
+      },
+      "paper-surface": {
+        "role": "neutral",
+        "displayName": "Paper Surface",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#262626",
+          "#454545",
+          "#666666",
+          "#898989",
+          "#aeaeae",
+          "#d1d1d1",
+          "#eeeeee"
+        ]
+      },
+      "paper-sunken": {
+        "role": "neutral",
+        "displayName": "Paper Sunken",
+        "canonical": "#f4f4f5",
+        "oklch": "oklch(96.7% 0.001 286.4)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#262627",
+          "#454546",
+          "#666667",
+          "#89898a",
+          "#aeaeae",
+          "#d1d1d1",
+          "#eeeeee"
+        ]
+      },
+      "paper-hairline": {
+        "role": "neutral",
+        "displayName": "Paper Hairline",
+        "canonical": "#e4e4e7",
+        "oklch": "oklch(92.0% 0.004 286.3)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#262628",
+          "#454547",
+          "#666668",
+          "#89898b",
+          "#aeaeb0",
+          "#d1d1d2",
+          "#eeeeef"
+        ]
+      },
+      "paper-hairline-strong": {
+        "role": "neutral",
+        "displayName": "Paper Hairline Strong",
+        "canonical": "#d4d4d8",
+        "oklch": "oklch(87.1% 0.005 286.3)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#262628",
+          "#454548",
+          "#666669",
+          "#89898c",
+          "#adadb0",
+          "#d1d1d2",
+          "#eeeeef"
+        ]
+      },
+      "paper-text": {
+        "role": "neutral",
+        "displayName": "Paper Text",
+        "canonical": "#18181b",
+        "oklch": "oklch(21.0% 0.006 285.9)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#262629",
+          "#454548",
+          "#666669",
+          "#89898d",
+          "#adadb0",
+          "#d1d1d2",
+          "#eeeeef"
+        ]
+      },
+      "paper-muted": {
+        "role": "neutral",
+        "displayName": "Paper Muted",
+        "canonical": "#52525b",
+        "oklch": "oklch(44.2% 0.015 285.8)",
+        "tonalRamp": [
+          "#0b0b0e",
+          "#26262c",
+          "#44444d",
+          "#65656e",
+          "#888892",
+          "#adadb4",
+          "#d0d0d5",
+          "#eeeef0"
+        ]
+      },
+      "paper-faint": {
+        "role": "neutral",
+        "displayName": "Paper Faint",
+        "canonical": "#6e6e78",
+        "oklch": "oklch(54.2% 0.015 285.9)",
+        "tonalRamp": [
+          "#0b0b0e",
+          "#26262c",
+          "#44444d",
+          "#65656f",
+          "#888892",
+          "#adadb5",
+          "#d0d0d5",
+          "#eeeef0"
+        ]
+      },
+      "solar-light-chrome": {
+        "role": "neutral",
+        "displayName": "Solar Light Chrome",
+        "canonical": "#f1ece1",
+        "oklch": "oklch(94.4% 0.016 86.4)",
+        "tonalRamp": [
+          "#0c0b08",
+          "#292620",
+          "#49453c",
+          "#6a665c",
+          "#8d897f",
+          "#b1aea6",
+          "#d3d1cc",
+          "#efeeed"
+        ]
+      },
+      "solar-light-editor": {
+        "role": "neutral",
+        "displayName": "Solar Light Editor",
+        "canonical": "#fbf8f2",
+        "oklch": "oklch(98.0% 0.009 84.6)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#282623",
+          "#474540",
+          "#686661",
+          "#8b8983",
+          "#b0aeaa",
+          "#d2d1ce",
+          "#efeeed"
+        ]
+      },
+      "solar-light-surface": {
+        "role": "neutral",
+        "displayName": "Solar Light Surface",
+        "canonical": "#fffdf9",
+        "oklch": "oklch(99.4% 0.006 84.6)",
+        "tonalRamp": [
+          "#0c0b0a",
+          "#272624",
+          "#464542",
+          "#676662",
+          "#8b8985",
+          "#afaeab",
+          "#d1d1cf",
+          "#efeeee"
+        ]
+      },
+      "solar-light-sunken": {
+        "role": "neutral",
+        "displayName": "Solar Light Sunken",
+        "canonical": "#f1ece1",
+        "oklch": "oklch(94.4% 0.016 86.4)",
+        "tonalRamp": [
+          "#0c0b08",
+          "#292620",
+          "#49453c",
+          "#6a665c",
+          "#8d897f",
+          "#b1aea6",
+          "#d3d1cc",
+          "#efeeed"
+        ]
+      },
+      "solar-light-hairline": {
+        "role": "neutral",
+        "displayName": "Solar Light Hairline",
+        "canonical": "#e3dccd",
+        "oklch": "oklch(89.6% 0.022 85.9)",
+        "tonalRamp": [
+          "#0d0b07",
+          "#2a261d",
+          "#4a4438",
+          "#6c6558",
+          "#8f887b",
+          "#b2ada3",
+          "#d3d1cb",
+          "#efeeec"
+        ]
+      },
+      "solar-light-hairline-strong": {
+        "role": "neutral",
+        "displayName": "Solar Light Hairline Strong",
+        "canonical": "#d3cab8",
+        "oklch": "oklch(84.1% 0.026 84.6)",
+        "tonalRamp": [
+          "#0d0b06",
+          "#2b261b",
+          "#4c4435",
+          "#6d6555",
+          "#918877",
+          "#b3ada1",
+          "#d4d1c9",
+          "#efeeec"
+        ]
+      },
+      "solar-light-text": {
+        "role": "neutral",
+        "displayName": "Solar Light Text",
+        "canonical": "#2a251e",
+        "oklch": "oklch(26.8% 0.015 76.3)",
+        "tonalRamp": [
+          "#0d0b08",
+          "#2a2621",
+          "#4a443c",
+          "#6b655d",
+          "#8e8880",
+          "#b2ada7",
+          "#d3d0cd",
+          "#efeeed"
+        ]
+      },
+      "solar-light-muted": {
+        "role": "neutral",
+        "displayName": "Solar Light Muted",
+        "canonical": "#5c5446",
+        "oklch": "oklch(44.9% 0.024 81.7)",
+        "tonalRamp": [
+          "#0d0b07",
+          "#2b261c",
+          "#4c4436",
+          "#6d6557",
+          "#918879",
+          "#b3ada2",
+          "#d4d0ca",
+          "#efeeec"
+        ]
+      },
+      "solar-light-faint": {
+        "role": "neutral",
+        "displayName": "Solar Light Faint",
+        "canonical": "#6b6252",
+        "oklch": "oklch(50.0% 0.027 82.0)",
+        "tonalRamp": [
+          "#0e0b06",
+          "#2b261b",
+          "#4c4435",
+          "#6e6555",
+          "#918877",
+          "#b4ada1",
+          "#d4d0c9",
+          "#f0eeec"
+        ]
+      },
+      "graphite-chrome": {
+        "role": "neutral",
+        "displayName": "Graphite Chrome",
+        "canonical": "#18181b",
+        "oklch": "oklch(21.0% 0.006 285.9)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#262629",
+          "#454548",
+          "#666669",
+          "#89898d",
+          "#adadb0",
+          "#d1d1d2",
+          "#eeeeef"
+        ]
+      },
+      "graphite-editor": {
+        "role": "neutral",
+        "displayName": "Graphite Editor",
+        "canonical": "#1f1f23",
+        "oklch": "oklch(24.1% 0.008 285.8)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#262629",
+          "#444449",
+          "#65656a",
+          "#88888e",
+          "#adadb1",
+          "#d1d1d3",
+          "#eeeeef"
+        ]
+      },
+      "graphite-surface": {
+        "role": "neutral",
+        "displayName": "Graphite Surface",
+        "canonical": "#27272b",
+        "oklch": "oklch(27.4% 0.007 285.9)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#262629",
+          "#444449",
+          "#65656a",
+          "#88898d",
+          "#adadb1",
+          "#d1d1d3",
+          "#eeeeef"
+        ]
+      },
+      "graphite-sunken": {
+        "role": "neutral",
+        "displayName": "Graphite Sunken",
+        "canonical": "#141416",
+        "oklch": "oklch(19.2% 0.004 286.0)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#262628",
+          "#454547",
+          "#666668",
+          "#89898b",
+          "#aeaeb0",
+          "#d1d1d2",
+          "#eeeeef"
+        ]
+      },
+      "graphite-hairline": {
+        "role": "neutral",
+        "displayName": "Graphite Hairline",
+        "canonical": "#2c2c31",
+        "oklch": "oklch(29.5% 0.009 285.8)",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#26262a",
+          "#44444a",
+          "#65656b",
+          "#88888e",
+          "#adadb2",
+          "#d1d1d3",
+          "#eeeeef"
+        ]
+      },
+      "graphite-hairline-strong": {
+        "role": "neutral",
+        "displayName": "Graphite Hairline Strong",
+        "canonical": "#3a3a40",
+        "oklch": "oklch(35.1% 0.010 285.9)",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#26262a",
+          "#44444a",
+          "#65656c",
+          "#88888f",
+          "#adadb2",
+          "#d0d1d3",
+          "#eeeeef"
+        ]
+      },
+      "graphite-text": {
+        "role": "neutral",
+        "displayName": "Graphite Text",
+        "canonical": "#e7e7ea",
+        "oklch": "oklch(92.9% 0.004 286.3)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#262628",
+          "#454547",
+          "#666668",
+          "#89898b",
+          "#aeaeb0",
+          "#d1d1d2",
+          "#eeeeef"
+        ]
+      },
+      "graphite-muted": {
+        "role": "neutral",
+        "displayName": "Graphite Muted",
+        "canonical": "#a1a1aa",
+        "oklch": "oklch(71.2% 0.013 286.1)",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#26262b",
+          "#44444c",
+          "#65656d",
+          "#888891",
+          "#adadb4",
+          "#d0d0d4",
+          "#eeeef0"
+        ]
+      },
+      "graphite-faint": {
+        "role": "neutral",
+        "displayName": "Graphite Faint",
+        "canonical": "#85858f",
+        "oklch": "oklch(62.0% 0.015 286.0)",
+        "tonalRamp": [
+          "#0b0b0e",
+          "#26262c",
+          "#44444d",
+          "#65656e",
+          "#888892",
+          "#adadb4",
+          "#d0d0d5",
+          "#eeeef0"
+        ]
+      },
+      "midnight-chrome": {
+        "role": "neutral",
+        "displayName": "Midnight Chrome",
+        "canonical": "#0e121a",
+        "oklch": "oklch(18.2% 0.018 264.0)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23262d",
+          "#40454f",
+          "#616671",
+          "#848994",
+          "#aaaeb6",
+          "#cfd1d6",
+          "#edeef0"
+        ]
+      },
+      "midnight-editor": {
+        "role": "neutral",
+        "displayName": "Midnight Editor",
+        "canonical": "#131925",
+        "oklch": "oklch(21.3% 0.026 263.8)",
+        "tonalRamp": [
+          "#090b10",
+          "#222630",
+          "#3e4553",
+          "#5f6675",
+          "#818999",
+          "#a8aeba",
+          "#ced1d8",
+          "#edeef1"
+        ]
+      },
+      "midnight-surface": {
+        "role": "neutral",
+        "displayName": "Midnight Surface",
+        "canonical": "#1b2232",
+        "oklch": "oklch(25.3% 0.032 265.9)",
+        "tonalRamp": [
+          "#090b11",
+          "#212633",
+          "#3d4557",
+          "#5d6679",
+          "#80899d",
+          "#a7aebd",
+          "#cdd1da",
+          "#edeef2"
+        ]
+      },
+      "midnight-sunken": {
+        "role": "neutral",
+        "displayName": "Midnight Sunken",
+        "canonical": "#0b0e15",
+        "oklch": "oklch(16.4% 0.016 266.6)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#24262c",
+          "#41454e",
+          "#62666f",
+          "#858993",
+          "#abaeb5",
+          "#cfd1d5",
+          "#eeeef0"
+        ]
+      },
+      "midnight-hairline": {
+        "role": "neutral",
+        "displayName": "Midnight Hairline",
+        "canonical": "#212a3b",
+        "oklch": "oklch(28.5% 0.034 262.8)",
+        "tonalRamp": [
+          "#080b11",
+          "#202733",
+          "#3b4558",
+          "#5c667a",
+          "#7e8a9e",
+          "#a6aebd",
+          "#ccd1da",
+          "#edeef2"
+        ]
+      },
+      "midnight-hairline-strong": {
+        "role": "neutral",
+        "displayName": "Midnight Hairline Strong",
+        "canonical": "#2d384d",
+        "oklch": "oklch(34.0% 0.040 263.0)",
+        "tonalRamp": [
+          "#080b12",
+          "#1f2635",
+          "#3a455b",
+          "#5a667e",
+          "#7c8aa2",
+          "#a5aec0",
+          "#ccd1dc",
+          "#eceef2"
+        ]
+      },
+      "midnight-text": {
+        "role": "neutral",
+        "displayName": "Midnight Text",
+        "canonical": "#e1e6ef",
+        "oklch": "oklch(92.4% 0.013 262.4)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#24272b",
+          "#41454c",
+          "#62666e",
+          "#858991",
+          "#abaeb4",
+          "#cfd1d4",
+          "#eeeef0"
+        ]
+      },
+      "midnight-muted": {
+        "role": "neutral",
+        "displayName": "Midnight Muted",
+        "canonical": "#98a2b6",
+        "oklch": "oklch(71.1% 0.031 264.4)",
+        "tonalRamp": [
+          "#080b11",
+          "#212632",
+          "#3d4556",
+          "#5d6679",
+          "#80899d",
+          "#a7aebc",
+          "#cdd1d9",
+          "#edeef1"
+        ]
+      },
+      "midnight-faint": {
+        "role": "neutral",
+        "displayName": "Midnight Faint",
+        "canonical": "#7f899d",
+        "oklch": "oklch(62.9% 0.032 264.3)",
+        "tonalRamp": [
+          "#080b11",
+          "#202633",
+          "#3c4557",
+          "#5d6679",
+          "#7f899d",
+          "#a7aebd",
+          "#cdd1da",
+          "#edeef2"
+        ]
+      },
+      "solar-dark-chrome": {
+        "role": "neutral",
+        "displayName": "Solar Dark Chrome",
+        "canonical": "#1a1815",
+        "oklch": "oklch(21.0% 0.007 78.2)",
+        "tonalRamp": [
+          "#0c0b0a",
+          "#282624",
+          "#474541",
+          "#686662",
+          "#8b8985",
+          "#afaeab",
+          "#d2d1cf",
+          "#efeeee"
+        ]
+      },
+      "solar-dark-editor": {
+        "role": "neutral",
+        "displayName": "Solar Dark Editor",
+        "canonical": "#211f1b",
+        "oklch": "oklch(24.0% 0.008 84.6)",
+        "tonalRamp": [
+          "#0c0b0a",
+          "#282623",
+          "#474540",
+          "#686661",
+          "#8b8984",
+          "#afaeaa",
+          "#d2d1cf",
+          "#efeeed"
+        ]
+      },
+      "solar-dark-surface": {
+        "role": "neutral",
+        "displayName": "Solar Dark Surface",
+        "canonical": "#2b2823",
+        "oklch": "oklch(27.8% 0.010 80.6)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#282622",
+          "#48453f",
+          "#696660",
+          "#8c8982",
+          "#b0ada9",
+          "#d2d1ce",
+          "#efeeed"
+        ]
+      },
+      "solar-dark-sunken": {
+        "role": "neutral",
+        "displayName": "Solar Dark Sunken",
+        "canonical": "#151310",
+        "oklch": "oklch(18.8% 0.007 78.1)",
+        "tonalRamp": [
+          "#0c0b0a",
+          "#282624",
+          "#474541",
+          "#686662",
+          "#8b8985",
+          "#afaeab",
+          "#d2d1cf",
+          "#efeeee"
+        ]
+      },
+      "solar-dark-hairline": {
+        "role": "neutral",
+        "displayName": "Solar Dark Hairline",
+        "canonical": "#322e28",
+        "oklch": "oklch(30.3% 0.012 78.1)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#292622",
+          "#49443e",
+          "#6a655f",
+          "#8d8881",
+          "#b1ada8",
+          "#d3d1ce",
+          "#efeeed"
+        ]
+      },
+      "solar-dark-hairline-strong": {
+        "role": "neutral",
+        "displayName": "Solar Dark Hairline Strong",
+        "canonical": "#423d35",
+        "oklch": "oklch(36.2% 0.015 79.7)",
+        "tonalRamp": [
+          "#0d0b08",
+          "#292620",
+          "#49443c",
+          "#6b655d",
+          "#8e887f",
+          "#b1ada7",
+          "#d3d1cd",
+          "#efeeed"
+        ]
+      },
+      "solar-dark-text": {
+        "role": "neutral",
+        "displayName": "Solar Dark Text",
+        "canonical": "#ebe4d8",
+        "oklch": "oklch(92.1% 0.018 81.3)",
+        "tonalRamp": [
+          "#0d0b08",
+          "#2a261f",
+          "#4a443a",
+          "#6b655b",
+          "#8f887d",
+          "#b2ada5",
+          "#d3d1cc",
+          "#efeeed"
+        ]
+      },
+      "solar-dark-muted": {
+        "role": "neutral",
+        "displayName": "Solar Dark Muted",
+        "canonical": "#ada392",
+        "oklch": "oklch(71.9% 0.027 81.1)",
+        "tonalRamp": [
+          "#0e0b06",
+          "#2c261b",
+          "#4c4435",
+          "#6e6555",
+          "#928877",
+          "#b4ada1",
+          "#d4d0c9",
+          "#f0eeec"
+        ]
+      },
+      "solar-dark-faint": {
+        "role": "neutral",
+        "displayName": "Solar Dark Faint",
+        "canonical": "#938a7a",
+        "oklch": "oklch(63.7% 0.026 82.1)",
+        "tonalRamp": [
+          "#0d0b06",
+          "#2b261c",
+          "#4c4436",
+          "#6d6556",
+          "#918878",
+          "#b4ada1",
+          "#d4d0ca",
+          "#f0eeec"
+        ]
+      },
+      "danger": {
+        "role": "status",
+        "displayName": "Danger",
+        "canonical": "#be123c",
+        "oklch": "oklch(51.4% 0.199 17.6)",
+        "tonalRamp": [
+          "#240000",
+          "#5a0000",
+          "#910000",
+          "#bb1f11",
+          "#e64e3b",
+          "#f78b7a",
+          "#febfb4",
+          "#ffe8e4"
+        ]
+      },
+      "danger-dark": {
+        "role": "status",
+        "displayName": "Danger Dark",
+        "canonical": "#f87171",
+        "oklch": "oklch(71.1% 0.166 22.2)",
+        "tonalRamp": [
+          "#210001",
+          "#540005",
+          "#880016",
+          "#b12f37",
+          "#db5759",
+          "#ef8f8c",
+          "#f9c1be",
+          "#fee9e7"
+        ]
+      },
+      "warn-bg": {
+        "role": "status",
+        "displayName": "Warn Bg",
+        "canonical": "#fdf3d8",
+        "oklch": "oklch(96.5% 0.037 90.1)",
+        "tonalRamp": [
+          "#0e0b05",
+          "#2c2616",
+          "#4d442e",
+          "#6e654e",
+          "#928970",
+          "#b4ae9c",
+          "#d4d1c7",
+          "#f0eeeb"
+        ]
+      },
+      "warn-fg": {
+        "role": "status",
+        "displayName": "Warn Fg",
+        "canonical": "#7a5208",
+        "oklch": "oklch(47.1% 0.096 75.2)",
+        "tonalRamp": [
+          "#150800",
+          "#3a2000",
+          "#623c00",
+          "#865d1a",
+          "#ab8042",
+          "#c7a87e",
+          "#e0ceb6",
+          "#f4ede5"
+        ]
+      },
+      "err-bg": {
+        "role": "status",
+        "displayName": "Err Bg",
+        "canonical": "#fde6e4",
+        "oklch": "oklch(94.3% 0.025 23.6)",
+        "tonalRamp": [
+          "#0f0909",
+          "#2f2322",
+          "#52403e",
+          "#74615f",
+          "#988482",
+          "#b9aaa8",
+          "#d7cfce",
+          "#f1eded"
+        ]
+      },
+      "err-fg": {
+        "role": "status",
+        "displayName": "Err Fg",
+        "canonical": "#a12a20",
+        "oklch": "oklch(47.2% 0.157 29.2)",
+        "tonalRamp": [
+          "#200000",
+          "#520000",
+          "#850403",
+          "#ae372b",
+          "#d75d4e",
+          "#eb9385",
+          "#f7c3ba",
+          "#fde9e6"
+        ]
+      },
+      "warn-bg-dark": {
+        "role": "status",
+        "displayName": "Warn Bg Dark",
+        "canonical": "#3a2f17",
+        "oklch": "oklch(31.1% 0.041 85.4)",
+        "tonalRamp": [
+          "#0e0b04",
+          "#2d2514",
+          "#4f442b",
+          "#71654b",
+          "#94886d",
+          "#b6ad9a",
+          "#d6d0c5",
+          "#f0eeea"
+        ]
+      },
+      "warn-fg-dark": {
+        "role": "status",
+        "displayName": "Warn Fg Dark",
+        "canonical": "#f2c86b",
+        "oklch": "oklch(85.1% 0.121 85.4)",
+        "tonalRamp": [
+          "#150800",
+          "#3a2000",
+          "#623d00",
+          "#855f00",
+          "#aa821a",
+          "#c6aa6e",
+          "#dfcfae",
+          "#f4eee2"
+        ]
+      },
+      "err-bg-dark": {
+        "role": "status",
+        "displayName": "Err Bg Dark",
+        "canonical": "#3d2020",
+        "oklch": "oklch(28.3% 0.045 20.3)",
+        "tonalRamp": [
+          "#120808",
+          "#35201f",
+          "#5b3b3b",
+          "#7e5c5b",
+          "#a37f7e",
+          "#c1a6a6",
+          "#dccdcc",
+          "#f3eded"
+        ]
+      },
+      "err-fg-dark": {
+        "role": "status",
+        "displayName": "Err Fg Dark",
+        "canonical": "#f5a3a3",
+        "oklch": "oklch(79.6% 0.098 19.5)",
+        "tonalRamp": [
+          "#190405",
+          "#441417",
+          "#702b2f",
+          "#964d4f",
+          "#bd7071",
+          "#d69d9c",
+          "#e9c8c7",
+          "#f8ebeb"
+        ]
+      },
+      "syn-keyword": {
+        "role": "syntax",
+        "displayName": "Syn Keyword",
+        "canonical": "#8b3fd9",
+        "oklch": "oklch(54.7% 0.222 302.0)",
+        "tonalRamp": [
+          "#14002a",
+          "#380068",
+          "#5f00a4",
+          "#8031cc",
+          "#a45cf6",
+          "#c194ff",
+          "#dbc4ff",
+          "#f2eaff"
+        ]
+      },
+      "syn-string": {
+        "role": "syntax",
+        "displayName": "Syn String",
+        "canonical": "#2f7d4f",
+        "oklch": "oklch(52.9% 0.106 154.4)",
+        "tonalRamp": [
+          "#001004",
+          "#003113",
+          "#005529",
+          "#29774a",
+          "#509c6c",
+          "#89bc99",
+          "#bdd9c5",
+          "#e7f2ea"
+        ]
+      },
+      "syn-number": {
+        "role": "syntax",
+        "displayName": "Syn Number",
+        "canonical": "#b4580f",
+        "oklch": "oklch(56.3% 0.141 51.1)",
+        "tonalRamp": [
+          "#1d0200",
+          "#4b0d00",
+          "#7b2300",
+          "#a24800",
+          "#ca6c2c",
+          "#e09c74",
+          "#f0c7b1",
+          "#faebe3"
+        ]
+      },
+      "syn-function": {
+        "role": "syntax",
+        "displayName": "Syn Function",
+        "canonical": "#1d63c9",
+        "oklch": "oklch(51.7% 0.173 258.8)",
+        "tonalRamp": [
+          "#000829",
+          "#001e64",
+          "#003b9f",
+          "#1a61c7",
+          "#4186f0",
+          "#7eaffa",
+          "#b6d3fe",
+          "#e5efff"
+        ]
+      },
+      "syn-type": {
+        "role": "syntax",
+        "displayName": "Syn Type",
+        "canonical": "#a3480f",
+        "oklch": "oklch(51.2% 0.136 46.4)",
+        "tonalRamp": [
+          "#1d0200",
+          "#4b0c00",
+          "#7b2200",
+          "#a2470e",
+          "#ca6c3a",
+          "#e09b7a",
+          "#f0c7b4",
+          "#faebe4"
+        ]
+      },
+      "syn-comment": {
+        "role": "syntax",
+        "displayName": "Syn Comment",
+        "canonical": "#8a8a93",
+        "oklch": "oklch(63.6% 0.013 286.0)",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#26262b",
+          "#44444c",
+          "#65656e",
+          "#888891",
+          "#adadb4",
+          "#d0d0d4",
+          "#eeeef0"
+        ]
+      },
+      "syn-keyword-dark": {
+        "role": "syntax",
+        "displayName": "Syn Keyword Dark",
+        "canonical": "#c79bf2",
+        "oklch": "oklch(76.2% 0.129 306.8)",
+        "tonalRamp": [
+          "#11041d",
+          "#33144b",
+          "#572c7a",
+          "#794f9f",
+          "#9e72c6",
+          "#bd9fdb",
+          "#d9c9ec",
+          "#f1ecf8"
+        ]
+      },
+      "syn-string-dark": {
+        "role": "syntax",
+        "displayName": "Syn String Dark",
+        "canonical": "#9fd49b",
+        "oklch": "oklch(81.8% 0.096 142.9)",
+        "tonalRamp": [
+          "#020f02",
+          "#0c2f0b",
+          "#21511f",
+          "#437440",
+          "#669862",
+          "#96b993",
+          "#c3d8c1",
+          "#e9f1e9"
+        ]
+      },
+      "syn-number-dark": {
+        "role": "syntax",
+        "displayName": "Syn Number Dark",
+        "canonical": "#f0b46e",
+        "oklch": "oklch(81.1% 0.112 69.4)",
+        "tonalRamp": [
+          "#170600",
+          "#401c00",
+          "#6a3600",
+          "#8e5800",
+          "#b47c34",
+          "#cfa577",
+          "#e4cdb3",
+          "#f6ede4"
+        ]
+      },
+      "syn-function-dark": {
+        "role": "syntax",
+        "displayName": "Syn Function Dark",
+        "canonical": "#7fb6ff",
+        "oklch": "oklch(76.7% 0.120 255.8)",
+        "tonalRamp": [
+          "#000a20",
+          "#002551",
+          "#0d4483",
+          "#3366a9",
+          "#568bd1",
+          "#8bb1e3",
+          "#bdd3f0",
+          "#e7effa"
+        ]
+      },
+      "syn-type-dark": {
+        "role": "syntax",
+        "displayName": "Syn Type Dark",
+        "canonical": "#f2a77a",
+        "oklch": "oklch(79.1% 0.107 51.6)",
+        "tonalRamp": [
+          "#190500",
+          "#441700",
+          "#703000",
+          "#955225",
+          "#bc7549",
+          "#d5a182",
+          "#e8cab9",
+          "#f7ece6"
+        ]
+      },
+      "syn-comment-dark": {
+        "role": "syntax",
+        "displayName": "Syn Comment Dark",
+        "canonical": "#73737d",
+        "oklch": "oklch(55.9% 0.015 285.9)",
+        "tonalRamp": [
+          "#0b0b0e",
+          "#26262c",
+          "#44444d",
+          "#65656f",
+          "#888892",
+          "#adadb5",
+          "#d0d0d5",
+          "#eeeef0"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "A note's H1 (1.85em of the 15px body)."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "H2 in notes."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "H3 in notes; H4 to H6 at body size, same weight."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Markdown preview and rich editor; 720px column, prose at 70ch."
+      },
+      "ui": {
+        "displayName": "UI",
+        "purpose": "Tabs, menus, dialog, fields, notices."
+      },
+      "sidebar": {
+        "displayName": "Sidebar",
+        "purpose": "Library tree, Pinned and Scratchpads rows."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Status bar, menu hints and details, file-bar buttons, kbd keys."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase sidebar section headings and shortcut group headings, faint ink."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Text editor (14px default, user-adjustable); 0.87em for code in notes."
+      }
+    },
+    "themes": {
+      "attributes": {
+        "data-theme": [
+          "light",
+          "dark"
+        ],
+        "data-palette": [
+          "paper",
+          "solar-light",
+          "graphite",
+          "midnight",
+          "solar-dark"
+        ],
+        "data-accent": [
+          "blue",
+          "violet",
+          "green",
+          "orange",
+          "pink"
+        ]
+      },
+      "defaults": {
+        "light": "paper",
+        "dark": "graphite",
+        "accent": "blue",
+        "mode": "system"
+      },
+      "derivedAccent": [
+        {
+          "name": "accent-soft",
+          "value": "color-mix(in srgb, var(--z-accent) 22%, transparent)",
+          "purpose": "Text and editor selection, picker highlight, current line number."
+        },
+        {
+          "name": "accent-tint",
+          "value": "color-mix(in srgb, var(--z-accent) 12%, transparent)",
+          "purpose": "Pressed tools, selected table cells, table-controls pill."
+        },
+        {
+          "name": "search-current",
+          "value": "color-mix(in srgb, var(--z-accent) 42%, transparent)",
+          "purpose": "The current find match."
+        },
+        {
+          "name": "selection-match",
+          "value": "color-mix(in srgb, var(--z-accent) 14%, transparent)",
+          "purpose": "Other occurrences of the selection."
+        },
+        {
+          "name": "focus",
+          "value": "color-mix(in srgb, var(--z-accent) 70%, transparent)",
+          "purpose": "The 2px keyboard focus outline."
+        }
+      ],
+      "rowFills": [
+        {
+          "name": "row-hover",
+          "light": "rgb(24 24 27 / 0.05)",
+          "solarLight": "rgb(60 45 20 / 0.06)",
+          "dark": "rgb(255 255 255 / 0.05)"
+        },
+        {
+          "name": "row-sel",
+          "light": "rgb(24 24 27 / 0.08)",
+          "solarLight": "rgb(60 45 20 / 0.1)",
+          "dark": "rgb(255 255 255 / 0.08)"
+        },
+        {
+          "name": "active-line",
+          "light": "rgb(24 24 27 / 0.025)",
+          "solarLight": "rgb(60 45 20 / 0.03)",
+          "dark": "rgb(255 255 255 / 0.025)"
+        }
+      ]
+    },
+    "shadows": [
+      {
+        "name": "float",
+        "value": "0 0 0 1px rgb(0 0 0 / 0.06), 0 2px 4px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.1)",
+        "purpose": "Light scheme: menus, pickers, find bar, dialog, inline errors, a dragged tab."
+      },
+      {
+        "name": "float-dark",
+        "value": "0 0 0 1px rgb(255 255 255 / 0.07), 0 2px 4px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.45)",
+        "purpose": "Dark scheme float, with a white ring to hold edges on near-black."
+      },
+      {
+        "name": "tab",
+        "value": "0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.06)",
+        "purpose": "Light scheme: the chosen segment of a segmented control."
+      },
+      {
+        "name": "tab-dark",
+        "value": "0 0 0 1px rgb(255 255 255 / 0.05)",
+        "purpose": "Dark scheme chosen segment."
+      },
+      {
+        "name": "scrim",
+        "value": "rgb(0 0 0 / 0.4)",
+        "purpose": "Behind the Settings dialog only."
+      }
+    ],
+    "focus": [
+      {
+        "name": "focus-ring",
+        "value": "outline: 2px solid var(--z-focus); outline-offset: 1px",
+        "purpose": "Every keyboard-focusable control."
+      },
+      {
+        "name": "row-cursor",
+        "value": "box-shadow: inset 0 0 0 1px var(--z-accent-soft)",
+        "purpose": "Keyboard position in the tree and sidebar lists."
+      },
+      {
+        "name": "drop-target",
+        "value": "background: var(--z-row-sel); box-shadow: inset 0 0 0 1px var(--z-accent)",
+        "purpose": "A folder under a drag."
+      }
+    ],
+    "motion": [
+      {
+        "name": "fade-in",
+        "value": "140ms cubic-bezier(0.16, 1, 0.3, 1); from opacity 0, translateY(-2px) scale(0.99)",
+        "purpose": "Floats and notices enter; none under reduced motion."
+      },
+      {
+        "name": "chevron",
+        "value": "transform 150ms ease-out",
+        "purpose": "Folder disclosure turns 90 degrees."
+      },
+      {
+        "name": "check",
+        "value": "background-color, border-color 120ms ease-out",
+        "purpose": "Checklist box fill and hover border."
+      }
+    ],
+    "scrollbars": {
+      "width": "10px",
+      "thumb": "var(--z-hairline-strong), 3px transparent border, full radius",
+      "thumbHover": "var(--z-faint)",
+      "track": "transparent"
+    },
+    "layout": {
+      "sidebar": {
+        "default": "260px",
+        "min": "180px",
+        "max": "480px",
+        "handle": "6px",
+        "keyStep": "16px"
+      },
+      "tabBar": "40px",
+      "tab": {
+        "height": "34px",
+        "minWidth": "120px",
+        "maxWidth": "220px",
+        "splitMaxWidth": "380px",
+        "gap": "2px"
+      },
+      "richToolbar": "min 36px, 50px text-aligned inset",
+      "statusBar": "28px",
+      "noteColumn": "720px, prose 70ch, padding 32px 56px 64px",
+      "textEditor": "content 14px vertical, lines 0 32px 0 14px",
+      "dialog": "min(600px, 100vw - 32px) by min(620px, 85vh)"
+    },
+    "icons": {
+      "library": "lucide-react",
+      "defaultSize": "16px",
+      "strokeWidth": 1.6,
+      "absoluteStrokeBelow": "16px",
+      "smallMarks": "plus, close, more, search at 14-15px, stroke 1.8",
+      "chevron": "14px, stroke 2"
+    },
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The accent action, used sparingly (Choose Library folder).",
+      "html": "<button class=\"ds-btn-primary\">Choose Library folder…</button>",
+      "css": ".ds-btn-primary { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); font-size: 13px; font-weight: 500; background: var(--z-accent, #2563eb); color: var(--z-accent-fg, #fff); border: 0; border-radius: 6px; padding: 4px 10px; cursor: default; } .ds-btn-primary:hover { filter: brightness(1.06); } .ds-btn-primary:focus-visible { outline: 2px solid color-mix(in srgb, var(--z-accent, #2563eb) 70%, transparent); outline-offset: 1px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Quiet secondary action beside a primary.",
+      "html": "<button class=\"ds-btn-ghost\">Create it again</button>",
+      "css": ".ds-btn-ghost { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); font-size: 13px; background: transparent; color: var(--z-muted, #52525b); border: 0; border-radius: 6px; padding: 4px 10px; } .ds-btn-ghost:hover { background: var(--z-row-hover, rgb(24 24 27 / 0.05)); color: var(--z-text, #18181b); } .ds-btn-ghost:focus-visible { outline: 2px solid color-mix(in srgb, var(--z-accent, #2563eb) 70%, transparent); outline-offset: 1px; }"
+    },
+    {
+      "name": "File Bar",
+      "kind": "custom",
+      "refersTo": "bar-button-primary",
+      "description": "The notice strip under the tab bar for a held File, with ink-primary and ringed secondary buttons.",
+      "html": "<div class=\"ds-bar\"><span class=\"ds-bar-msg\">notes.md was changed by another program while you were editing. Autosave is paused.</span><button class=\"ds-bar-btn\">Load disk version</button><button class=\"ds-bar-btn ds-bar-btn-primary\">Keep mine</button></div>",
+      "css": ".ds-bar { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); display: flex; align-items: center; gap: 12px; padding: 8px 16px; font-size: 13px; background: var(--z-bar-warn-bg, #fdf3d8); color: var(--z-bar-warn-fg, #7a5208); border-bottom: 1px solid var(--z-hairline, #e4e4e7); } .ds-bar-msg { flex: 1; min-width: 0; } .ds-bar-btn { font: inherit; font-size: 12px; font-weight: 500; border: 0; border-radius: 6px; padding: 4px 10px; background: var(--z-bar-btn-bg, rgb(255 255 255 / 0.8)); color: var(--z-text, #18181b); box-shadow: 0 0 0 1px var(--z-bar-btn-ring, rgb(0 0 0 / 0.1)); } .ds-bar-btn:hover { background: var(--z-bar-btn-hover, #fff); } .ds-bar-btn-primary { background: var(--z-bar-btn-primary-bg, #18181b); color: var(--z-bar-btn-primary-fg, #fff); box-shadow: none; } .ds-bar-btn-primary:hover { background: var(--z-bar-btn-primary-bg, #18181b); opacity: 0.9; } .ds-bar-btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--z-accent, #2563eb) 70%, transparent); outline-offset: 1px; }"
+    },
+    {
+      "name": "Library Search",
+      "kind": "input",
+      "refersTo": "input-search",
+      "description": "The sunken search field at the top of the sidebar; the border turns accent on focus.",
+      "html": "<label class=\"ds-search\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/></svg><input placeholder=\"Search Library\" /></label>",
+      "css": ".ds-search { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--z-hairline, #e4e4e7); border-radius: 8px; background: var(--z-sunken, #f4f4f5); color: var(--z-faint, #6e6e78); font-size: 13px; width: 240px; } .ds-search:focus-within { border-color: var(--z-accent, #2563eb); } .ds-search input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font: inherit; color: var(--z-text, #18181b); } .ds-search input::placeholder { color: var(--z-faint, #6e6e78); }"
+    },
+    {
+      "name": "Tab Bar",
+      "kind": "nav",
+      "refersTo": "tab-active",
+      "description": "Tabs on the chrome; the active one takes the editor ground and joins the page.",
+      "html": "<div class=\"ds-tabbar\" role=\"tablist\"><div class=\"ds-tab\" role=\"tab\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/><path d=\"M10 9H8\"/><path d=\"M16 13H8\"/><path d=\"M16 17H8\"/></svg><span>k8s.sh</span></div><div class=\"ds-tab ds-tab-active\" role=\"tab\" aria-selected=\"true\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/><path d=\"M10 9H8\"/><path d=\"M16 13H8\"/><path d=\"M16 17H8\"/></svg><span>redis failover</span><button class=\"ds-tab-x\" aria-label=\"Close\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg></button></div></div><div class=\"ds-page\"></div>",
+      "css": ".ds-tabbar { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); display: flex; align-items: flex-end; gap: 2px; height: 40px; padding: 6px 8px 0; background: var(--z-chrome, #f4f4f5); box-sizing: border-box; } .ds-tab { display: flex; align-items: center; gap: 8px; height: 34px; width: 200px; padding: 0 6px 0 12px; border-radius: 8px 8px 0 0; font-size: 13px; color: var(--z-muted, #52525b); box-sizing: border-box; } .ds-tab svg { color: var(--z-faint, #6e6e78); flex-shrink: 0; } .ds-tab span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-tab:hover { background: var(--z-row-hover, rgb(24 24 27 / 0.05)); color: var(--z-text, #18181b); } .ds-tab-active, .ds-tab-active:hover { background: var(--z-editor, #fff); color: var(--z-text, #18181b); } .ds-tab-active svg { color: var(--z-accent, #2563eb); } .ds-tab-x { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 0; border-radius: 5px; background: transparent; color: var(--z-faint, #6e6e78); } .ds-tab-x svg { color: inherit; } .ds-tab-x:hover { background: var(--z-row-sel, rgb(24 24 27 / 0.08)); color: var(--z-text, #18181b); } .ds-page { height: 40px; background: var(--z-editor, #fff); }"
+    },
+    {
+      "name": "Library Tree",
+      "kind": "nav",
+      "refersTo": "tree-row",
+      "description": "30px rows with 6px selection pills; the active file gets the row-selected fill and an accent icon.",
+      "html": "<div class=\"ds-tree\"><div class=\"ds-row ds-dir\"><span class=\"ds-chev\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"/></svg></span><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/></svg><span>incidents</span></div><div class=\"ds-row ds-row-active\" style=\"padding-left:22px\"><span class=\"ds-chev\"></span><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/></svg><span>2026-11-12 redis failover.md</span></div><div class=\"ds-row\" style=\"padding-left:22px\"><span class=\"ds-chev\"></span><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/></svg><span>checkout-latency.csv</span></div></div>",
+      "css": ".ds-tree { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); width: 250px; padding: 8px; background: var(--z-side, #f4f4f5); font-size: 14px; } .ds-row { display: flex; align-items: center; gap: 8px; height: 30px; padding-right: 8px; border-radius: 6px; color: var(--z-text, #18181b); white-space: nowrap; } .ds-row span:last-child { overflow: hidden; text-overflow: ellipsis; } .ds-row svg { color: var(--z-muted, #52525b); flex-shrink: 0; } .ds-dir { color: var(--z-muted, #52525b); } .ds-chev { display: flex; justify-content: center; width: 14px; flex-shrink: 0; } .ds-chev svg { color: var(--z-faint, #6e6e78); transform: rotate(90deg); transition: transform 150ms ease-out; } .ds-row:hover { background: var(--z-row-hover, rgb(24 24 27 / 0.05)); } .ds-row-active, .ds-row-active:hover { background: var(--z-row-sel, rgb(24 24 27 / 0.08)); } .ds-row-active svg { color: var(--z-accent, #2563eb); }"
+    },
+    {
+      "name": "Menu",
+      "kind": "custom",
+      "refersTo": "menu",
+      "description": "The floating context menu: surface ground, float shadow, 6px row pills.",
+      "html": "<div class=\"ds-menu\" role=\"menu\"><div class=\"ds-mi\" role=\"menuitem\">New folder</div><div class=\"ds-mi ds-mi-on\" role=\"menuitem\">New file</div><div class=\"ds-mi\" role=\"menuitem\">New canvas</div><div class=\"ds-sep\"></div><div class=\"ds-mi\" role=\"menuitem\"><span>Rename</span><span class=\"ds-hint\">F2</span></div></div>",
+      "css": ".ds-menu { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); width: 220px; padding: 6px; border-radius: 10px; background: var(--z-surface, #fff); color: var(--z-text, #18181b); font-size: 13px; box-shadow: var(--z-shadow-float, 0 0 0 1px rgb(0 0 0 / 0.06), 0 2px 4px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.1)); animation: ds-fade 140ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-mi { display: flex; gap: 12px; padding: 6px 10px; border-radius: 6px; cursor: default; } .ds-mi span:first-child { flex: 1; } .ds-mi:hover, .ds-mi-on { background: var(--z-row-sel, rgb(24 24 27 / 0.08)); } .ds-hint { font-size: 12px; color: var(--z-faint, #6e6e78); } .ds-sep { height: 1px; margin: 6px -6px; background: var(--z-hairline, #e4e4e7); } @keyframes ds-fade { from { opacity: 0; transform: translateY(-2px) scale(0.99); } } @media (prefers-reduced-motion: reduce) { .ds-menu { animation: none; } }"
+    },
+    {
+      "name": "Rich Toolbar",
+      "kind": "custom",
+      "refersTo": "toolbar-button",
+      "description": "Slim formatting strip; pressed tools take the accent tint.",
+      "html": "<div class=\"ds-tb\" role=\"toolbar\"><button class=\"ds-tool\" aria-pressed=\"true\" aria-label=\"Bold\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8\"/></svg></button><button class=\"ds-tool\" aria-label=\"Italic\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><line x1=\"19\" x2=\"10\" y1=\"4\" y2=\"4\"/><line x1=\"14\" x2=\"5\" y1=\"20\" y2=\"20\"/><line x1=\"15\" x2=\"9\" y1=\"4\" y2=\"20\"/></svg></button><span class=\"ds-tb-sep\"></span><button class=\"ds-tool\" aria-label=\"Search\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/></svg></button></div>",
+      "css": ".ds-tb { display: flex; align-items: center; gap: 1px; min-height: 36px; padding: 4px 16px; background: var(--z-editor, #fff); border-bottom: 1px solid var(--z-hairline, #e4e4e7); box-sizing: border-box; } .ds-tool { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--z-muted, #52525b); } .ds-tool:hover { background: var(--z-row-hover, rgb(24 24 27 / 0.05)); color: var(--z-text, #18181b); } .ds-tool[aria-pressed=\"true\"] { background: color-mix(in srgb, var(--z-accent, #2563eb) 12%, transparent); color: var(--z-accent, #2563eb); } .ds-tool:focus-visible { outline: 2px solid color-mix(in srgb, var(--z-accent, #2563eb) 70%, transparent); outline-offset: 1px; } .ds-tb-sep { width: 1px; height: 20px; margin: 0 6px; background: var(--z-hairline, #e4e4e7); }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "A row-hover track whose chosen segment takes the surface ground and the tab shadow.",
+      "html": "<div class=\"ds-seg\" role=\"radiogroup\"><button role=\"radio\" aria-checked=\"false\">System</button><button role=\"radio\" aria-checked=\"true\">Light</button><button role=\"radio\" aria-checked=\"false\">Dark</button></div>",
+      "css": ".ds-seg { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); display: inline-flex; gap: 1px; padding: 2px; border-radius: 7px; background: var(--z-row-hover, rgb(24 24 27 / 0.05)); font-size: 13px; } .ds-seg button { font: inherit; border: 0; border-radius: 5px; padding: 4px 12px; background: transparent; color: var(--z-muted, #52525b); } .ds-seg button:hover { color: var(--z-text, #18181b); } .ds-seg button[aria-checked=\"true\"] { background: var(--z-surface, #fff); color: var(--z-text, #18181b); box-shadow: var(--z-shadow-tab, 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.06)); } .ds-seg button:focus-visible { outline: 2px solid color-mix(in srgb, var(--z-accent, #2563eb) 70%, transparent); outline-offset: 1px; }"
+    },
+    {
+      "name": "Note Table",
+      "kind": "card",
+      "refersTo": null,
+      "description": "Rows, not boxes: hairline outline, sunken header, hairline rules, no cell grid.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Time</th><th>Event</th><th>Owner</th></tr></thead><tbody><tr><td>14:02</td><td>p99 on /checkout jumps to 4.1s</td><td>alert</td></tr><tr><td>14:09</td><td>Workers restarted</td><td>Dana</td></tr></tbody></table>",
+      "css": ".ds-table { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); border-collapse: separate; border-spacing: 0; width: 480px; font-size: 14px; line-height: 1.45; border: 1px solid var(--z-hairline, #e4e4e7); border-radius: 8px; font-variant-numeric: tabular-nums; color: var(--z-text, #18181b); } .ds-table th, .ds-table td { padding: 7px 14px; text-align: left; border-bottom: 1px solid var(--z-hairline, #e4e4e7); } .ds-table tr:last-child > td { border-bottom: 0; } .ds-table th { background: var(--z-sunken, #f4f4f5); color: var(--z-muted, #52525b); font-weight: 600; } .ds-table th:first-child { border-top-left-radius: 7px; } .ds-table th:last-child { border-top-right-radius: 7px; } .ds-table tbody tr:hover > td { background: var(--z-row-hover, rgb(24 24 27 / 0.05)); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Receding Frame",
+    "overview": "Zukai is the category standard for a desktop notes app, played straight at the craft level of Linear, Obsidian and VS Code / Zed. The chrome (tab bar, sidebar, status bar) is a quiet frame one ground step darker than the page; the note itself sits on the editor ground at a comfortable reading size, and everything around it steps back. Depth comes from three ground steps and 1px hairlines, not from boxes or shadows.\n\nThe system is a set of interchangeable palettes over one structure. Five themes (Paper and Solar Light for light; Graphite, Midnight and Solar Dark for dark) swap the neutral grounds and inks; one user-chosen accent (blue, violet, green, orange or pink) marks selection, focus, links, the caret, checks and pressed tools on every theme. No component ever names a theme. The type is the operating system's own UI face, roomy rather than dense, with JetBrains Mono reserved for code.\n\nMotion is nearly absent: floating pieces fade and settle in, a folder chevron turns, a checkbox fills. Everything else is instant, because the user is mid-task and the material leads.",
+    "keyCharacteristics": [
+      "Three ground steps per theme: chrome, editor, raised surface.",
+      "One accent, with every tint of it derived by color-mix so each theme and accent pair agrees.",
+      "1px hairlines for every docked separation; shadows only on things that float.",
+      "System UI face at 13px in chrome, 14px in the sidebar, 15px/1.65 in notes; mono only for code.",
+      "Lucide line icons at one stroke weight; 30px rows with 6px rounded selection pills."
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "The accent is the only hue in the chrome. It marks state (selected, focused, pressed, checked, linked) and nothing decorative; every lighter use is a color-mix of it, never a second hex.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three Grounds Rule",
+        "body": "Chrome sits below the editor, which sits below raised surfaces. The active tab takes the editor ground and joins the page beneath it; nothing else gets a ground of its own.",
+        "section": "colors"
+      },
+      {
+        "name": "The Palette Swap Rule",
+        "body": "Every color comes from a `--z-*` token. A theme is a palette swap on `<html>` (`data-theme`, `data-palette`, `data-accent`); a component never branches on which theme is active.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Faces Rule",
+        "body": "The system UI face for everything; JetBrains Mono only where the content is code: the text editor, inline code and code blocks, the find and replace fields and their toggles, and the rich editor's raw fallback.",
+        "section": "typography"
+      },
+      {
+        "name": "The Reading Column Rule",
+        "body": "Notes read at 15px/1.65 in a 720px column with prose at 70ch, identically in the preview and the rich editor, set 56px in from the editor's left edge.",
+        "section": "typography"
+      },
+      {
+        "name": "The Float-Only Shadow Rule",
+        "body": "If it is docked, it gets a hairline; if it floats, it gets the float shadow. Nothing in between.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Nested Radius Rule",
+        "body": "A shape inside another takes a smaller radius: a 10px menu holds 6px rows, a 7px track holds 5px thumbs, an 8px table's header corners are 7px.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "**Do** take every color from a `--z-*` token so all five themes and five accents work without component changes.",
+      "**Do** derive every lighter accent use with color-mix from the accent (22% soft, 12% tint, 70% focus).",
+      "**Do** separate docked regions with a 1px hairline and a ground step.",
+      "**Do** keep list rows at 30px with 6px corners and only the row-hover and row-selected fills.",
+      "**Do** use Lucide icons at stroke 1.6, 16px by default and 14px to 15px in dense chrome.",
+      "**Do** keep keyboard focus visible: a 2px accent outline at 70%, offset 1px, or a 1px inset accent-soft ring on rows.",
+      "**Do** limit motion to the 140ms fade-in (`cubic-bezier(0.16, 1, 0.3, 1)`, 2px rise and 0.99 scale), the 150ms chevron turn and the 120ms checkbox fill, and drop the fade under reduced motion.",
+      "**Do** set note tables as rows: sunken header, hairline rules, tabular numbers."
+    ],
+    "donts": [
+      "**Don't** add a second chrome hue; status and syntax colors appear only where they carry meaning.",
+      "**Don't** put shadows on docked surfaces; the float shadow is for menus, pickers, the find bar, dialogs and a dragged tab.",
+      "**Don't** use text glyphs as icons (check marks, triangles, warning signs, brace pairs); draw them or use Lucide. Platform key symbols in shortcut labels are notation, not icons.",
+      "**Don't** set chrome in JetBrains Mono; mono is for code and code-search fields.",
+      "**Don't** draw a cell grid in tables or glyph checkboxes in checklists.",
+      "**Don't** build dashboard layouts, oversized buttons or extra sidebars; toolbars stay small and the editor area stays the largest thing on screen."
+    ]
+  }
+}

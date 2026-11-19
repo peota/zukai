@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { isInTable } from "@milkdown/kit/prose/tables";
+import { ChevronDown } from "lucide-react";
 import { Icon } from "../ui/icons";
 import { Menu, type MenuItem } from "../ui/Menu";
 import { canTable, table, type TableAction } from "./commands";
@@ -63,13 +64,11 @@ export function TableControls() {
         onClick={(e) =>
           setAt(at ? null : e.currentTarget.getBoundingClientRect())
         }
-        className="flex h-6 shrink-0 items-center gap-1 rounded-[4px] px-1.5 text-[12px] text-muted hover:bg-chrome hover:text-text aria-expanded:bg-chrome aria-expanded:text-text disabled:text-faint disabled:hover:bg-transparent"
+        className="flex h-7 shrink-0 items-center gap-1.5 rounded-[6px] bg-accent-tint pl-2 pr-1.5 text-[13px] text-accent hover:bg-accent-soft disabled:bg-transparent disabled:text-faint"
       >
-        <Icon name="table" />
+        <Icon name="insertTable" size={15} />
         <span>Table</span>
-        <span aria-hidden className="text-faint">
-          ▾
-        </span>
+        <ChevronDown size={14} strokeWidth={1.8} aria-hidden="true" />
       </button>
       {at && !readOnly && (
         <Menu

@@ -6,7 +6,7 @@ import type {
   WheelEvent,
 } from "react";
 import { baseName, stemOf } from "../files/paths";
-import { Icon } from "./icons";
+import { CloseIcon, fileIcon, Icon, PlusIcon, type IconName } from "./icons";
 
 export interface TabBarItem {
   id: string;
@@ -20,6 +20,14 @@ export interface TabBarItem {
   folder?: string;
   /** Kept at the start; a pin (which unpins) replaces the close button. */
   pinned?: boolean;
+  /** A Scratchpad's Kind picks its icon (a File's comes from its name). */
+  kind?: "text" | "canvas" | "image";
+}
+
+/** A File's icon follows its name; a Scratchpad's its Kind. */
+function iconFor(tab: TabBarItem): IconName {
+  if (tab.file) return fileIcon(tab.file.path);
+  return tab.kind === "canvas" ? "canvas" : "scratchpad";
 }
 
 export interface TabBarProps {
@@ -279,7 +287,7 @@ export function TabBar({
     <div
       ref={barRef}
       role="tablist"
-      className="z-no-scrollbar flex h-9 shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden bg-chrome px-2"
+      className="z-no-scrollbar flex h-10 shrink-0 items-end gap-0.5 overflow-x-auto overflow-y-hidden bg-chrome px-2 pt-1.5"
       onWheel={onWheel}
       onContextMenu={(e) => openMenu(e, null)}
     >
@@ -332,12 +340,12 @@ export function TabBar({
               shift !== 0 ? { transform: `translateX(${shift}px)` } : undefined
             }
             className={
-              "group flex h-7 min-w-[120px] flex-[0_1_200px] cursor-default select-none items-center gap-1 rounded-tab pl-2.5 pr-1 " +
-              (joined ? "max-w-[360px] " : "max-w-[200px] ") +
+              "group flex h-[34px] min-w-[120px] flex-[0_1_220px] cursor-default select-none items-center gap-2 rounded-t-[8px] pr-1.5 pl-3 text-[13px] " +
+              (joined ? "max-w-[380px] " : "max-w-[220px] ") +
               (lifted ? "relative z-10 shadow-float " : "") +
               (active
-                ? "bg-surface text-text shadow-float"
-                : "text-muted hover:text-text")
+                ? "bg-editor text-text"
+                : "text-muted hover:bg-row-hover hover:text-text")
             }
           >
             {editing === tab.id && !joined ? (
@@ -351,9 +359,10 @@ export function TabBar({
                 {item.members.map((m, i) => (
                   <Fragment key={m.id}>
                     {i === 1 && (
-                      <span aria-hidden="true" className="text-faint">
-                        |
-                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="h-3.5 w-px shrink-0 bg-hairline-strong"
+                      />
                     )}
                     <span
                       data-member={m.id}
@@ -369,6 +378,11 @@ export function TabBar({
               </span>
             ) : (
               <>
+                <Icon
+                  name={iconFor(tab)}
+                  size={15}
+                  className={active ? "text-accent" : "text-faint"}
+                />
                 <span className="min-w-0 flex-1 truncate">
                   <span
                     className={
@@ -381,11 +395,6 @@ export function TabBar({
                     <span className="text-faint">{` · ${tab.folder}`}</span>
                   )}
                 </span>
-                {tab.file && (
-                  <span className="shrink-0 rounded-[4px] border border-hairline px-1 text-[10px] leading-[14px] text-faint">
-                    FILE
-                  </span>
-                )}
               </>
             )}
             {tab.pinned ? (
@@ -399,9 +408,9 @@ export function TabBar({
                   onUnpin(tab.id);
                 }}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-chrome hover:text-text"
+                className="flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-sel hover:text-text"
               >
-                <Icon name="pin" size={12} />
+                <Icon name="pin" size={13} />
               </button>
             ) : (
               <button
@@ -414,18 +423,11 @@ export function TabBar({
                 }}
                 onDoubleClick={(e) => e.stopPropagation()}
                 className={
-                  "flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-chrome hover:text-text " +
+                  "flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-sel hover:text-text " +
                   (active ? "" : "invisible group-hover:visible")
                 }
               >
-                <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
-                  <path
-                    d="M1 1l6 6M7 1L1 7"
-                    stroke="currentColor"
-                    strokeWidth="1.3"
-                    strokeLinecap="round"
-                  />
-                </svg>
+                <CloseIcon />
               </button>
             )}
           </div>
@@ -437,16 +439,9 @@ export function TabBar({
         title="New Tab"
         tabIndex={-1}
         onClick={onNew}
-        className="flex size-7 shrink-0 items-center justify-center rounded-tab text-muted hover:bg-surface hover:text-text"
+        className="mb-[3px] ml-1 flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted hover:bg-row-hover hover:text-text"
       >
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-          <path
-            d="M5 1v8M1 5h8"
-            stroke="currentColor"
-            strokeWidth="1.3"
-            strokeLinecap="round"
-          />
-        </svg>
+        <PlusIcon />
       </button>
     </div>
   );
@@ -534,7 +529,7 @@ function RenameInput({
         <div
           role="alert"
           style={{ position: "fixed", left: error.left, top: error.top }}
-          className="z-fade-in z-30 max-w-[280px] rounded-float bg-surface px-2 py-1 text-[11.5px] text-danger shadow-float"
+          className="z-fade-in z-30 max-w-[280px] rounded-float bg-surface px-2.5 py-1.5 text-[12px] text-danger shadow-float"
         >
           {error.text}
         </div>

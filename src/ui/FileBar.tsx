@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { TriangleAlert } from "lucide-react";
 import type { TabState } from "../model/types";
 import { baseName } from "../files/paths";
 import { isExecPath } from "../model/kinds";
@@ -142,9 +143,16 @@ export function Bar({
     <div
       role="alert"
       data-kind={kind}
-      className={`z-fade-in flex shrink-0 select-none items-center gap-2.5 px-3 py-[7px] text-[12px] ${KIND_CLASS[kind]}`}
+      className={`z-fade-in flex shrink-0 select-none items-center gap-3 border-b border-hairline px-4 py-2 text-[13px] ${KIND_CLASS[kind]}`}
     >
-      {kind === "warn" && <span aria-hidden>⚠</span>}
+      {kind === "warn" && (
+        <TriangleAlert
+          size={16}
+          strokeWidth={1.8}
+          aria-hidden="true"
+          className="shrink-0"
+        />
+      )}
       <span className="min-w-0 flex-1">{children}</span>
       {actions}
     </div>
@@ -169,7 +177,7 @@ function BarButton({
       disabled={disabled}
       onClick={onClick}
       className={
-        "shrink-0 rounded-tab px-2.5 py-[3px] text-[11.5px] disabled:pointer-events-none disabled:opacity-50 " +
+        "shrink-0 rounded-[6px] px-2.5 py-1 text-[12px] font-medium disabled:pointer-events-none disabled:opacity-50 " +
         (primary
           ? "bg-bar-btn-primary-bg text-bar-btn-primary-fg hover:opacity-90"
           : "bg-bar-btn-bg text-text shadow-[0_0_0_1px_var(--z-bar-btn-ring)] hover:bg-bar-btn-hover")

@@ -98,7 +98,7 @@ const TOGGLES: { key: Toggle; code: string; label: string; text: string }[] = [
 ];
 
 const iconButton =
-  "flex h-6 min-w-6 items-center justify-center rounded px-1 text-muted hover:bg-chrome hover:text-text";
+  "flex h-7 min-w-7 items-center justify-center rounded-[6px] px-1 text-muted hover:bg-row-hover hover:text-text";
 
 export function FindBar({
   view,
@@ -221,7 +221,7 @@ export function FindBar({
 
   const invalid = state.regexp && state.search !== "" && !toQuery(state).valid;
   const field =
-    "h-6 min-w-0 flex-1 rounded border bg-editor px-1.5 font-mono text-[12px] text-text outline-none focus:border-accent";
+    "h-7 min-w-0 flex-1 rounded-[6px] border bg-sunken px-2 font-mono text-[13px] text-text outline-none focus:border-accent";
   // Keep focus in the input when clicking the bar's buttons.
   const keepFocus = (e: MouseEvent) => e.preventDefault();
 
@@ -230,7 +230,7 @@ export function FindBar({
       role="search"
       aria-label="Find in text"
       data-find-bar
-      className="z-fade-in absolute top-3 right-3 z-10 flex w-[380px] max-w-[calc(100%-24px)] flex-col gap-1 rounded-float bg-surface p-1.5 text-[12px] text-text shadow-float"
+      className="z-fade-in absolute top-3 right-3 z-10 flex w-[420px] max-w-[calc(100%-24px)] flex-col gap-1.5 rounded-float bg-surface p-2 text-[13px] text-text shadow-float"
     >
       <div className="flex items-center gap-1">
         <button
@@ -271,7 +271,7 @@ export function FindBar({
             aria-label={`${t.label} (Alt+${t.code.slice(3)})`}
             title={`${t.label} (Alt+${t.code.slice(3)})`}
             aria-pressed={state[t.key]}
-            className={`${iconButton} font-mono ${state[t.key] ? "bg-accent-soft text-text" : ""}`}
+            className={`${iconButton} font-mono ${state[t.key] ? "bg-accent-tint text-accent" : ""}`}
             onMouseDown={keepFocus}
             onClick={() => toggle(t.key)}
           >
