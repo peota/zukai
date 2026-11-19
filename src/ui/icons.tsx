@@ -12,7 +12,17 @@ export type IconName =
   | "other"
   | "scratchpad"
   | "link"
-  | "pin";
+  | "pin"
+  // The rich editor's toolbar.
+  | "paragraph"
+  | "code"
+  | "codeBlock"
+  | "bulletList"
+  | "numberedList"
+  | "checklist"
+  | "quote"
+  | "table"
+  | "rule";
 
 const DATA_EXTS = [
   ".json",
@@ -39,6 +49,41 @@ export function fileIcon(name: string): IconName {
 }
 
 const PATHS: Record<IconName, ReactNode> = {
+  paragraph: (
+    <path d="M8.5 2.5v9M10.5 2.5v9M11.5 2.5H6a2.5 2.5 0 0 0 0 5h2.5" />
+  ),
+  code: <path d="M5 3.5 1.8 7 5 10.5M9 3.5 12.2 7 9 10.5" />,
+  codeBlock: (
+    <>
+      <rect x="1.5" y="2" width="11" height="10" rx="1.5" />
+      <path d="M5.5 5.5 4 7l1.5 1.5M8.5 5.5 10 7 8.5 8.5" />
+    </>
+  ),
+  bulletList: (
+    <>
+      <circle cx="2.8" cy="3.5" r=".5" />
+      <circle cx="2.8" cy="7" r=".5" />
+      <circle cx="2.8" cy="10.5" r=".5" />
+      <path d="M5.5 3.5h7M5.5 7h7M5.5 10.5h7" />
+    </>
+  ),
+  numberedList: (
+    <path d="M2.2 2.6l.9-.6v3M2 7.4c.2-.5.6-.8 1.1-.8.6 0 1 .4 1 .9 0 .8-2.1 1.6-2.1 2.3h2.2M5.8 3.5h6.7M5.8 7h6.7M5.8 10.5h6.7" />
+  ),
+  checklist: (
+    <>
+      <rect x="1.5" y="2" width="3.5" height="3.5" rx=".8" />
+      <path d="m1.9 9.9 1 1 1.8-2.1M7 3.8h5.5M7 10h5.5" />
+    </>
+  ),
+  quote: <path d="M2.5 2.5v9M5.5 4h7M5.5 7h7M5.5 10h4.5" />,
+  table: (
+    <>
+      <rect x="1.5" y="2" width="11" height="10" rx="1.5" />
+      <path d="M1.5 5.5h11M1.5 8.8h11M5.2 5.5V12M8.8 5.5V12" />
+    </>
+  ),
+  rule: <path d="M1.5 7h11M4 3.5h6M4 10.5h6" />,
   pin: <path d="M5 1.8h4M5.6 1.8v3.6L3.8 7.6h6.4L8.4 5.4V1.8M7 7.6v4.6" />,
   folder: (
     <path d="M1.5 4.5v7a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1H7L5.5 3h-3a1 1 0 0 0-1 1z" />
