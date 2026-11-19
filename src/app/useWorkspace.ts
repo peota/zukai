@@ -80,7 +80,9 @@ function heldChanged(a: WorkspaceState, b: WorkspaceState): boolean {
   if (a.tabs === b.tabs && a.closed === b.closed) return false;
   const held = (s: WorkspaceState) => {
     const m = new Map<string, string>();
-    const key = (f: FileInfo) => `${f.held}:${inShadow(f)}`;
+    // A pending Convert (diskFormat) is in the Session too.
+    const key = (f: FileInfo) =>
+      `${f.held}:${inShadow(f)}:${f.diskFormat !== undefined}`;
     for (const t of s.tabs) if (t.file) m.set(t.id, key(t.file));
     for (const e of s.closed) {
       if (e.tab.file) m.set(`closed:${e.tab.id}`, key(e.tab.file));
@@ -717,11 +719,16 @@ export function useWorkspace(): Workspace {
           case "cancel":
             return false;
           case "save":
+            // A Tab held meanwhile is saved (or refused) as held Tabs are.
             await save(id);
             return !hasPending(id);
-          case "discard":
-            await discardUnsaved(id);
+          case "discard": {
+            // Held while the prompt was open (a Disk conflict): it closes as
+            // a held Tab, its text kept in its shadow, never discarded.
+            const now = stateRef.current.tabs.find((t) => t.id === id)?.file;
+            if (now && now.held === null) await discardUnsaved(id);
             return true;
+          }
         }
       });
       promptChain.current = turn.catch(() => {});

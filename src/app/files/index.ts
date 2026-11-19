@@ -1,14 +1,10 @@
 import { useCallback, useEffect } from "react";
 import * as ws from "../../model/workspace";
-import type {
-  FileFormat,
-  FileInfo,
-  TabState,
-  WorkspaceState,
-} from "../../model/types";
+import type { FileFormat, TabState, WorkspaceState } from "../../model/types";
 import { useBarActions } from "./barActions";
 import { useCloseReopen } from "./closeReopen";
 import {
+  settledFile,
   useFilesContext,
   type ConvertRequest,
   type FilesInternals,
@@ -146,23 +142,22 @@ export function useFiles(
     },
     [commit, saveSessionNow, stateRef],
   );
-  const { tabOf, patchFile, replaceText, dropShadow, onDisk } = c;
+  const { tabOf, patchFile, replaceText, dropShadow, onDisk, contents } = c;
   const discardUnsaved = useCallback(
-    async (id: string) => {
-      replaceText(id, onDisk.get(id) ?? "");
-      const file = tabOf(id)?.file;
-      if (file) {
-        const kept: FileInfo = {
-          ...file,
-          format: file.diskFormat ?? file.format,
-        };
-        delete kept.unsaved;
-        delete kept.diskFormat;
-        patchFile(id, kept);
-      }
-      await dropShadow(id);
-    },
-    [dropShadow, onDisk, patchFile, replaceText, tabOf],
+    (id: string) =>
+      // Under the lock: a write in flight (that may mark it unsaved again)
+      // finishes first.
+      lock(id, async () => {
+        const disk = onDisk.get(id);
+        if (disk !== undefined) replaceText(id, disk);
+        // The disk's text is unknown (its read failed): the Tab's text is
+        // forgotten, never replaced by "", and reads from the File again.
+        else contents.delete(id);
+        const file = tabOf(id)?.file;
+        if (file) patchFile(id, settledFile(file));
+        await dropShadow(id);
+      }),
+    [contents, dropShadow, lock, onDisk, patchFile, replaceText, tabOf],
   );
   const recheckTabs = useCallback(
     async (ids: string[]) => {

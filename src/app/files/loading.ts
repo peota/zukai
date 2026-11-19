@@ -23,6 +23,7 @@ import {
   fileInfoOf,
   openFailure,
   readDisk,
+  settledFile,
   unsavedDisk,
   type FilesContext,
 } from "./context";
@@ -113,11 +114,13 @@ export function useLoading(c: FilesContext) {
         return r.read.text;
       }
       onDisk.set(id, "");
+      // Its text is the File's (there is no shadow): nothing is unsaved.
+      const settled = settledFile(cur);
       if (r.kind === "missing") {
-        patchFile(id, { ...cur, held: "missing" });
+        patchFile(id, { ...settled, held: "missing" });
       } else {
         showNotice(openFailure(baseName(cur.path), r.err));
-        patchFile(id, { ...cur, held: "readonly" });
+        patchFile(id, { ...settled, held: "readonly" });
       }
       return "";
     },
