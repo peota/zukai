@@ -104,18 +104,28 @@ export function createDocumentWriter(
     }
     if (mode === "auto" && !deps.autosaveFiles()) {
       // Manual mode: the File is untouched; the text waits in the shadow.
+      // The patches below start from the Tab's File as it is after the await:
+      // a Convert (no lock) may have changed its format meanwhile.
+      const latest = () => {
+        const cur = deps.getTab(id)?.file;
+        return cur && cur.path === file.path ? cur : undefined;
+      };
       if (text === deps.diskText(id) && !file.diskFormat) {
         // Back to the disk's text with nothing else pending: nothing unsaved.
+        // A failed delete rejects (unlike the written path, which only logs):
+        // the shadow would keep stale text, so the Saver must retry.
         await deps.shadowDelete(id);
-        if (file.unsaved) {
-          const next = { ...file };
+        const cur = latest();
+        if (cur?.unsaved) {
+          const next = { ...cur };
           delete next.unsaved;
           deps.patchFile(id, next);
         }
         return;
       }
       await deps.shadowWrite(id, text);
-      if (!file.unsaved) deps.patchFile(id, { ...file, unsaved: true });
+      const cur = latest();
+      if (cur && !cur.unsaved) deps.patchFile(id, { ...cur, unsaved: true });
       return;
     }
     const { path } = file;

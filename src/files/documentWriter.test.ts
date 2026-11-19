@@ -279,6 +279,27 @@ describe("documentWriter", () => {
       expect(deps.onWritten).not.toHaveBeenCalled();
     });
 
+    it("a Convert landing during the shadow write keeps its format", async () => {
+      withFile("f", fileInfo());
+      const crlf = { ...fileInfo().format, lineEnding: "crlf" as const };
+      deps.shadowWrite.mockImplementation(async () => {
+        withFile("f", fileInfo({ format: crlf }));
+      });
+      await createDocumentWriter(deps)("f", "typed");
+      const after = tabs.get("f")!.file!;
+      expect(after.format).toEqual(crlf);
+      expect(after.unsaved).toBe(true);
+    });
+
+    it("an unknown disk text means shadow and unsaved", async () => {
+      withFile("f", fileInfo());
+      deps.diskText.mockReturnValue(undefined);
+      await createDocumentWriter(deps)("f", "");
+      expect(deps.shadowWrite).toHaveBeenCalledWith("f", "");
+      expect(deps.shadowDelete).not.toHaveBeenCalled();
+      expect(tabs.get("f")!.file!.unsaved).toBe(true);
+    });
+
     it("scratchpads ignore the setting", async () => {
       tabs.set("s", newTabState("s"));
       await createDocumentWriter(deps)("s", "hello");
