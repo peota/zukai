@@ -8,6 +8,12 @@ export interface LanguagePickerProps {
   current: LanguageId;
   onPick(id: LanguageId): void;
   onClose(): void;
+  /**
+   * A rename that would match the File's extension to `current`: shown as
+   * the first row (while the filter is empty), selected whenever it changes.
+   */
+  rename?: { from: string; to: string } | null;
+  onRename?(): void;
 }
 
 /** Floating Language list above the status bar, with a filter. */
@@ -16,29 +22,69 @@ export function LanguagePicker({
   current,
   onPick,
   onClose,
+  rename,
+  onRename,
 }: LanguagePickerProps) {
   if (!open) return null;
-  return <PickerList current={current} onPick={onPick} onClose={onClose} />;
+  return (
+    <PickerList
+      current={current}
+      onPick={onPick}
+      onClose={onClose}
+      rename={rename}
+      onRename={onRename}
+    />
+  );
 }
+
+/** One row of the list: the rename offer, or a Language. */
+type Row =
+  | { rename: true; label: string }
+  | { rename: false; id: LanguageId; label: string };
 
 function PickerList({
   current,
   onPick,
   onClose,
+  rename,
+  onRename,
 }: Omit<LanguagePickerProps, "open">) {
   const [filter, setFilter] = useState("");
   const [index, setIndex] = useState(() =>
-    Math.max(
-      0,
-      LANGUAGES.findIndex((l) => l.id === current),
-    ),
+    rename
+      ? 0
+      : Math.max(
+          0,
+          LANGUAGES.findIndex((l) => l.id === current),
+        ),
   );
   const root = useRef<HTMLDivElement>(null);
   const q = filter.trim().toLowerCase();
-  const items = LANGUAGES.filter(
-    (l) => l.label.toLowerCase().includes(q) || l.id.includes(q),
-  );
+  const offer =
+    rename && q === "" ? `Rename ${rename.from} → ${rename.to}` : null;
+  const items: Row[] = [
+    ...(offer ? [{ rename: true as const, label: offer }] : []),
+    ...LANGUAGES.filter(
+      (l) => l.label.toLowerCase().includes(q) || l.id.includes(q),
+    ).map((l) => ({ rename: false as const, id: l.id, label: l.label })),
+  ];
   const sel = Math.min(index, Math.max(0, items.length - 1));
+
+  // A new offer (after a pick) starts over on it, so Enter renames.
+  const offerKey = rename ? `${rename.from}/${rename.to}` : "";
+  const [seenOffer, setSeenOffer] = useState(offerKey);
+  if (offerKey !== seenOffer) {
+    setSeenOffer(offerKey);
+    if (offerKey) {
+      setFilter("");
+      setIndex(0);
+    }
+  }
+
+  const choose = (row: Row) => {
+    if (row.rename) onRename?.();
+    else onPick(row.id);
+  };
 
   // A click anywhere outside closes the list (the status bar button
   // toggles it itself).
@@ -60,7 +106,7 @@ function PickerList({
     } else if (e.key === "ArrowUp" && n > 0) {
       setIndex((sel - 1 + n) % n);
     } else if (e.key === "Enter") {
-      if (items[sel]) onPick(items[sel].id);
+      if (items[sel]) choose(items[sel]);
     } else if (e.key === "Escape") {
       onClose();
     } else {
@@ -93,20 +139,25 @@ function PickerList({
       <ul role="listbox">
         {items.map((l, i) => (
           <li
-            key={l.id}
+            key={l.rename ? "rename" : l.id}
             role="option"
             aria-selected={i === sel}
             onMouseEnter={() => setIndex(i)}
             onMouseDown={(e) => {
               e.preventDefault();
-              onPick(l.id);
+              choose(l);
             }}
             className={`flex cursor-default items-center rounded-[4px] px-2 py-1 ${
               i === sel ? "bg-accent-soft text-text" : "text-muted"
-            }`}
+            } ${l.rename ? "mb-1 border-b border-hairline" : ""}`}
+            title={l.rename ? l.label : undefined}
           >
-            {l.label}
-            {l.id === current && (
+            {l.rename ? (
+              <span className="min-w-0 truncate">{l.label}</span>
+            ) : (
+              l.label
+            )}
+            {!l.rename && l.id === current && (
               <span className="ml-auto text-faint" aria-hidden>
                 ✓
               </span>

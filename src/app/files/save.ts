@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import {
+  fileChangeExtension,
   filePickSave,
   fileRename,
   fileSaveAs,
@@ -193,29 +194,36 @@ export function useSave(c: FilesContext, d: SaveDeps) {
     [saveAs, saver, tabOf],
   );
 
-  const renameFile = useCallback(
-    (id: string, name: string): Promise<string | null> =>
+  /**
+   * Renames Tab `id`'s File with `rename` (Rust's call, given its path),
+   * where `to` is the name it asks for. Resolves to the error shown, or null.
+   */
+  const renameWith = useCallback(
+    (
+      id: string,
+      to: (path: string) => string | null,
+      rename: (path: string) => Promise<string>,
+    ): Promise<string | null> =>
       lock(id, async () => {
         const file = tabOf(id)?.file;
         if (!file) return null;
-        if (refuseUnreadable(id)) {
-          return `${baseName(file.path)} has unsaved text that can't be read yet`;
-        }
         const old = baseName(file.path);
-        const stem = stemOf(name, file.path);
-        const ext = old.slice(stemOf(old, file.path).length);
-        if (stem === "") return "Enter a name";
-        if (stem + ext === old) return null;
+        if (refuseUnreadable(id)) {
+          return `${old} has unsaved text that can't be read yet`;
+        }
+        const name = to(file.path);
+        if (name === null) return "Enter a name";
+        if (name === old) return null;
         let renamed: string;
         try {
-          renamed = await fileRename(file.path, stem);
+          renamed = await rename(file.path);
         } catch (err) {
           const e = asFileError(err);
           const msg =
             e.kind === "exists"
-              ? `${stem}${ext} already exists`
+              ? `${name} already exists`
               : e.kind === "invalid_name"
-                ? `${stem}${ext} isn't a valid file name`
+                ? `${name} isn't a valid file name`
                 : `Can't rename ${old}: ${e.message}`;
           showNotice(msg);
           return msg;
@@ -241,5 +249,37 @@ export function useSave(c: FilesContext, d: SaveDeps) {
     ],
   );
 
-  return { save, saveAs, saveTo, renameFile };
+  const renameFile = useCallback(
+    (id: string, name: string): Promise<string | null> => {
+      let stem = "";
+      return renameWith(
+        id,
+        (path) => {
+          const old = baseName(path);
+          stem = stemOf(name, path);
+          return stem === ""
+            ? null
+            : stem + old.slice(stemOf(old, path).length);
+        },
+        (path) => fileRename(path, stem),
+      );
+    },
+    [renameWith],
+  );
+
+  const renameExtension = useCallback(
+    (id: string, ext: string): Promise<string | null> =>
+      renameWith(
+        id,
+        (path) => {
+          const old = baseName(path);
+          const dot = old.lastIndexOf(".");
+          return `${dot > 0 ? old.slice(0, dot) : old}.${ext}`;
+        },
+        (path) => fileChangeExtension(path, ext),
+      ),
+    [renameWith],
+  );
+
+  return { save, saveAs, saveTo, renameFile, renameExtension };
 }

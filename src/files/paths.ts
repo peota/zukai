@@ -59,6 +59,30 @@ const EXTENSION_FOR: Partial<Record<LanguageId, string>> = {
   shell: "sh",
 };
 
+/** A File rename that would match its extension to a picked Language. */
+export interface LanguageRename {
+  from: string;
+  to: string;
+  /** Without the dot. */
+  ext: string;
+}
+
+/**
+ * The rename that gives the File at `path` the extension of `language`, or
+ * null when its extension already means that Language.
+ */
+export function languageRename(
+  path: string,
+  language: LanguageId,
+): LanguageRename | null {
+  if (languageOf(path) === language) return null;
+  const from = baseName(path);
+  const old = extensionOf(path);
+  const stem = old ? from.slice(0, -(old.length + 1)) : from;
+  const ext = EXTENSION_FOR[language] ?? "txt";
+  return { from, to: `${stem}.${ext}`, ext };
+}
+
 /**
  * The name a Save As dialog suggests for a Scratchpad: by its Language, or
  * with `ext` (".excalidraw" for a Canvas).

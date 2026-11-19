@@ -99,6 +99,20 @@ pub async fn file_rename(
     .await
 }
 
+/// Renames a File to a Language's extension (`note.md` → `note.ts`).
+#[tauri::command]
+pub async fn file_change_extension(
+    app: AppHandle,
+    path: String,
+    ext: String,
+) -> Result<String, FileError> {
+    blocking(app, move |g| {
+        let renamed = io::change_extension(&g.check(&path)?, &ext)?;
+        path_string(&g.grant(&renamed)?)
+    })
+    .await
+}
+
 /// Over `MAX_OPEN_BYTES` the file isn't read: the fingerprint has the real
 /// mtime and size and an empty hash, which never matches (always "changed").
 #[tauri::command]

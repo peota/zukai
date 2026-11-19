@@ -48,6 +48,7 @@ vi.mock("../files/api", async (orig) => ({
   fileWrite: vi.fn(),
   fileSaveAs: vi.fn(),
   fileRename: vi.fn(),
+  fileChangeExtension: vi.fn(),
   fileFingerprint: vi.fn(),
   fileFingerprintQuick: vi.fn(),
   filePickOpen: vi.fn(),
@@ -679,6 +680,37 @@ describe("useFiles save and save as", () => {
     const tab = result.current.state.tabs.find((t) => t.id === id)!;
     expect(tab.file!.path).toBe("C:\\d\\B.json");
     expect(tab.title).toBe("B.json");
+  });
+
+  it("renameExtension moves the File to the new extension", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    f.fileChangeExtension.mockResolvedValue("C:\\d\\A.ts");
+    let err: string | null = "x";
+    await act(async () => {
+      err = await result.current.renameExtension(id, "ts");
+    });
+    expect(err).toBeNull();
+    expect(f.fileChangeExtension).toHaveBeenCalledWith(P, "ts");
+    const tab = result.current.state.tabs.find((t) => t.id === id)!;
+    expect(tab.file!.path).toBe("C:\\d\\A.ts");
+    expect(tab.title).toBe("A.ts");
+  });
+
+  it("renameExtension onto an existing file says so and changes nothing", async () => {
+    const { result } = await mount();
+    const id = await openP(result);
+    f.fileChangeExtension.mockRejectedValue({
+      kind: "exists",
+      message: "exists",
+    });
+    let err: string | null = null;
+    await act(async () => {
+      err = await result.current.renameExtension(id, "ts");
+    });
+    expect(err).toBe("A.ts already exists");
+    expect(result.current.notice).toBe("A.ts already exists");
+    expect(fileTabOf(result)!.file!.path).toBe(P);
   });
 
   it("renameExistsShowsError", async () => {
@@ -1488,6 +1520,7 @@ describe("useFiles interleavings (fix round 1)", () => {
     for (const k of [
       "saveAs",
       "renameFile",
+      "renameExtension",
       "keepMine",
       "saveToOriginal",
       "loadDiskVersion",

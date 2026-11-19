@@ -4,6 +4,8 @@ import * as storage from "./storage/api";
 import * as files from "./files/api";
 import * as lib from "./library/api";
 import App from "./App";
+import { toSessionFile } from "./model/session";
+import { newTabState } from "./model/workspace";
 
 const h = vi.hoisted(() => ({
   flushAll: null as null | (() => Promise<void>),
@@ -42,6 +44,10 @@ vi.mock("./files/api", async (orig) => ({
   grantsFilter: async (paths: string[]) => paths,
   onFileChanged: async () => () => {},
   onOpenPaths: async () => () => {},
+  fileRead: vi.fn(),
+  fileFingerprint: vi.fn(),
+  fileFingerprintQuick: vi.fn(),
+  fileChangeExtension: vi.fn(),
 }));
 
 vi.mock("./library/api", () => ({
@@ -88,7 +94,6 @@ vi.mock("./app/exit", () => ({
 const s = vi.mocked(storage);
 const f = vi.mocked(files);
 const l = vi.mocked(lib);
-void f;
 
 const R = "C:\\L";
 
@@ -176,5 +181,72 @@ describe("App", () => {
       expect(side).not.toBeNull();
       expect(side!.contains(document.activeElement)).toBe(true);
     });
+  });
+
+  it("a Language that doesn't match the File offers its rename", async () => {
+    const path = `${R}\\note.md`;
+    const fmt = {
+      encoding: "utf-8",
+      bom: false,
+      lineEnding: "lf",
+      mixed: false,
+    } as const;
+    const print = { mtimeMs: 1, size: 2, hash: "h" };
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile({
+          tabs: [
+            {
+              ...newTabState("n"),
+              title: "note.md",
+              language: "markdown",
+              languageGuessed: true,
+              file: { path, format: fmt, fingerprint: print, held: null },
+            },
+          ],
+          activeId: "n",
+          closed: [],
+        }),
+      ),
+    );
+    f.fileRead.mockResolvedValue({
+      text: "# hi",
+      format: fmt,
+      readable: true,
+      fingerprint: print,
+    });
+    f.fileFingerprint.mockResolvedValue(print);
+    f.fileFingerprintQuick.mockResolvedValue(print);
+    f.fileChangeExtension.mockResolvedValue(`${R}\\note.ts`);
+
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    const button = await waitFor(() => {
+      const b = r.container.querySelector<HTMLElement>(
+        "[data-language-button]",
+      );
+      expect(b?.textContent).toContain("Markdown");
+      return b!;
+    });
+
+    // Matching the extension: no offer, and a pick closes the list.
+    fireEvent.click(button);
+    expect(r.queryByText(/Rename/)).toBeNull();
+    fireEvent.mouseDown(r.getByRole("option", { name: "Markdown" }));
+    expect(r.queryByRole("dialog", { name: "Language" })).toBeNull();
+
+    // TypeScript on a .md: the list stays open on the rename.
+    fireEvent.click(button);
+    fireEvent.mouseDown(r.getByRole("option", { name: "TypeScript" }));
+    const offer = r.getByRole("option", { name: "Rename note.md → note.ts" });
+    expect(offer.getAttribute("aria-selected")).toBe("true");
+    fireEvent.mouseDown(offer);
+    await waitFor(() =>
+      expect(f.fileChangeExtension).toHaveBeenCalledWith(path, "ts"),
+    );
+    expect(r.queryByRole("dialog", { name: "Language" })).toBeNull();
+    await waitFor(() =>
+      expect(r.getAllByText("note.ts").length).toBeGreaterThan(0),
+    );
   });
 });

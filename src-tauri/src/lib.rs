@@ -217,6 +217,7 @@ pub fn run() {
             files::commands::file_write,
             files::commands::file_save_as,
             files::commands::file_rename,
+            files::commands::file_change_extension,
             files::commands::file_fingerprint,
             files::commands::file_fingerprint_quick,
             files::commands::file_pick_open,

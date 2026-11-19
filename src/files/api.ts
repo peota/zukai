@@ -78,6 +78,12 @@ export const fileSaveAs = (
 export const fileRename = (path: string, newStem: string): Promise<string> =>
   invoke<string>("file_rename", { path, newStem });
 
+/** Renames to a Language's extension (Rust refuses any other). */
+export const fileChangeExtension = (
+  path: string,
+  ext: string,
+): Promise<string> => invoke<string>("file_change_extension", { path, ext });
+
 export const fileFingerprint = (path: string): Promise<Fingerprint | null> =>
   invoke<Fingerprint | null>("file_fingerprint", { path });
 
