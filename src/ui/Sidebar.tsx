@@ -19,7 +19,8 @@ import {
 export type { ScratchpadItem } from "./ScratchpadList";
 export type { PinnedItem } from "./Pinned";
 
-export type NewItem = "folder" | "note" | "text" | "canvas";
+/** "file" is an empty "Untitled" with no extension, named on creation. */
+export type NewItem = "folder" | "file" | "canvas";
 
 export { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, clampWidth };
 /** Keyboard step of the width handle. */
@@ -236,8 +237,7 @@ function SidebarPanel({
 
   const newItems = (parent: string): MenuItem[] => [
     { label: "New folder", onSelect: () => void create(parent, "folder") },
-    { label: "New note", onSelect: () => void create(parent, "note") },
-    { label: "New text file", onSelect: () => void create(parent, "text") },
+    { label: "New file", onSelect: () => void create(parent, "file") },
     { label: "New canvas", onSelect: () => void create(parent, "canvas") },
   ];
 

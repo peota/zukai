@@ -345,8 +345,8 @@ describe("useLibrary", () => {
     expect(l.libraryResolve).toHaveBeenCalledTimes(2);
   });
 
-  it("createNoteOpensAndStartsRename", async () => {
-    const created = `${PROJ}\\Untitled.md`;
+  it("createFileOpensAndStartsRename", async () => {
+    const created = `${PROJ}\\Untitled`;
     l.libraryCreateFile.mockImplementation(async () => {
       listings[PROJ] = [...listings[PROJ], file(created)];
       disk[created] = { text: "", hash: "h0" };
@@ -358,9 +358,11 @@ describe("useLibrary", () => {
     });
     let path: string | null = null;
     await act(async () => {
-      path = await result.current.library.create(PROJ, "note");
+      path = await result.current.library.create(PROJ, "file");
     });
-    expect(l.libraryCreateFile).toHaveBeenCalledWith(PROJ, "Untitled", "md");
+    // No extension, like a new document in Notepad++: plain text until
+    // it's named or given a Language.
+    expect(l.libraryCreateFile).toHaveBeenCalledWith(PROJ, "Untitled", "");
     expect(path).toBe(created);
     // The listing the rename field waits for already holds the new item.
     expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
@@ -516,6 +518,38 @@ describe("useLibrary", () => {
     const tab = result.current.state.tabs[0];
     expect(tab.file?.path).toBe(renamed);
     expect(tab.title).toBe("c.md");
+  });
+
+  it("naming a new extensionless file gives it that extension and its Language", async () => {
+    const plain = `${PROJ}\\Untitled`;
+    const renamed = `${PROJ}\\plan.ts`;
+    l.libraryRename.mockResolvedValue(renamed);
+    const { result } = await mount([
+      { ...fileTab("fu", plain), language: "plaintext" },
+    ]);
+    await act(async () => {
+      await result.current.library.rename(plain, "plan.ts");
+    });
+    expect(l.libraryRename).toHaveBeenCalledWith(plain, "plan.ts");
+    const tab = result.current.state.tabs[0];
+    expect(tab.file?.path).toBe(renamed);
+    expect(tab.title).toBe("plan.ts");
+    expect(tab.language).toBe("typescript");
+  });
+
+  it("a text file can't be renamed into a drawing or an image", async () => {
+    const plain = `${PROJ}\\Untitled`;
+    const { result } = await mount([
+      { ...fileTab("fu", plain), language: "plaintext" },
+    ]);
+    for (const name of ["flow.excalidraw", "pic.png"]) {
+      let err: string | null = null;
+      await act(async () => {
+        err = await result.current.library.rename(plain, name);
+      });
+      expect(err).toBe(`A text file can't become ${name}`);
+    }
+    expect(l.libraryRename).not.toHaveBeenCalled();
   });
 
   it("a refused rename resolves to its message", async () => {

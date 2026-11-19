@@ -291,6 +291,41 @@ describe("rewritePaths", () => {
   });
 });
 
+describe("rewritePaths and the Language", () => {
+  const tab = (path: string, over: Partial<TabState> = {}): TabState => ({
+    ...newTabState("a"),
+    title: "Untitled",
+    file: {
+      path,
+      format: { encoding: "utf-8", bom: false, lineEnding: "lf", mixed: false },
+      fingerprint: null,
+      held: null,
+    },
+    ...over,
+  });
+  const s = (t: TabState): WorkspaceState => ({
+    tabs: [t],
+    activeId: "a",
+    closed: [],
+  });
+
+  it("a new extension brings its Language, unless one was picked by hand", () => {
+    const moved = new Map([["C:/L/Untitled", "C:/L/plan.ts"]]);
+    expect(rewritePaths(s(tab("C:/L/Untitled")), moved).tabs[0].language).toBe(
+      "typescript",
+    );
+    const picked = tab("C:/L/Untitled", {
+      language: "python",
+      languagePicked: true,
+    });
+    expect(rewritePaths(s(picked), moved).tabs[0].language).toBe("python");
+    // Same extension: the Language stays.
+    const md = tab("C:/L/a.md", { language: "json" });
+    const same = new Map([["C:/L/a.md", "C:/L/b.md"]]);
+    expect(rewritePaths(s(md), same).tabs[0].language).toBe("json");
+  });
+});
+
 describe("movedPath", () => {
   const lower = (p: string) => p.toLowerCase();
   it("matches the prefix by key, never a sibling", () => {

@@ -1,3 +1,4 @@
+import { languageOf } from "../files/paths";
 import type { Kind } from "./kinds";
 import type { TabState, WorkspaceState } from "./types";
 
@@ -263,7 +264,12 @@ export function rewritePaths(
     if (path === undefined || path === t.file.path) return t;
     const name = lastName(path);
     const title = name !== lastName(t.file.path) ? name : t.title;
-    return { ...t, title, file: { ...t.file, path } };
+    // A new extension (a plain "Untitled" named "plan.ts") brings its
+    // Language, unless one was picked by hand.
+    const was = languageOf(t.file.path);
+    const now = languageOf(path);
+    const language = now !== was && !t.languagePicked ? now : t.language;
+    return { ...t, title, language, file: { ...t.file, path } };
   };
   const tabs = s.tabs.map(fix);
   const closed = s.closed.map((e) => {
