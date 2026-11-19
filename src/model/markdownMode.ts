@@ -9,6 +9,9 @@ export const CANT_KEEP_NOTICE =
   "This note uses Markdown the rich editor can't keep";
 
 export function tooLargeForRich(text: string): boolean {
+  // A UTF-16 unit is 1 to 3 UTF-8 bytes: the length alone mostly decides.
+  if (text.length > RICH_MAX_BYTES) return true;
+  if (text.length * 3 <= RICH_MAX_BYTES) return false;
   return new TextEncoder().encode(text).length > RICH_MAX_BYTES;
 }
 
