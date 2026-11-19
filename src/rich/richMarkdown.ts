@@ -236,8 +236,8 @@ export async function roundTrip(text: string): Promise<string> {
       ctx.set(defaultValueCtx, text);
     })
     .use(richPlugins());
-  await editor.create();
   try {
+    await editor.create();
     return editor.action(getMarkdown());
   } finally {
     await editor.destroy();
@@ -267,14 +267,75 @@ function normalize(node: MdNode): unknown {
 const tree = (text: string) =>
   JSON.stringify(normalize(reference.parse(text) as unknown as MdNode));
 
+/** `text` with its code (spans and blocks) blanked out, newlines kept. */
+function withoutCode(text: string): string {
+  const ranges: [number, number][] = [];
+  const walk = (node: MdNode) => {
+    if (node.type === "code" || node.type === "inlineCode") {
+      const pos = node.position as
+        | { start: { offset?: number }; end: { offset?: number } }
+        | undefined;
+      const from = pos?.start.offset;
+      const to = pos?.end.offset;
+      if (from !== undefined && to !== undefined) ranges.push([from, to]);
+      return;
+    }
+    node.children?.forEach(walk);
+  };
+  walk(reference.parse(text) as unknown as MdNode);
+  let out = text;
+  for (const [from, to] of ranges) {
+    out =
+      out.slice(0, from) +
+      out.slice(from, to).replace(/[^\r\n]/g, " ") +
+      out.slice(to);
+  }
+  return out;
+}
+
+const count = (text: string, re: RegExp) => text.match(re)?.length ?? 0;
+
+/** `\[\[`: an escaped wikilink. */
+const ESCAPED_WIKILINK = /\\\[\\?\[/g;
+/** `\#` first on a line (after any list, quote or task marker): a tag. */
+const ESCAPED_LINE_HASH = /^[ \t>*+\-0-9.)]*(?:\[[ xX]\][ \t]*)?\\#/gm;
+/** An HTML entity: `&name;`, `&#n;` or `&#xh;`. */
+const ENTITY = /&(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#[xX][0-9A-Fa-f]+);/g;
+
+/**
+ * Whether `out` rewrites source other tools read: it escapes a `[[` or a
+ * `#` that starts a line (wikilinks and tags), or loses an HTML entity (an
+ * `&nbsp;` would become an invisible character). Code is exempt.
+ */
+function rewritesSource(text: string, out: string): boolean {
+  const before = withoutCode(text);
+  const after = withoutCode(out);
+  if (count(after, ESCAPED_WIKILINK) > count(before, ESCAPED_WIKILINK)) {
+    return true;
+  }
+  if (count(after, ESCAPED_LINE_HASH) > count(before, ESCAPED_LINE_HASH)) {
+    return true;
+  }
+  const entities = new Map<string, number>();
+  for (const e of before.match(ENTITY) ?? []) {
+    entities.set(e, (entities.get(e) ?? 0) + 1);
+  }
+  for (const [e, n] of entities) {
+    if (after.split(e).length - 1 < n) return true;
+  }
+  return false;
+}
+
 /**
  * Whether the rich editor keeps everything in `text`: true when the syntax
- * trees of `text` and its round trip are the same but for formatting. When
- * in doubt (anything throws), false.
+ * trees of `text` and its round trip are the same but for formatting, and
+ * the round trip doesn't rewrite source other tools read (`rewritesSource`).
+ * When in doubt (anything throws), false.
  */
 export async function canKeep(text: string): Promise<boolean> {
   try {
-    return tree(text) === tree(await roundTrip(text));
+    const out = await roundTrip(text);
+    return tree(text) === tree(out) && !rewritesSource(text, out);
   } catch {
     return false;
   }
