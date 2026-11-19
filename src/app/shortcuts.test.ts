@@ -158,17 +158,36 @@ describe("platform differences", () => {
         "mac",
       ),
     ).toEqual({ type: "replace" }));
-  it("rich Markdown: Ctrl+Alt+M on other, Cmd+Alt+M on mac", () => {
+  it("rich Markdown: Ctrl+Shift+M on windows, Cmd+Shift+M on mac", () => {
     expect(
-      matchShortcut(ev("KeyM", { ctrlKey: true, altKey: true }), "windows"),
+      matchShortcut(
+        ev("KeyM", { key: "M", ctrlKey: true, shiftKey: true }),
+        "windows",
+      ),
     ).toEqual({ type: "toggleRichMarkdown" });
     expect(
       matchShortcut(
-        ev("KeyM", { metaKey: true, altKey: true, key: "µ" }),
+        ev("KeyM", { key: "M", metaKey: true, shiftKey: true }),
         "mac",
       ),
     ).toEqual({ type: "toggleRichMarkdown" });
   });
+  it("AltGr+M (Ctrl+Alt, typing µ) is left alone on windows", () => {
+    expect(
+      matchShortcut(
+        ev("KeyM", { key: "µ", ctrlKey: true, altKey: true }),
+        "windows",
+      ),
+    ).toBeNull();
+    expect(
+      matchShortcut(
+        ev("KeyM", { key: "µ", ctrlKey: true, altKey: true, shiftKey: true }),
+        "windows",
+      ),
+    ).toBeNull();
+  });
+  it("plain Ctrl+M is not the rich switch", () =>
+    expect(matchShortcut(ev("KeyM", { ctrlKey: true }), "windows")).toBeNull());
   it("Cmd+H on mac is left to the OS", () =>
     expect(matchShortcut(ev("KeyH", { metaKey: true }), "mac")).toBeNull());
   it("Ctrl+Alt+F on other is not replace", () =>

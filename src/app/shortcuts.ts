@@ -101,8 +101,6 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
   }
 
   if (e.altKey) {
-    // Mod+Alt+M switches the Markdown editor (Ctrl+Alt+M is no AltGr letter).
-    if (letter === "m" && !e.shiftKey) return { type: "toggleRichMarkdown" };
     // Mod+Alt+F is Replace on macOS only. Ctrl+Alt elsewhere is AltGr.
     return mac && letter === "f" && !e.shiftKey ? { type: "replace" } : null;
   }
@@ -119,6 +117,9 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
         return { type: "newCanvas" };
       case "v":
         return { type: "togglePreview" };
+      // Not Mod+Alt+M: Ctrl+Alt is AltGr on Windows/Linux and types letters.
+      case "m":
+        return { type: "toggleRichMarkdown" };
     }
     return null;
   }
