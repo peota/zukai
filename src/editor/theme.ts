@@ -14,19 +14,22 @@ const paper = EditorView.theme({
     color: "var(--z-text)",
     fontFamily: "var(--z-font-mono)",
     // The default; EditorHost's zoom overrides it.
-    fontSize: "13px",
+    fontSize: "14px",
   },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {
     fontFamily: "inherit",
-    lineHeight: "1.6",
+    lineHeight: "1.65",
   },
   ".cm-content": {
-    padding: "12px 0",
-    caretColor: "var(--z-text)",
+    padding: "14px 0",
+    caretColor: "var(--z-accent)",
   },
-  ".cm-line": { padding: "0 24px 0 12px" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--z-text)" },
+  ".cm-line": { padding: "0 32px 0 14px" },
+  ".cm-cursor, .cm-dropCursor": {
+    borderLeftColor: "var(--z-accent)",
+    borderLeftWidth: "2px",
+  },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection":
     { backgroundColor: "var(--z-accent-soft)" },
   ".cm-gutters": {
@@ -35,8 +38,8 @@ const paper = EditorView.theme({
     border: "none",
   },
   ".cm-lineNumbers .cm-gutterElement": {
-    padding: "0 4px 0 16px",
-    minWidth: "32px",
+    padding: "0 6px 0 20px",
+    minWidth: "36px",
   },
   // A quiet fold gutter: open markers appear while the gutter is hovered;
   // a folded line's marker always shows.
@@ -51,7 +54,7 @@ const paper = EditorView.theme({
   ".cm-foldPlaceholder": {
     backgroundColor: "var(--z-accent-soft)",
     border: "none",
-    borderRadius: "3px",
+    borderRadius: "4px",
     color: "var(--z-muted)",
     padding: "0 4px",
     margin: "0 2px",
@@ -87,7 +90,7 @@ const highlight = HighlightStyle.define([
   },
   {
     tag: [t.comment, t.lineComment, t.blockComment, t.docComment, t.meta],
-    color: "var(--z-faint)",
+    color: "var(--z-syn-comment)",
     fontStyle: "italic",
   },
   {

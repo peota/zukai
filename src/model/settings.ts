@@ -3,9 +3,33 @@ import type { MarkdownMode } from "./types";
 /** "system" follows the OS light or dark mode, live. */
 export type ThemePref = "system" | "light" | "dark";
 
+/** The palettes shown in Light mode (and for a light OS under System). */
+export type LightTheme = "paper" | "solar-light";
+/** The palettes shown in Dark mode (and for a dark OS under System). */
+export type DarkTheme = "graphite" | "midnight" | "solar-dark";
+/** The accent: selection, focus, links and checks, on every theme. */
+export type Accent = "blue" | "violet" | "green" | "orange" | "pink";
+
+export const LIGHT_THEMES: readonly LightTheme[] = ["paper", "solar-light"];
+export const DARK_THEMES: readonly DarkTheme[] = [
+  "graphite",
+  "midnight",
+  "solar-dark",
+];
+export const ACCENTS: readonly Accent[] = [
+  "blue",
+  "violet",
+  "green",
+  "orange",
+  "pink",
+];
+
 /** The user's preferences; saved in the Session. */
 export interface Settings {
   theme: ThemePref;
+  lightTheme: LightTheme;
+  darkTheme: DarkTheme;
+  accent: Accent;
   /** New and newly opened Tabs start with word wrap on (Alt+Z per Tab). */
   wrapNewTabs: boolean;
   /** The line-number gutter in the text editor. */
@@ -26,6 +50,9 @@ export function clampSplit(r: number): number {
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   theme: "system",
+  lightTheme: "paper",
+  darkTheme: "graphite",
+  accent: "blue",
   wrapNewTabs: false,
   lineNumbers: true,
   previewSplit: 0.5,
@@ -37,6 +64,12 @@ const THEMES: readonly string[] = ["system", "light", "dark"];
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
+function oneOf<T extends string>(v: unknown, all: readonly T[], d: T): T {
+  return typeof v === "string" && (all as readonly string[]).includes(v)
+    ? (v as T)
+    : d;
+}
+
 /** Settings from a Session: each malformed or missing value is its default. */
 export function parseSettings(v: unknown): Settings {
   const d = DEFAULT_SETTINGS;
@@ -46,6 +79,9 @@ export function parseSettings(v: unknown): Settings {
       typeof v.theme === "string" && THEMES.includes(v.theme)
         ? (v.theme as ThemePref)
         : d.theme,
+    lightTheme: oneOf(v.lightTheme, LIGHT_THEMES, d.lightTheme),
+    darkTheme: oneOf(v.darkTheme, DARK_THEMES, d.darkTheme),
+    accent: oneOf(v.accent, ACCENTS, d.accent),
     wrapNewTabs:
       typeof v.wrapNewTabs === "boolean" ? v.wrapNewTabs : d.wrapNewTabs,
     lineNumbers:

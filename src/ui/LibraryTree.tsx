@@ -209,7 +209,7 @@ export function LibraryTree({
         const copyHint = target && dropCopy && (
           <span
             data-copy-hint=""
-            className="shrink-0 rounded-[4px] bg-accent-soft px-1 text-[10.5px] text-text"
+            className="shrink-0 rounded-[4px] bg-accent-soft px-1.5 text-[11px] text-text"
           >
             Copy
           </span>
@@ -241,7 +241,7 @@ export function LibraryTree({
               onContextMenu={(ev) => openMenu(ev, e)}
               {...dragHandlers(e)}
               className={
-                "mt-2 flex h-[26px] cursor-default items-center gap-[7px] rounded-[6px] pr-1 whitespace-nowrap " +
+                "mt-2 flex h-[30px] cursor-default items-center gap-2 rounded-[6px] pr-1 whitespace-nowrap " +
                 (missing ? "text-faint " : "text-muted ") +
                 (target
                   ? "bg-row-sel shadow-[inset_0_0_0_1px_var(--z-accent)] "
@@ -251,18 +251,18 @@ export function LibraryTree({
                   : "")
               }
             >
-              <span className="flex w-2.5 shrink-0 justify-center text-faint">
+              <span className="flex w-3.5 shrink-0 justify-center text-faint">
                 <Chevron open={!missing && open} />
               </span>
               <span className="max-w-[70%] min-w-0 shrink-0 truncate">
                 {e.name}
               </span>
               {/* The parent path, cut from the left so its end shows. */}
-              <span className="min-w-0 flex-1 truncate text-left text-[11px] text-faint [direction:rtl]">
+              <span className="min-w-0 flex-1 truncate text-left text-[12px] text-faint [direction:rtl]">
                 <bdi>{parentOf(e.path)}</bdi>
               </span>
               {missing && (
-                <span className="shrink-0 text-[11px] text-faint">
+                <span className="shrink-0 text-[12px] text-faint">
                   Not found
                 </span>
               )}
@@ -278,7 +278,7 @@ export function LibraryTree({
                   const b = ev.currentTarget.getBoundingClientRect();
                   onContextMenu(e, b.left, b.bottom + 4);
                 }}
-                className="flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-row-hover hover:text-text"
+                className="flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
               >
                 <MoreIcon />
               </button>
@@ -301,7 +301,7 @@ export function LibraryTree({
               aria-current={active ? "true" : undefined}
               aria-disabled={blocked ? "true" : undefined}
               title={blocked ?? e.path}
-              style={{ paddingLeft: 8 + r.depth * 14 }}
+              style={{ paddingLeft: 8 + r.depth * 16 }}
               onClick={() => {
                 if (swallowClick()) return;
                 onCursor(e.path);
@@ -310,7 +310,7 @@ export function LibraryTree({
               onContextMenu={(ev) => openMenu(ev, e)}
               {...dragHandlers(e)}
               className={
-                "flex h-[26px] cursor-default items-center gap-[7px] rounded-[6px] pr-2 whitespace-nowrap " +
+                "flex h-[30px] cursor-default items-center gap-2 rounded-[6px] pr-2 whitespace-nowrap " +
                 (blocked ? "text-faint " : "text-text ") +
                 (target
                   ? "bg-row-sel shadow-[inset_0_0_0_1px_var(--z-accent)] "
@@ -322,7 +322,7 @@ export function LibraryTree({
                   : "")
               }
             >
-              <span className="flex w-2.5 shrink-0 justify-center text-faint">
+              <span className="flex w-3.5 shrink-0 justify-center text-faint">
                 {e.isDir && <Chevron open={open} />}
               </span>
               <Icon
@@ -333,7 +333,9 @@ export function LibraryTree({
                       ? "folder"
                       : fileIcon(e.name)
                 }
-                className={blocked ? "text-faint" : "text-muted"}
+                className={
+                  blocked ? "text-faint" : active ? "text-accent" : "text-muted"
+                }
               />
               {editing === e.path && !blocked ? (
                 <RenameField
@@ -349,7 +351,7 @@ export function LibraryTree({
               )}
               {e.link === "inside" && (
                 <span data-link-glyph="" className="shrink-0 text-faint">
-                  <Icon name="link" size={10} />
+                  <Icon name="link" size={12} />
                 </span>
               )}
               {copyHint}
@@ -357,7 +359,7 @@ export function LibraryTree({
             {pendingTrash?.path === e.path && (
               <TrashConfirm
                 pending={pendingTrash}
-                indent={8 + r.depth * 14}
+                indent={8 + r.depth * 16}
                 onConfirm={() => {
                   onConfirmTrash();
                   focusTree();
@@ -408,7 +410,7 @@ function TrashConfirm({
         }
       }}
       onClick={(e) => e.stopPropagation()}
-      className="z-fade-in my-1 mr-1 rounded-float bg-surface px-2.5 py-2 text-[12px] whitespace-normal text-text shadow-float"
+      className="z-fade-in my-1 mr-1 rounded-float bg-surface px-3 py-2.5 text-[13px] whitespace-normal text-text shadow-float"
     >
       <div>{trashQuestion(pending)}</div>
       <div className="mt-2 flex gap-1.5">
@@ -416,14 +418,14 @@ function TrashConfirm({
           type="button"
           autoFocus
           onClick={onConfirm}
-          className="rounded-[5px] bg-bar-btn-primary-bg px-2 py-[3px] text-bar-btn-primary-fg"
+          className="rounded-[6px] bg-danger px-2.5 py-1 font-medium text-danger-fg"
         >
           Move to Trash
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-[5px] px-2 py-[3px] text-muted hover:bg-row-hover hover:text-text"
+          className="rounded-[6px] px-2.5 py-1 text-muted hover:bg-row-hover hover:text-text"
         >
           Cancel
         </button>
@@ -527,7 +529,7 @@ function RenameField({
         <div
           role="alert"
           style={{ position: "fixed", left: error.left, top: error.top }}
-          className="z-fade-in z-30 max-w-[280px] rounded-float bg-surface px-2 py-1 text-[11.5px] whitespace-normal text-danger shadow-float"
+          className="z-fade-in z-30 max-w-[280px] rounded-float bg-surface px-2.5 py-1.5 text-[12px] whitespace-normal text-danger shadow-float"
         >
           {error.text}
         </div>

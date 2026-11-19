@@ -100,7 +100,7 @@ export function MarkdownPreview({
       ref={box}
       aria-label="Markdown preview"
       onClick={onClick}
-      className="z-md size-full overflow-auto px-8 py-6"
+      className="z-md size-full overflow-auto px-14 pt-8 pb-16"
       // Rendered from the Tab's text and sanitized (render.ts).
       dangerouslySetInnerHTML={{ __html: html ?? "" }}
     />

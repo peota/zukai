@@ -133,10 +133,17 @@ export default function App() {
   /** A Markdown Tab's preview; any other Tab is just edited. */
   const previewMode = (isMarkdown && active?.preview) || "edit";
   const theme = useColorScheme(w.settings.theme);
-  // The CSS palette follows <html data-theme>.
+  // The CSS palette follows <html data-theme> (light or dark), refined by
+  // data-palette (which light or dark theme) and data-accent.
+  const palette =
+    theme === "dark" ? w.settings.darkTheme : w.settings.lightTheme;
+  const accent = w.settings.accent;
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    const root = document.documentElement.dataset;
+    root.theme = theme;
+    root.palette = palette;
+    root.accent = accent;
+  }, [theme, palette, accent]);
   /** The text editor only sees text (a Canvas is JSON, an Image bytes). */
   const editorTabs = useMemo(
     () => w.state.tabs.filter((t) => t.kind === "text"),
@@ -431,6 +438,7 @@ export default function App() {
             locked: w.shadowUnreadable.has(t.id),
             folder: folders.get(t.id),
             pinned: t.pinned,
+            kind: t.kind,
           }))}
           onActivate={w.activate}
           onClose={(id) => void w.closeTab(id)}

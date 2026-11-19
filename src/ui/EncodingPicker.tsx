@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { COMMON_ENCODINGS, encodingName } from "./encodings";
 
@@ -61,7 +62,7 @@ export function EncodingPicker({
       aria-label={title}
       className="z-fade-in absolute right-2 bottom-7 z-20 w-56 rounded-float bg-surface p-1 shadow-float"
     >
-      <div className="px-2 pt-1 pb-0.5 text-[10.5px] tracking-wide text-faint">
+      <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold tracking-[0.04em] text-faint">
         {title.toUpperCase()}
       </div>
       <input
@@ -75,7 +76,7 @@ export function EncodingPicker({
           setIndex(0);
         }}
         onKeyDown={onKeyDown}
-        className="mb-1 w-full rounded-[4px] bg-chrome px-2 py-1 text-text outline-none placeholder:text-faint"
+        className="mb-1.5 h-8 w-full rounded-[6px] border border-hairline bg-sunken px-2.5 text-text outline-none placeholder:text-faint focus:border-accent"
       />
       <ul role="listbox" className="max-h-64 overflow-y-auto">
         {items.map((l, i) => (
@@ -88,14 +89,14 @@ export function EncodingPicker({
               e.preventDefault();
               onPick(l);
             }}
-            className={`flex cursor-default items-center rounded-[4px] px-2 py-1 ${
+            className={`flex cursor-default items-center rounded-[6px] px-2.5 py-[6px] ${
               i === sel ? "bg-accent-soft text-text" : "text-muted"
             }`}
           >
             {encodingName(l)}
             {l === current && (
-              <span className="ml-auto text-faint" aria-hidden>
-                ✓
+              <span className="ml-auto text-accent" aria-hidden>
+                <Check size={15} strokeWidth={2} />
               </span>
             )}
           </li>

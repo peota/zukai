@@ -26,12 +26,12 @@ export const SIDEBAR_MAX_WIDTH = 480;
 
 export const DEFAULT_SIDEBAR: Readonly<SidebarState> = Object.freeze({
   open: false,
-  width: 240,
+  width: 260,
   expanded: [],
 });
 
 /** The editor's text size in px (Mod+= / Mod+- / Mod+wheel change it). */
-export const DEFAULT_FONT_SIZE = 13;
+export const DEFAULT_FONT_SIZE = 14;
 export const MIN_FONT_SIZE = 8;
 export const MAX_FONT_SIZE = 40;
 

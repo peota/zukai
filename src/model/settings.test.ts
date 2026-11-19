@@ -6,6 +6,9 @@ describe("parseSettings", () => {
     expect(
       parseSettings({
         theme: "dark",
+        lightTheme: "solar-light",
+        darkTheme: "midnight",
+        accent: "violet",
         wrapNewTabs: true,
         lineNumbers: false,
         previewSplit: 0.35,
@@ -13,6 +16,9 @@ describe("parseSettings", () => {
       }),
     ).toEqual({
       theme: "dark",
+      lightTheme: "solar-light",
+      darkTheme: "midnight",
+      accent: "violet",
       wrapNewTabs: true,
       lineNumbers: false,
       previewSplit: 0.35,
@@ -24,9 +30,18 @@ describe("parseSettings", () => {
     expect(parseSettings(undefined)).toEqual(DEFAULT_SETTINGS);
     expect(parseSettings("dark")).toEqual(DEFAULT_SETTINGS);
     expect(
-      parseSettings({ theme: "blue", wrapNewTabs: "yes", lineNumbers: false }),
+      parseSettings({
+        theme: "blue",
+        darkTheme: "neon",
+        accent: 7,
+        wrapNewTabs: "yes",
+        lineNumbers: false,
+      }),
     ).toEqual({
       theme: "system",
+      lightTheme: "paper",
+      darkTheme: "graphite",
+      accent: "blue",
       wrapNewTabs: false,
       lineNumbers: false,
       previewSplit: 0.5,

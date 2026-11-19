@@ -347,15 +347,15 @@ describe("useWorkspace before restore", () => {
 describe("useWorkspace editor zoom", () => {
   it("steps the font size on text Tabs, clamps it, and saves it", async () => {
     const { result } = await mount();
-    expect(result.current.fontSize).toBe(13);
+    expect(result.current.fontSize).toBe(14);
     await act(() => result.current.run({ type: "zoom", dir: 1 }));
     await act(() => result.current.run({ type: "zoom", dir: 1 }));
-    expect(result.current.fontSize).toBe(15);
+    expect(result.current.fontSize).toBe(16);
     await act(() => h.flushAll?.());
     const writes = m.writeSession.mock.calls;
-    expect(JSON.parse(writes[writes.length - 1][0]).fontSize).toBe(15);
+    expect(JSON.parse(writes[writes.length - 1][0]).fontSize).toBe(16);
     await act(() => result.current.run({ type: "zoom", dir: 0 }));
-    expect(result.current.fontSize).toBe(13);
+    expect(result.current.fontSize).toBe(14);
     for (let i = 0; i < 20; i++) {
       await act(() => result.current.run({ type: "zoom", dir: -1 }));
     }
@@ -368,7 +368,7 @@ describe("useWorkspace editor zoom", () => {
     const { result } = await mount();
     await act(() => result.current.run({ type: "newCanvas" }));
     await act(() => result.current.run({ type: "zoom", dir: 1 }));
-    expect(result.current.fontSize).toBe(13);
+    expect(result.current.fontSize).toBe(14);
   });
 
   it("restores the saved font size", async () => {
@@ -418,13 +418,21 @@ describe("useWorkspace settings", () => {
     const { result, unmount } = await mount();
     expect(result.current.settings).toEqual({
       theme: "system",
+      lightTheme: "paper",
+      darkTheme: "graphite",
+      accent: "blue",
       wrapNewTabs: false,
       lineNumbers: true,
       previewSplit: 0.5,
       markdownDefault: "rich",
     });
     act(() =>
-      result.current.setSettings({ theme: "dark", lineNumbers: false }),
+      result.current.setSettings({
+        theme: "dark",
+        darkTheme: "midnight",
+        accent: "orange",
+        lineNumbers: false,
+      }),
     );
     expect(result.current.settings).toMatchObject({
       theme: "dark",
@@ -437,7 +445,11 @@ describe("useWorkspace settings", () => {
     unmount();
     m.readSession.mockResolvedValue(saved);
     const again = await mount();
-    expect(again.result.current.settings.theme).toBe("dark");
+    expect(again.result.current.settings).toMatchObject({
+      theme: "dark",
+      darkTheme: "midnight",
+      accent: "orange",
+    });
   });
 
   it("new Tabs start wrapped when the setting is on", async () => {

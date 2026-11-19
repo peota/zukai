@@ -497,9 +497,9 @@ function SidebarPanel({
       aria-label="Library sidebar"
       data-z-sidebar=""
       style={{ width }}
-      className="relative flex h-full shrink-0 flex-col border-r border-hairline bg-side px-1.5 pt-2 select-none"
+      className="relative flex h-full shrink-0 flex-col border-r border-hairline bg-side px-2 pt-2.5 text-[14px] select-none"
     >
-      <label className="mx-0.5 mb-1.5 flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] bg-row-hover px-2 text-faint">
+      <label className="mx-0.5 mb-2 flex h-8 shrink-0 items-center gap-2 rounded-[8px] border border-hairline bg-sunken px-2.5 text-[13px] text-faint focus-within:border-accent">
         <SearchIcon />
         <input
           type="search"
@@ -521,7 +521,7 @@ function SidebarPanel({
         onContextMenu={showPinnedMenu}
       />
 
-      <div className="flex shrink-0 items-center px-2 pt-2.5 pb-1 text-[10.5px] tracking-[0.02em] text-faint">
+      <div className="flex shrink-0 items-center px-2 pt-3 pb-1 text-[11px] font-semibold tracking-[0.06em] text-faint">
         <span className="flex-1">LIBRARY</span>
         <button
           ref={moreRef}
@@ -530,7 +530,7 @@ function SidebarPanel({
           title="Library actions"
           data-z-library-more=""
           onClick={toggleMoreMenu}
-          className="flex size-5 items-center justify-center rounded-[4px] text-faint hover:bg-row-hover hover:text-text"
+          className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
         >
           <MoreIcon />
         </button>
@@ -541,7 +541,7 @@ function SidebarPanel({
           title="New in Library"
           data-z-library-plus=""
           onClick={togglePlusMenu}
-          className="flex size-5 items-center justify-center rounded-[4px] text-faint hover:bg-row-hover hover:text-text"
+          className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
         >
           <PlusIcon />
         </button>
@@ -564,7 +564,7 @@ function SidebarPanel({
           >
             <p className="m-0">The Library folder isn't available.</p>
             {root && (
-              <p className="m-0 mt-1 text-[11.5px] break-all text-faint">
+              <p className="m-0 mt-1 text-[12px] break-all text-faint">
                 {root}
               </p>
             )}
@@ -572,7 +572,7 @@ function SidebarPanel({
               <button
                 type="button"
                 onClick={onChooseRoot}
-                className="rounded-[5px] bg-bar-btn-primary-bg px-2 py-[3px] text-bar-btn-primary-fg"
+                className="rounded-[6px] bg-accent px-2.5 py-1 font-medium text-accent-fg"
               >
                 Choose Library folder…
               </button>
@@ -580,7 +580,7 @@ function SidebarPanel({
                 <button
                   type="button"
                   onClick={onRecreateRoot}
-                  className="rounded-[5px] px-2 py-[3px] text-muted hover:bg-row-hover hover:text-text"
+                  className="rounded-[6px] px-2.5 py-1 text-muted hover:bg-row-hover hover:text-text"
                 >
                   Create it again
                 </button>

@@ -22,6 +22,9 @@ describe("SettingsDialog", () => {
     setup({
       settings: {
         theme: "dark",
+        lightTheme: "paper",
+        darkTheme: "graphite",
+        accent: "blue",
         wrapNewTabs: true,
         lineNumbers: false,
         previewSplit: 0.5,
@@ -91,8 +94,8 @@ describe("SettingsDialog", () => {
     fireEvent.change(input, { target: { value: "" } });
     expect(props.onFontSize).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
-    expect(props.onFontSize).toHaveBeenLastCalledWith(13);
-    rerender(<SettingsDialog {...props} fontSize={13} />);
+    expect(props.onFontSize).toHaveBeenLastCalledWith(14);
+    rerender(<SettingsDialog {...props} fontSize={14} />);
     expect(screen.getByRole("button", { name: "Reset" })).toBeDisabled();
   });
 

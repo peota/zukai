@@ -63,6 +63,9 @@ describe("session file", () => {
   it("keeps the settings, and defaults them in older Sessions", () => {
     const settings = {
       theme: "dark" as const,
+      lightTheme: "solar-light" as const,
+      darkTheme: "midnight" as const,
+      accent: "green" as const,
       wrapNewTabs: true,
       lineNumbers: false,
       previewSplit: 0.3,
@@ -481,7 +484,7 @@ describe("session v3 migration and sidebar", () => {
       "text",
     ]);
     expect(r?.closed[0].tab.kind).toBe("canvas");
-    expect(r?.sidebar).toEqual({ open: false, width: 240, expanded: [] });
+    expect(r?.sidebar).toEqual({ open: false, width: 260, expanded: [] });
   });
 
   it("v3RoundTripKeepsSidebarAndKinds", () => {

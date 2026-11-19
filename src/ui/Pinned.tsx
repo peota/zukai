@@ -55,7 +55,7 @@ export function Pinned({
   const stop = items.some((i) => i.id === activeId) ? activeId : items[0].id;
   return (
     <section className="flex max-h-[35%] min-h-0 shrink-0 flex-col">
-      <div className="px-2 pt-1 pb-1 text-[10.5px] tracking-[0.02em] text-faint">
+      <div className="px-2 pt-1 pb-1 text-[11px] font-semibold tracking-[0.06em] text-faint">
         PINNED
       </div>
       <ul aria-label="Pinned" className="min-h-0 overflow-y-auto pb-1">
@@ -97,14 +97,14 @@ export function Pinned({
                 }
               }}
               className={
-                "flex h-[26px] cursor-default items-center gap-[7px] rounded-[6px] px-2 whitespace-nowrap outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] " +
+                "flex h-[30px] cursor-default items-center gap-2 rounded-[6px] px-2 whitespace-nowrap outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] " +
                 (active
                   ? "bg-row-sel text-text"
                   : (item.open ? "text-muted " : "text-faint ") +
                     "hover:bg-row-hover")
               }
             >
-              <span className="w-2.5 shrink-0" />
+              <span className="w-3.5 shrink-0" />
               <Icon
                 name={item.icon}
                 className={item.open ? "text-muted" : "text-faint"}

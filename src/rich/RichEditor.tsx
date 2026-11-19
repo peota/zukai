@@ -417,8 +417,9 @@ export function RichEditor(p: RichEditorProps) {
       )}
       <div
         ref={root}
-        className="z-md min-h-0 flex-1 overflow-auto px-8 py-6"
-        style={{ fontSize }}
+        className="z-md min-h-0 flex-1 overflow-auto px-14 pt-8 pb-16"
+        // Prose reads one step above the code editor's size (15px at 14).
+        style={{ fontSize: fontSize + 1 }}
       />
     </div>
   );

@@ -30,7 +30,7 @@ const mac = platform === "mac";
 const keys = (...k: string[]) => formatKeys(["Mod", ...k], platform);
 
 const BUTTON =
-  "flex h-6 min-w-6 shrink-0 items-center justify-center rounded-[4px] px-1 text-[12px] text-muted hover:bg-chrome hover:text-text aria-pressed:bg-chrome aria-pressed:text-text disabled:text-faint disabled:hover:bg-transparent";
+  "flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted hover:bg-row-hover hover:text-text aria-pressed:bg-accent-tint aria-pressed:text-accent disabled:text-faint disabled:opacity-60 disabled:hover:bg-transparent";
 
 function Tool(p: {
   label: string;
@@ -71,8 +71,8 @@ const Group = ({
   <div
     role="group"
     className={
-      "flex shrink-0 items-center gap-0.5" +
-      (first ? "" : " border-l border-hairline pl-1")
+      "flex shrink-0 items-center gap-px" +
+      (first ? "" : " border-l border-hairline pl-1.5")
     }
   >
     {children}
@@ -80,17 +80,22 @@ const Group = ({
 );
 
 const MARK_TOOLS: [MarkKind, string, string, ReactNode][] = [
-  ["bold", "Bold", keys("B"), <b key="b">B</b>],
-  ["italic", "Italic", keys("I"), <i key="i">I</i>],
-  ["strike", "Strikethrough", keys("Shift", "X"), <s key="s">S</s>],
-  ["code", "Inline code", keys("E"), <Icon key="c" name="code" />],
+  ["bold", "Bold", keys("B"), <Icon key="b" name="bold" />],
+  ["italic", "Italic", keys("I"), <Icon key="i" name="italic" />],
+  [
+    "strike",
+    "Strikethrough",
+    keys("Shift", "X"),
+    <Icon key="s" name="strike" />,
+  ],
+  ["code", "Inline code", keys("E"), <Icon key="c" name="inlineCode" />],
 ];
 
 const BLOCK_TOOLS: [keyof typeof BLOCK_ITEMS, ReactNode][] = [
   ["paragraph", <Icon key="p" name="paragraph" />],
-  ["h1", <span key="1">H1</span>],
-  ["h2", <span key="2">H2</span>],
-  ["h3", <span key="3">H3</span>],
+  ["h1", <Icon key="1" name="h1" />],
+  ["h2", <Icon key="2" name="h2" />],
+  ["h3", <Icon key="3" name="h3" />],
 ];
 
 const INSERT_TOOLS: [keyof typeof BLOCK_ITEMS, IconName][][] = [
@@ -102,7 +107,7 @@ const INSERT_TOOLS: [keyof typeof BLOCK_ITEMS, IconName][][] = [
   [
     ["quote", "quote"],
     ["code", "codeBlock"],
-    ["table", "table"],
+    ["table", "insertTable"],
     ["rule", "rule"],
   ],
 ];
@@ -169,7 +174,7 @@ export function RichToolbar() {
     <div
       role="toolbar"
       aria-label="Formatting"
-      className="flex min-h-8 flex-wrap items-center gap-x-1 gap-y-0.5 border-b border-hairline bg-editor px-3 py-1"
+      className="flex min-h-9 flex-wrap items-center gap-x-1.5 gap-y-0.5 border-b border-hairline bg-editor py-1 pr-4 pl-[50px]"
     >
       <Group first>
         {BLOCK_TOOLS.map(([id, glyph]) => (
@@ -227,7 +232,7 @@ export function RichToolbar() {
           }}
           onBlur={() => setHref(null)}
           // Never wider than the toolbar, so it fits a narrow Split.
-          className="h-6 w-56 max-w-full min-w-0 rounded-[4px] bg-chrome px-2 text-[12px] text-text outline-none placeholder:text-faint"
+          className="h-7 w-60 max-w-full min-w-0 rounded-[6px] border border-hairline bg-sunken px-2.5 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent"
         />
       )}
       {INSERT_TOOLS.map((group, i) => (
