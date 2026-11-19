@@ -27,19 +27,30 @@ export function decide(
   return hasPending ? "conflict" : "reload";
 }
 
+/** True if the Tab's text lives in its shadow rather than in the File. */
+export function inShadow(file: FileInfo): boolean {
+  return (
+    file.unsaved === true || (file.held !== null && file.held !== "readonly")
+  );
+}
+
 export function onWriteOutcome(
   file: FileInfo,
   outcome: WriteOutcome,
 ): FileInfo {
   switch (outcome.kind) {
-    case "written":
+    case "written": {
       // The whole File now has one Line ending: "Mixed" is over.
-      return {
+      const written: FileInfo = {
         ...file,
         format: { ...file.format, mixed: false },
         fingerprint: outcome.fingerprint,
         held: null,
       };
+      delete written.unsaved;
+      delete written.diskFormat;
+      return written;
+    }
     case "conflict":
       return { ...file, held: "conflict" };
     case "missing":

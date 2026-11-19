@@ -1,6 +1,7 @@
 import { kindOf, type Kind } from "./kinds";
 import type {
   ClosedEntry,
+  FileFormat,
   FileInfo,
   Fingerprint,
   LanguageId,
@@ -11,6 +12,7 @@ import type {
 } from "./types";
 import { ensureOneTab, newTabState } from "./workspace";
 import { normalizeSplits } from "./split";
+import { inShadow } from "../files/fileState";
 import {
   clampSplit,
   DEFAULT_SETTINGS,
@@ -105,17 +107,24 @@ function isFingerprint(v: unknown): v is Fingerprint {
   );
 }
 
-function isFileInfo(v: unknown): v is FileInfo {
-  if (!isObject(v)) return false;
-  const f = v.format;
+function isFileFormat(f: unknown): f is FileFormat {
   return (
-    typeof v.path === "string" &&
-    v.path !== "" &&
     isObject(f) &&
     typeof f.encoding === "string" &&
     typeof f.bom === "boolean" &&
     (f.lineEnding === "lf" || f.lineEnding === "crlf") &&
-    typeof f.mixed === "boolean" &&
+    typeof f.mixed === "boolean"
+  );
+}
+
+function isFileInfo(v: unknown): v is FileInfo {
+  if (!isObject(v)) return false;
+  return (
+    typeof v.path === "string" &&
+    v.path !== "" &&
+    isFileFormat(v.format) &&
+    (v.unsaved === undefined || v.unsaved === true) &&
+    (v.diskFormat === undefined || isFileFormat(v.diskFormat)) &&
     (v.fingerprint === null || isFingerprint(v.fingerprint)) &&
     (v.held === null || (typeof v.held === "string" && HELD.includes(v.held)))
   );
@@ -306,10 +315,10 @@ export function purgeExpired(
   const kept: ClosedEntry[] = [];
   const expired: ClosedEntry[] = [];
   for (const e of closed) {
-    // A closed File has no shadow text unless held, so it never expires;
-    // nor does a pinned Tab, which the sidebar keeps listing.
+    // A closed File has no shadow text unless held or unsaved, so it never
+    // expires; nor does a pinned Tab, which the sidebar keeps listing.
     const forever =
-      (e.tab.file !== undefined && e.tab.file.held === null) ||
+      (e.tab.file !== undefined && !inShadow(e.tab.file)) ||
       e.tab.pinned === true;
     (!forever && now - e.closedAt > CLOSED_TTL_MS ? expired : kept).push(e);
   }

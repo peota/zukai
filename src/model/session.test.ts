@@ -167,6 +167,26 @@ describe("purgeExpired", () => {
     expect(purgeExpired([pin], now).kept).toEqual([pin]);
   });
 
+  it("keeps a clean closed File forever but expires an unsaved one", () => {
+    const now = 10 * CLOSED_TTL_MS;
+    const old = now - 31 * 24 * 60 * 60 * 1000;
+    const clean = {
+      ...entry(old),
+      tab: { ...newTabState("c"), file: fileInfo("/c.txt") },
+    };
+    const unsaved = {
+      ...entry(old),
+      tab: {
+        ...newTabState("u"),
+        file: { ...fileInfo("/u.txt"), unsaved: true as const },
+      },
+    };
+    expect(purgeExpired([clean, unsaved], now)).toEqual({
+      kept: [clean],
+      expired: [unsaved],
+    });
+  });
+
   it("keeps exactly 30 days, expires 30 days + 1 ms", () => {
     const now = 10 * CLOSED_TTL_MS;
     const keep = entry(now - CLOSED_TTL_MS);
@@ -417,6 +437,52 @@ describe("session v3", () => {
       expect(r?.tabs.map((t) => t.id)).toEqual(["a"]);
       expect(r?.tabs[0].title).toBe("Keep");
       expect(r?.activeId).toBe("a");
+    }
+  });
+
+  it("round-trips an unsaved File with a diskFormat", () => {
+    const f: FileInfo = {
+      ...fileInfo("/a.txt"),
+      unsaved: true,
+      diskFormat: {
+        encoding: "utf-16le",
+        bom: true,
+        lineEnding: "crlf",
+        mixed: false,
+      },
+    };
+    const w: WorkspaceState = {
+      tabs: [{ ...newTabState("f"), file: f }],
+      activeId: "f",
+      closed: [],
+    };
+    expect(parseSessionFile(JSON.stringify(toSessionFile(w)))?.tabs).toEqual(
+      w.tabs,
+    );
+  });
+
+  it("rejects a malformed unsaved or diskFormat", () => {
+    const parse = (file: unknown) =>
+      parseSessionFile(
+        JSON.stringify({
+          version: 3,
+          tabs: [
+            { ...newTabState("f"), file },
+            { ...newTabState("a"), title: "Keep", renamed: true },
+          ],
+          activeId: "a",
+          closed: [],
+        }),
+      );
+    for (const bad of [
+      { ...fileInfo("p"), unsaved: "yes" },
+      { ...fileInfo("p"), unsaved: false },
+      {
+        ...fileInfo("p"),
+        diskFormat: { bom: false, lineEnding: "lf", mixed: false },
+      },
+    ]) {
+      expect(parse(bad)?.tabs.map((t) => t.id)).toEqual(["a"]);
     }
   });
 

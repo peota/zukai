@@ -43,7 +43,8 @@ import {
 } from "../model/session";
 import { focusSidebar as focusSidebarElement } from "../ui/Sidebar";
 import { DEFAULT_SETTINGS, type Settings } from "../model/settings";
-import type { MarkdownMode, PreviewMode } from "../model/types";
+import type { FileInfo, MarkdownMode, PreviewMode } from "../model/types";
+import { inShadow } from "../files/fileState";
 import {
   CANT_KEEP_NOTICE,
   TOO_LARGE_NOTICE,
@@ -76,10 +77,11 @@ export const SESSION_SUSPENDED_NOTICE =
 function heldChanged(a: WorkspaceState, b: WorkspaceState): boolean {
   if (a.tabs === b.tabs && a.closed === b.closed) return false;
   const held = (s: WorkspaceState) => {
-    const m = new Map<string, string | null>();
-    for (const t of s.tabs) if (t.file) m.set(t.id, t.file.held);
+    const m = new Map<string, string>();
+    const key = (f: FileInfo) => `${f.held}:${inShadow(f)}`;
+    for (const t of s.tabs) if (t.file) m.set(t.id, key(t.file));
     for (const e of s.closed) {
-      if (e.tab.file) m.set(`closed:${e.tab.id}`, e.tab.file.held);
+      if (e.tab.file) m.set(`closed:${e.tab.id}`, key(e.tab.file));
     }
     return m;
   };
