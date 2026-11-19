@@ -41,6 +41,7 @@ import {
 } from "../model/session";
 import { focusSidebar as focusSidebarElement } from "../ui/Sidebar";
 import { DEFAULT_SETTINGS, type Settings } from "../model/settings";
+import type { PreviewMode } from "../model/types";
 import { useLibrary, type LibraryApi } from "./useLibrary";
 import {
   closeScratchpad,
@@ -134,6 +135,8 @@ export interface Workspace extends FilesApi {
   /** Theme, word wrap for new Tabs, line numbers; saved in the Session. */
   settings: Settings;
   setSettings(patch: Partial<Settings>): void;
+  /** A Markdown Tab's preview: beside the editor, alone, or off (null). */
+  setPreview(id: string, mode: PreviewMode | null): void;
 }
 
 export function useWorkspace(): Workspace {
@@ -381,6 +384,14 @@ export function useWorkspace(): Workspace {
     [setFontSize],
   );
 
+  const setPreview = useCallback(
+    (id: string, mode: PreviewMode | null) =>
+      commit(
+        ws.updateTab(stateRef.current, id, { preview: mode ?? undefined }),
+      ),
+    [commit],
+  );
+
   const setSettings = useCallback((patch: Partial<Settings>) => {
     const next = { ...settingsRef.current, ...patch };
     settingsRef.current = next;
@@ -557,6 +568,12 @@ export function useWorkspace(): Workspace {
           return focusSidebar();
         case "newCanvas":
           return newCanvas();
+        case "togglePreview": {
+          const tab = s.tabs.find((t) => t.id === s.activeId);
+          if (tab?.kind !== "text" || tab.language !== "markdown") return;
+          const next = NEXT_PREVIEW[tab.preview ?? "edit"];
+          return setPreview(tab.id, next === "edit" ? null : next);
+        }
         case "zoom":
           // A canvas or an image zooms itself (Excalidraw, the viewer).
           if (s.tabs.find((t) => t.id === s.activeId)?.kind === "text") {
@@ -578,6 +595,7 @@ export function useWorkspace(): Workspace {
       saveAs,
       toggleSidebar,
       zoomEditor,
+      setPreview,
     ],
   );
 
@@ -722,5 +740,13 @@ export function useWorkspace(): Workspace {
     setFontSize,
     settings,
     setSettings,
+    setPreview,
   };
 }
+
+/** Mod+Shift+V on a Markdown Tab. */
+const NEXT_PREVIEW = {
+  edit: "split",
+  split: "only",
+  only: "edit",
+} as const;

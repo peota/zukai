@@ -106,6 +106,18 @@ describe("session file", () => {
     ]);
   });
 
+  it("keeps a Tab's preview mode, and forgets a malformed one", () => {
+    const tabs = [
+      { ...newTabState("a"), preview: "split" },
+      { ...newTabState("b"), preview: "only" },
+      { ...newTabState("c"), preview: "sideways" },
+    ];
+    const r = parseSessionFile(
+      JSON.stringify({ ...toSessionFile(ws), tabs, activeId: "a" }),
+    )!;
+    expect(r.tabs.map((t) => t.preview)).toEqual(["split", "only", undefined]);
+  });
+
   it("returns null for bad input", () => {
     expect(parseSessionFile(null)).toBeNull();
     expect(parseSessionFile("{")).toBeNull();

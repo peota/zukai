@@ -1,6 +1,11 @@
 import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
-import type { FileFormat, ImageInfo, LanguageId } from "../model/types";
+import type {
+  FileFormat,
+  ImageInfo,
+  LanguageId,
+  PreviewMode,
+} from "../model/types";
 import type { SaveStatus } from "../storage/autosave";
 import { encodingLabel, lineEndingLabel } from "./encodings";
 import { Menu } from "./Menu";
@@ -38,6 +43,15 @@ export interface StatusBarProps {
   kindLabel?: string;
   /** An Image Tab: shown in place of `kindLabel` once the image has loaded. */
   image?: ImageInfo;
+  /**
+   * A Markdown Tab's preview switch (Edit, Split, Preview); `hint` is its
+   * shortcut, shown in the tooltip.
+   */
+  preview?: {
+    mode: "edit" | PreviewMode;
+    onChange(mode: "edit" | PreviewMode): void;
+    hint?: string;
+  };
   /** The gear at the far left; its tooltip shows `settingsHint`. */
   onSettings?(): void;
   settingsHint?: string;
@@ -81,6 +95,7 @@ export function StatusBar({
   image,
   onSettings,
   settingsHint,
+  preview,
 }: StatusBarProps) {
   const [formatAt, setFormatAt] = useState<DOMRect | null>(null);
   const closeFormat = useCallback(() => {
@@ -142,6 +157,7 @@ export function StatusBar({
         <span className="ml-auto px-1.5 py-0.5">{kindLabel}</span>
       ) : (
         <div className="ml-auto flex items-center gap-1.5">
+          {preview && <PreviewSwitch {...preview} />}
           {showFormat && (
             <Chip
               anchor="format"
@@ -239,5 +255,46 @@ function Chip({
     >
       {children}
     </button>
+  );
+}
+
+const PREVIEW_MODES: { id: "edit" | PreviewMode; label: string }[] = [
+  { id: "edit", label: "Edit" },
+  { id: "split", label: "Split" },
+  { id: "only", label: "Preview" },
+];
+
+/** Edit, Split or Preview for a Markdown Tab. */
+function PreviewSwitch({
+  mode,
+  onChange,
+  hint,
+}: NonNullable<StatusBarProps["preview"]>) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Markdown preview"
+      title={hint ? `Markdown preview (${hint})` : "Markdown preview"}
+      className="flex items-center rounded-[4px]"
+    >
+      {PREVIEW_MODES.map((m) => (
+        <button
+          key={m.id}
+          type="button"
+          role="radio"
+          tabIndex={-1}
+          aria-checked={mode === m.id}
+          onClick={() => onChange(m.id)}
+          className={
+            "rounded-[4px] px-1.5 py-0.5 " +
+            (mode === m.id
+              ? "bg-surface text-text shadow-float"
+              : "hover:bg-surface hover:text-muted")
+          }
+        >
+          {m.label}
+        </button>
+      ))}
+    </div>
   );
 }

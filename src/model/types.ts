@@ -71,7 +71,14 @@ export interface TabState {
    * closed pinned Tab stays there (and in Recently Closed) to reopen.
    */
   pinned?: boolean;
+  /**
+   * A Markdown Tab's rendered preview: beside the editor ("split") or in
+   * its place ("only"); absent while just editing.
+   */
+  preview?: PreviewMode;
 }
+
+export type PreviewMode = "split" | "only";
 
 /** What the status bar shows for an Image Tab once its image has loaded. */
 export interface ImageInfo {

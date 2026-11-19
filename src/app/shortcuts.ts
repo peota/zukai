@@ -19,7 +19,9 @@ export type Command =
   | { type: "newCanvas" }
   /** Editor text size: 1 bigger, -1 smaller, 0 back to the default. */
   | { type: "zoom"; dir: 1 | -1 | 0 }
-  | { type: "openSettings" };
+  | { type: "openSettings" }
+  /** A Markdown Tab: Edit → Split → Preview → Edit. */
+  | { type: "togglePreview" };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -105,6 +107,8 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
         return { type: "focusSidebar" };
       case "n":
         return { type: "newCanvas" };
+      case "v":
+        return { type: "togglePreview" };
     }
     return null;
   }

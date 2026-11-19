@@ -193,6 +193,15 @@ function withPin(t: unknown): unknown {
   return rest;
 }
 
+/** So is a malformed preview mode. */
+function withPreview(t: unknown): unknown {
+  if (!isObject(t) || t.preview === undefined) return t;
+  if (t.preview === "split" || t.preview === "only") return t;
+  const { preview: _bad, ...rest } = t;
+  void _bad;
+  return rest;
+}
+
 /** Before v3 a Tab had no Kind: a File's comes from its path. */
 function withKind(t: unknown): unknown {
   if (!isObject(t) || t.kind !== undefined) return t;
@@ -225,7 +234,8 @@ export function parseSessionFile(json: string | null): SessionFile | null {
     return null;
   }
   // A malformed entry is dropped alone; the rest of the session survives.
-  const fix = (t: unknown) => withPin(withViewport(migrate ? withKind(t) : t));
+  const fix = (t: unknown) =>
+    withPreview(withPin(withViewport(migrate ? withKind(t) : t)));
   const tabs: unknown[] = data.tabs.map(fix);
   const closed: unknown[] = data.closed.map((e: unknown) =>
     isObject(e) ? { ...e, tab: fix(e.tab) } : e,

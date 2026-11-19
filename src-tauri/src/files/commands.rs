@@ -268,6 +268,28 @@ pub async fn open_default(app: AppHandle, path: String) -> Result<OpenOutcome, F
     .await
 }
 
+/// True for a link the Markdown preview may hand to the browser: an
+/// `http(s)://` or `mailto:` URL of printable characters, nothing else (no
+/// `file:`, `javascript:` or app-specific scheme).
+fn web_link(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    let scheme_ok = ["http://", "https://", "mailto:"]
+        .iter()
+        .any(|s| lower.starts_with(s) && lower.len() > s.len());
+    scheme_ok && url.len() <= 2048 && !url.chars().any(|c| c.is_control() || c.is_whitespace())
+}
+
+/// Opens a web or mail link from the Markdown preview in the default browser
+/// or mail app. Anything else is refused.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), FileError> {
+    if !web_link(&url) {
+        return Err(FileError::InvalidName);
+    }
+    tauri_plugin_opener::open_url(&url, None::<&str>)
+        .map_err(|e| FileError::Io(std::io::Error::other(e.to_string())))
+}
+
 /// The Session File paths that are granted under exactly that spelling.
 /// `session_read` keeps paths it couldn't grant; the UI drops those so that
 /// `session_write` accepts the Session it saves back.
@@ -279,6 +301,30 @@ pub async fn grants_filter(app: AppHandle, paths: Vec<String>) -> Result<Vec<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_link_takes_only_http_https_and_mailto() {
+        for ok in [
+            "https://zukai.app/docs?a=1#x",
+            "HTTP://example.com",
+            "mailto:someone@example.com",
+        ] {
+            assert!(web_link(ok), "{ok}");
+        }
+        for bad in [
+            "javascript:alert(1)",
+            "file:///C:/Windows/System32/calc.exe",
+            "C:\\Windows\\notepad.exe",
+            "ms-settings:privacy",
+            "https://",
+            "https://a b",
+            "https://a\nb",
+            "",
+        ] {
+            assert!(!web_link(bad), "{bad:?} must be refused");
+        }
+        assert!(!web_link(&format!("https://{}", "a".repeat(3000))));
+    }
 
     #[test]
     fn save_filter_keeps_plain_extensions_only() {

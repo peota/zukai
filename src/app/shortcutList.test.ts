@@ -22,6 +22,7 @@ const ALL: Record<Command["type"], true> = {
   newCanvas: true,
   zoom: true,
   openSettings: true,
+  togglePreview: true,
 };
 
 describe("the shortcut list", () => {
