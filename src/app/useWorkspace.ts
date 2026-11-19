@@ -164,6 +164,11 @@ export interface Workspace extends FilesApi {
    * unregister.
    */
   registerRich(id: string, sync: RichSync): () => void;
+  /**
+   * The Tab's text changed while its rich edit was pending: a File is held
+   * as a Disk conflict, with the edit (written as the hold starts) as mine.
+   */
+  richConflict(id: string): void;
   /** Joins Tab `b` to Tab `a` in a Split (a no-op if either is in one). */
   splitWith(a: string, b: string, orientation?: SplitOrientation): void;
   /** Ends the Split holding `id`; both Tabs stay open. */
@@ -1011,6 +1016,7 @@ export function useWorkspace(): Workspace {
     bridge,
     bridgeRef: takeBridge,
     registerRich,
+    richConflict: internal.holdConflict,
     splitWith,
     unsplit,
     swapSplit,

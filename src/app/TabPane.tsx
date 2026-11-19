@@ -46,6 +46,8 @@ export interface TabPaneProps
   onZoom(dir: 1 | -1): void;
   /** Where the rich editor reports an edit it hasn't written yet. */
   registerRich(id: string, sync: RichSync): () => void;
+  /** The rich editor's pending edit met an outside change. */
+  onRichConflict(): void;
 }
 
 /**
@@ -144,6 +146,7 @@ export function TabPane(p: TabPaneProps) {
                     focusSignal={p.focusSignal}
                     onZoom={p.onZoom}
                     register={p.registerRich}
+                    onConflict={p.onRichConflict}
                   />
                 ) : (
                   <div className="size-full bg-editor" />

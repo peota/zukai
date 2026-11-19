@@ -27,6 +27,7 @@ export function useDiskChanges(
   refuseUnreadable: (id: string) => boolean,
 ) {
   const { stateRef, contents, lock, keptShadows, closing } = c;
+  const { richPending } = c;
   const { loadsRef, recheckSoonRef } = c;
   const { tabOf, patchFile, showNotice, hasPending } = c;
   const { hold, replaceText, dropShadow } = c;
@@ -49,7 +50,12 @@ export function useDiskChanges(
       if (r.kind === "failed") {
         return showNotice(openFailure(baseName(cur.path), r.err));
       }
-      if (typed !== undefined && contents.get(id) !== typed) {
+      // Typed during the read, in the plain editor (in contents) or in the
+      // rich one (still pending there; the hold writes it first).
+      if (
+        typed !== undefined &&
+        (contents.get(id) !== typed || (richPending?.(id) ?? false))
+      ) {
         return hold(id, cur, "conflict");
       }
       patchFile(id, fileInfoOf(cur.path, r.read));
@@ -63,6 +69,7 @@ export function useDiskChanges(
       patchFile,
       refuseUnreadable,
       replaceText,
+      richPending,
       showNotice,
       tabOf,
     ],
