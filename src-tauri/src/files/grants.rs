@@ -345,6 +345,12 @@ impl Grants {
         self.slots()[0].root.clone()
     }
 
+    /// Where the Library is: its canonical root, or its stored path while
+    /// it is unavailable.
+    pub fn root_place(&self) -> Option<PathBuf> {
+        self.slots()[0].place().cloned()
+    }
+
     /// Makes `root` the Library, replacing any earlier one (the added
     /// folders stay), and returns its canonical form. It must be an existing
     /// absolute folder.

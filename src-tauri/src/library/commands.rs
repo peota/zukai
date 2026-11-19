@@ -67,9 +67,17 @@ fn data_dir(app: &AppHandle) -> Result<PathBuf, FileError> {
 /// folder that was chosen (not a link put in its place), then the stored
 /// added folders the same way. Entries that overlap the Library or an
 /// earlier entry are dropped, and the cleaned list saved. Never creates
-/// anything.
+/// anything. If `library.json` can't be read (other than being absent),
+/// what Grants holds stands (`held_state`): never "no Library".
 pub(crate) fn root_state(g: &Grants, data: &Path) -> RootState {
-    let (root, available) = match root::load_root(data) {
+    let (stored_root, stored) = match (root::load_root(data), root::load_added(data)) {
+        (Ok(r), Ok(a)) => (r, a),
+        (Err(e), _) | (_, Err(e)) => {
+            eprintln!("zukai: couldn't read {}: {e}", root::LIBRARY_FILE);
+            return held_state(g);
+        }
+    };
+    let (root, available) = match stored_root {
         None => (None, false),
         Some(stored) => match g.load_root(&stored).and_then(|c| path_string(&c)) {
             Ok(root) => (Some(root), true),
@@ -80,7 +88,6 @@ pub(crate) fn root_state(g: &Grants, data: &Path) -> RootState {
             }
         },
     };
-    let stored = root::load_added(data);
     let count = stored.len();
     let cleaned = added::clean_added(root.as_deref().map(Path::new), stored);
     if cleaned.len() != count
@@ -102,6 +109,26 @@ pub(crate) fn root_state(g: &Grants, data: &Path) -> RootState {
         root,
         available,
         added,
+        removed: Vec::new(),
+    }
+}
+
+/// The Library and the added folders as Grants holds them now, unchanged.
+fn held_state(g: &Grants) -> RootState {
+    let available: Vec<PathBuf> = available_added(g);
+    RootState {
+        root: g.root_place().and_then(|r| r.to_str().map(str::to_owned)),
+        available: g.root().is_some(),
+        added: g
+            .added()
+            .into_iter()
+            .filter_map(|a| {
+                Some(AddedState {
+                    path: a.to_str()?.to_owned(),
+                    available: available.contains(&a),
+                })
+            })
+            .collect(),
         removed: Vec::new(),
     }
 }
@@ -202,18 +229,21 @@ pub(crate) fn remove_folder(
     open: &[String],
 ) -> Result<RootState, FileError> {
     let base = Path::new(path);
-    if !g.added().iter().any(|a| key(a) == key(base)) {
+    let (gone, rest): (Vec<PathBuf>, Vec<PathBuf>) =
+        g.added().into_iter().partition(|a| key(a) == key(base));
+    if gone.is_empty() {
         return Err(FileError::NotGranted);
     }
+    // Saved first: if the list can't be saved, nothing changes.
+    root::save_added(data, &rest)?;
     drop_added(g, base, open);
-    root::save_added(data, &g.added())?;
     Ok(root_state(g, data))
 }
 
 /// "Create it again": makes the stored root's folder again (it was deleted
 /// or renamed) and grants it. Only the path Rust stored is ever created.
 pub(crate) fn recreate_root(g: &Grants, data: &Path) -> Result<RootState, FileError> {
-    let stored = root::load_root(data).ok_or_else(|| other("no Library folder chosen"))?;
+    let stored = root::load_root(data)?.ok_or_else(|| other("no Library folder chosen"))?;
     fs::create_dir_all(&stored)?;
     use_root(g, data, &stored, &[])
 }
@@ -1844,6 +1874,37 @@ mod tests {
         assert_eq!(added_states(&st), [(s(&a).to_owned(), true)]);
     }
 
+    /// `library.json` can't be read for a moment: the state isn't "no
+    /// Library" (the UI would re-point it at the default), and nothing is
+    /// rewritten; what Grants holds stands.
+    #[test]
+    fn root_state_keeps_what_it_holds_when_library_json_cannot_be_read() {
+        let (_tmp, g, root, added, outside) = crate::library::tests::library_with_added();
+        let data = tempfile::tempdir().unwrap();
+        root::save_added(data.path(), &g.added()).unwrap();
+        let held = use_root(&g, data.path(), &root, &[]).unwrap();
+        assert_eq!(added_states(&held), [(s(&added).to_owned(), true)]);
+
+        let file = data.path().join(root::LIBRARY_FILE);
+        fs::remove_file(&file).unwrap();
+        fs::create_dir(&file).unwrap();
+        let st = root_state(&g, data.path());
+        assert_eq!(st, held);
+        assert_eq!(g.root(), Some(root.clone()));
+        assert_eq!(g.added(), [added.clone()]);
+        assert!(file.is_dir(), "never rewritten");
+
+        // Removing and re-pointing refuse to write without the other key,
+        // and change nothing.
+        let other = outside.join("other");
+        fs::create_dir(&other).unwrap();
+        assert!(remove_folder(&g, data.path(), s(&added), &[]).is_err());
+        assert!(use_root(&g, data.path(), &other, &[]).is_err());
+        assert_eq!(g.added(), [added]);
+        assert_eq!(g.root(), Some(root));
+        assert!(file.is_dir());
+    }
+
     #[test]
     fn root_state_drops_overlapping_entries_and_saves() {
         let (_tmp, g, root, outside) = library();
@@ -1856,8 +1917,8 @@ mod tests {
 
         let st = root_state(&Grants::default(), data.path());
         assert_eq!(added_states(&st), [(s(&a).to_owned(), true)]);
-        assert_eq!(root::load_added(data.path()), [a]);
-        assert_eq!(root::load_root(data.path()), Some(root.clone()));
+        assert_eq!(root::load_added(data.path()).unwrap(), [a]);
+        assert_eq!(root::load_root(data.path()).unwrap(), Some(root.clone()));
     }
 
     #[test]
@@ -1878,8 +1939,11 @@ mod tests {
             added_states(&st),
             [(s(&a).to_owned(), true), (s(&b).to_owned(), true)]
         );
-        assert_eq!(root::load_added(data.path()), [a.clone(), b.clone()]);
-        assert_eq!(root::load_root(data.path()), Some(root.clone()));
+        assert_eq!(
+            root::load_added(data.path()).unwrap(),
+            [a.clone(), b.clone()]
+        );
+        assert_eq!(root::load_root(data.path()).unwrap(), Some(root.clone()));
 
         assert_eq!(
             message(add_folder(&g, data.path(), &root.join("sub"))),
@@ -1893,7 +1957,7 @@ mod tests {
             message(add_folder(&g, data.path(), &outside)),
             Refusal::ContainsAdded.message()
         );
-        assert_eq!(root::load_added(data.path()), [a, b]);
+        assert_eq!(root::load_added(data.path()).unwrap(), [a, b]);
     }
 
     #[test]
@@ -1915,7 +1979,10 @@ mod tests {
             added_states(&st),
             [(s(&c).to_owned(), true), (s(&b).to_owned(), true)]
         );
-        assert_eq!(root::load_added(data.path()), [c.clone(), b.clone()]);
+        assert_eq!(
+            root::load_added(data.path()).unwrap(),
+            [c.clone(), b.clone()]
+        );
 
         // Refused: nothing changes.
         assert_eq!(
@@ -1926,7 +1993,10 @@ mod tests {
             locate_folder(&g, data.path(), s(&a), &a),
             Err(FileError::NotGranted)
         ));
-        assert_eq!(root::load_added(data.path()), [c.clone(), b.clone()]);
+        assert_eq!(
+            root::load_added(data.path()).unwrap(),
+            [c.clone(), b.clone()]
+        );
         assert_eq!(g.added(), [c.clone(), b]);
         // Its own place doesn't count against it.
         fs::create_dir(c.join("deeper")).unwrap();
@@ -1966,7 +2036,7 @@ mod tests {
 
         let st = remove_folder(&g, data.path(), s(&proj), &open).unwrap();
         assert!(st.added.is_empty());
-        assert!(root::load_added(data.path()).is_empty());
+        assert!(root::load_added(data.path()).unwrap().is_empty());
         assert_eq!(g.check(s(&note)).unwrap(), note);
         assert!(g.check(s(&proj.join("other.md"))).is_err());
         // Only what was inside the removed root: never through a link out.
@@ -2080,7 +2150,10 @@ mod tests {
             added_states(&st),
             [(s(&keep).to_owned(), true), (s(&big).to_owned(), true)]
         );
-        assert_eq!(root::load_added(data.path()), [keep.clone(), big.clone()]);
+        assert_eq!(
+            root::load_added(data.path()).unwrap(),
+            [keep.clone(), big.clone()]
+        );
         let v = serde_json::to_value(&st).unwrap();
         assert_eq!(v["removed"][0], "proj");
 
