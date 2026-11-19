@@ -87,6 +87,21 @@ export function normalizeSplits(s: WorkspaceState): WorkspaceState {
   return unchanged ? s : { ...s, tabs, splits };
 }
 
+/** Pinned items first (a Split stays whole), each group in its own order. */
+export function pinnedFirst(s: WorkspaceState): WorkspaceState {
+  const byId = new Map(s.tabs.map((t) => [t.id, t]));
+  const items = itemsOf(s.tabs, s.splits);
+  const pinned = items.filter((it) => byId.get(it[0])?.pinned);
+  if (
+    pinned.length === 0 ||
+    items.slice(0, pinned.length).every((it) => byId.get(it[0])?.pinned)
+  ) {
+    return s;
+  }
+  const order = [...pinned, ...items.filter((it) => !pinned.includes(it))];
+  return { ...s, tabs: order.flat().map((id) => byId.get(id)!) };
+}
+
 /** Joins Tab `b` to Tab `a`, next to it; both are pinned if either was. */
 export function makeSplit(
   s: WorkspaceState,
@@ -107,12 +122,14 @@ export function makeSplit(
     ...rest.slice(at),
   ].map((t) => (t.id === a && !!t.pinned !== pinned ? { ...t, pinned } : t));
   const split: Split = { a, b, orientation, ratio: 0.5, focus };
-  return normalizeSplits({
-    ...s,
-    tabs,
-    activeId: focus === "a" ? a : b,
-    splits: [...(s.splits ?? []), split],
-  });
+  return pinnedFirst(
+    normalizeSplits({
+      ...s,
+      tabs,
+      activeId: focus === "a" ? a : b,
+      splits: [...(s.splits ?? []), split],
+    }),
+  );
 }
 
 /** Ends the Split holding `id`; both Tabs stay open. */

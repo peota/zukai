@@ -51,6 +51,16 @@ describe("Split rules", () => {
     expect(r.tabs.every((t) => t.pinned)).toBe(true);
   });
 
+  it("movesANewlyPinnedPairInWithThePinnedTabs", () => {
+    // p pinned; splitting x with pinned b pins both, so the pair joins p.
+    let s = ws(["p", "y", "x", "b"], "x");
+    s = setPinned(setPinned(s, "p", true), "b", true);
+    expect(ids(s)).toEqual(["p", "b", "y", "x"]);
+    const r = makeSplit(s, "x", "b");
+    expect(ids(r)).toEqual(["p", "x", "b", "y"]);
+    expect(r.tabs.slice(0, 3).every((t) => t.pinned)).toBe(true);
+  });
+
   it("unsplitSwapOrientationRatio", () => {
     const s = pair(["a", "b", "x"]);
     const sw = swapSides(s, "a");
