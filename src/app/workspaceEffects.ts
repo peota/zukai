@@ -5,6 +5,7 @@ import { detectPlatform } from "./shortcuts";
 import { grantsFilter, pathKey, shadowDelete } from "../files/api";
 import type { SaveStatus, Saver } from "../storage/autosave";
 import {
+  DEFAULT_FONT_SIZE,
   defaultSidebar,
   parseSessionFile,
   restoreWorkspace,
@@ -50,6 +51,8 @@ export interface RestoreOptions {
   onGrantsUnchecked?(): void;
   /** The sidebar state the Session holds (the default when there is none). */
   onSidebar?(sidebar: SidebarState): void;
+  /** The editor font size the Session holds (the default when none). */
+  onFontSize?(px: number): void;
 }
 
 export async function restoreSession(
@@ -70,6 +73,7 @@ export async function restoreSession(
     json.status === "fulfilled" ? json.value : null,
   );
   opts.onSidebar?.(file?.sidebar ?? defaultSidebar());
+  opts.onFontSize?.(file?.fontSize ?? DEFAULT_FONT_SIZE);
   const broken =
     json.status === "rejected" || (json.value !== null && file === null);
   if (broken) await backupSession().catch(logError("back up session"));

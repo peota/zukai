@@ -22,6 +22,16 @@ export const DEFAULT_SIDEBAR: Readonly<SidebarState> = Object.freeze({
   expanded: [],
 });
 
+/** The editor's text size in px (Mod+= / Mod+- / Mod+wheel change it). */
+export const DEFAULT_FONT_SIZE = 13;
+export const MIN_FONT_SIZE = 8;
+export const MAX_FONT_SIZE = 40;
+
+/** A font size in whole pixels within MIN_FONT_SIZE–MAX_FONT_SIZE. */
+export function clampFontSize(px: number): number {
+  return Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, Math.round(px)));
+}
+
 /** A fresh copy of the default sidebar state: never hand out the default. */
 export const defaultSidebar = (): SidebarState => ({
   ...DEFAULT_SIDEBAR,
@@ -41,6 +51,8 @@ export interface SessionFile {
   activeId: string;
   closed: ClosedEntry[];
   sidebar: SidebarState;
+  /** The editor's text size in px. */
+  fontSize: number;
 }
 
 const LANGUAGES: readonly LanguageId[] = [
@@ -142,6 +154,7 @@ function parseSidebar(v: unknown): SidebarState {
 export function toSessionFile(
   s: WorkspaceState,
   sidebar: SidebarState = defaultSidebar(),
+  fontSize: number = DEFAULT_FONT_SIZE,
 ): SessionFile {
   return {
     version: SESSION_VERSION,
@@ -149,6 +162,7 @@ export function toSessionFile(
     activeId: s.activeId,
     closed: s.closed,
     sidebar,
+    fontSize,
   };
 }
 
@@ -211,6 +225,9 @@ export function parseSessionFile(json: string | null): SessionFile | null {
     activeId: data.activeId,
     closed: closed.filter(isClosedEntry),
     sidebar: migrate ? defaultSidebar() : parseSidebar(data.sidebar),
+    fontSize: isNum(data.fontSize)
+      ? clampFontSize(data.fontSize)
+      : DEFAULT_FONT_SIZE,
   };
 }
 

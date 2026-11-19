@@ -351,6 +351,8 @@ export default function App() {
                 replaceRequests={w.replaceRequests}
                 shadowUnreadable={w.shadowUnreadable}
                 onFormatResult={onFormatResult}
+                fontSize={w.fontSize}
+                onZoom={w.zoomEditor}
               />
             </div>
           )}

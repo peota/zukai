@@ -16,7 +16,9 @@ export type Command =
   | { type: "format" }
   | { type: "toggleSidebar" }
   | { type: "focusSidebar" }
-  | { type: "newCanvas" };
+  | { type: "newCanvas" }
+  /** Editor text size: 1 bigger, -1 smaller, 0 back to the default. */
+  | { type: "zoom"; dir: 1 | -1 | 0 };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -68,6 +70,20 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
   if (!modDown || otherMod) return null;
 
   const letter = letterOf(e);
+
+  // Mod+= / Mod++ / Mod+- / Mod+0, typed or on the keypad. Shift is allowed:
+  // "+" is Shift+= on many layouts.
+  if (!e.altKey) {
+    if (e.key === "=" || e.key === "+" || e.code === "NumpadAdd") {
+      return { type: "zoom", dir: 1 };
+    }
+    if (e.key === "-" || e.code === "NumpadSubtract") {
+      return { type: "zoom", dir: -1 };
+    }
+    if (!e.shiftKey && (e.key === "0" || e.code === "Numpad0")) {
+      return { type: "zoom", dir: 0 };
+    }
+  }
 
   if (e.altKey) {
     // Mod+Alt+F is Replace on macOS only. Ctrl+Alt elsewhere is AltGr.

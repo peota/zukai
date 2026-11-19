@@ -16,6 +16,30 @@ const mod = (p: Platform): Partial<Ev> =>
 
 describe.each(["mac", "other"] as Platform[])("matchShortcut (%s)", (p) => {
   const m = mod(p);
+  it("zoom in, out and reset", () => {
+    const zoom = (dir: number) => ({ type: "zoom", dir });
+    expect(matchShortcut(ev("Equal", { ...m, key: "=" }), p)).toEqual(zoom(1));
+    // Shift+= types "+" on US layouts.
+    expect(
+      matchShortcut(ev("Equal", { ...m, key: "+", shiftKey: true }), p),
+    ).toEqual(zoom(1));
+    expect(matchShortcut(ev("NumpadAdd", { ...m, key: "+" }), p)).toEqual(
+      zoom(1),
+    );
+    expect(matchShortcut(ev("Minus", { ...m, key: "-" }), p)).toEqual(zoom(-1));
+    expect(matchShortcut(ev("NumpadSubtract", { ...m, key: "-" }), p)).toEqual(
+      zoom(-1),
+    );
+    expect(matchShortcut(ev("Digit0", { ...m, key: "0" }), p)).toEqual(zoom(0));
+    expect(matchShortcut(ev("Numpad0", { ...m, key: "0" }), p)).toEqual(
+      zoom(0),
+    );
+    // No Mod, or Alt too: not zoom.
+    expect(matchShortcut(ev("Equal", { key: "=" }), p)).toBeNull();
+    expect(
+      matchShortcut(ev("Minus", { ...m, key: "-", altKey: true }), p),
+    ).toBeNull();
+  });
   it("new tab", () =>
     expect(matchShortcut(ev("KeyN", m), p)).toEqual({ type: "newTab" }));
   it("close tab", () =>
