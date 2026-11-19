@@ -510,6 +510,53 @@ describe("useWorkspace Split", () => {
     expect(result.current.state.activeId).toBe("b");
   });
 
+  it("closingTheFocusedRightHalfLeavesTheLeft", async () => {
+    const { result } = await mount();
+    act(() => result.current.splitWith("a", "b"));
+    act(() => result.current.activate("b"));
+    expect(result.current.state.activeId).toBe("b");
+    await act(() => result.current.closeTab("b"));
+    expect(splits(result)).toEqual([]);
+    expect(result.current.state.activeId).toBe("a");
+  });
+
+  it("toggleSplitAfterClosingTheActiveTabUsesTheEarlierTab", async () => {
+    const { result } = await mount();
+    // Tabs a, b; open c (lands after a), then close it: "previous" must not
+    // be c, and the Tab shown after closing is b.
+    await act(() => result.current.run({ type: "newTab" }));
+    const c = result.current.state.activeId;
+    expect(c).not.toBe("b");
+    await act(() => result.current.closeTab(c));
+    expect(result.current.state.activeId).toBe("b");
+    await act(() => result.current.run({ type: "toggleSplit" }));
+    expect(splits(result)).toMatchObject([{ a: "b", b: "a" }]);
+  });
+
+  it("movingFocusWithinASplitKeepsThePreviousTab", async () => {
+    const { result } = await mount();
+    await act(() => result.current.run({ type: "newTab" }));
+    const c = result.current.state.activeId;
+    act(() => result.current.splitWith("a", "b"));
+    act(() => result.current.activate("a"));
+    act(() => result.current.activate("b"));
+    act(() => result.current.unsplit("b"));
+    await act(() => result.current.run({ type: "toggleSplit" }));
+    expect(splits(result)).toMatchObject([{ a: "b", b: c }]);
+  });
+
+  it("toggleSplitSkipsAPreviousTabInAnotherSplit", async () => {
+    const { result } = await mount();
+    await act(() => result.current.run({ type: "newTab" }));
+    const c = result.current.state.activeId;
+    act(() => result.current.splitWith("a", "b"));
+    act(() => result.current.activate("a"));
+    act(() => result.current.activate(c));
+    await act(() => result.current.run({ type: "toggleSplit" }));
+    expect(splits(result)).toMatchObject([{ a: "a", b: "b" }]);
+    expect(splits(result)).toHaveLength(1);
+  });
+
   it("closeSplitClosesBoth", async () => {
     const { result } = await mount();
     act(() => result.current.setContent("b", "beta"));

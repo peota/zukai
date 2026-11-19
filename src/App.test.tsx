@@ -410,6 +410,19 @@ describe("App", () => {
     expect(halves[2]).toHaveAttribute("data-focused");
   });
 
+  it("keyboardFocusIntoTheOtherHalfActivatesIt", async () => {
+    splitSession();
+    const r = render(<App />);
+    const canvas = await waitFor(() => r.getByTestId("canvas"));
+    const halves = r.container.querySelectorAll("[data-split-view] > div");
+    expect(halves[0]).toHaveAttribute("data-focused");
+    const inner = document.createElement("button");
+    canvas.parentElement!.appendChild(inner);
+    act(() => inner.focus());
+    await waitFor(() => expect(halves[2]).toHaveAttribute("data-focused"));
+    expect(halves[0]).not.toHaveAttribute("data-focused");
+  });
+
   it("topAndBottom", async () => {
     splitSession("column");
     const r = render(<App />);

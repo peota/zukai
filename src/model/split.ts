@@ -87,7 +87,7 @@ export function normalizeSplits(s: WorkspaceState): WorkspaceState {
   return unchanged ? s : { ...s, tabs, splits };
 }
 
-/** Joins Tab `b` to Tab `a`, next to it and with its pin. */
+/** Joins Tab `b` to Tab `a`, next to it; both are pinned if either was. */
 export function makeSplit(
   s: WorkspaceState,
   a: string,
@@ -98,13 +98,14 @@ export function makeSplit(
   const tabB = s.tabs.find((t) => t.id === b);
   if (!tabA || !tabB || a === b || splitOf(s, a) || splitOf(s, b)) return s;
   const focus = s.activeId === b ? "b" : "a";
+  const pinned = !!tabA.pinned || !!tabB.pinned;
   const rest = s.tabs.filter((t) => t.id !== b);
   const at = rest.indexOf(tabA) + 1;
   const tabs = [
     ...rest.slice(0, at),
-    { ...tabB, pinned: !!tabA.pinned },
+    { ...tabB, pinned },
     ...rest.slice(at),
-  ];
+  ].map((t) => (t.id === a && !!t.pinned !== pinned ? { ...t, pinned } : t));
   const split: Split = { a, b, orientation, ratio: 0.5, focus };
   return normalizeSplits({
     ...s,

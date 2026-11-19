@@ -218,6 +218,7 @@ export function useWorkspace(): Workspace {
       if (
         next.activeId !== prev.activeId &&
         prev.activeId &&
+        next.tabs.some((t) => t.id === prev.activeId) &&
         !(within && sp.splitOf(prev, next.activeId) === within)
       ) {
         previousActiveRef.current = prev.activeId;
@@ -637,7 +638,9 @@ export function useWorkspace(): Workspace {
         case "toggleSplit": {
           if (sp.splitOf(s, s.activeId)) return unsplit(s.activeId);
           const prev = previousActiveRef.current;
-          if (prev && prev !== s.activeId) splitWith(s.activeId, prev);
+          if (prev && prev !== s.activeId && !sp.splitOf(s, prev)) {
+            splitWith(s.activeId, prev);
+          }
           return;
         }
         case "zoom":
@@ -742,7 +745,12 @@ export function useWorkspace(): Workspace {
             : (tabs[0]?.id ?? "");
           commit(
             ws.ensureOneTab(
-              { tabs, activeId, closed: cur.closed.filter((e) => ok(e.tab)) },
+              sp.normalizeSplits({
+                ...cur,
+                tabs,
+                activeId,
+                closed: cur.closed.filter((e) => ok(e.tab)),
+              }),
               freshId(),
             ),
           );

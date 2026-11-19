@@ -821,6 +821,72 @@ describe("useFiles close, reopen and restore", () => {
     expect(fileTabOf(result)).toBeUndefined();
   });
 
+  it("reopeningAnOpenFileFocusesItsSplitHalf", async () => {
+    // A stale Recently Closed entry for a File that is open again.
+    s.readSession.mockResolvedValue(
+      sessionJson(
+        [newTabState("a"), fileTab("f", P)],
+        [{ tab: fileTab("old", P), index: 1, closedAt: Date.now() }],
+      ),
+    );
+    const { result } = await mount();
+    act(() => result.current.splitWith("a", "f"));
+    act(() => result.current.activate("a"));
+    await act(() => result.current.reopenEntry("old"));
+    expect(result.current.state.activeId).toBe("f");
+    expect(result.current.state.splits![0].focus).toBe("b");
+    expect(result.current.state.closed).toHaveLength(0);
+  });
+
+  it("keepsASplitWhenTheLaterCheckDropsAnotherFile", async () => {
+    f.grantsFilter.mockRejectedValue(new Error("ipc"));
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile({
+          tabs: [fileTab("f", P), newTabState("a"), fileTab("g", Q)],
+          activeId: "f",
+          closed: [],
+          splits: [
+            { a: "f", b: "a", orientation: "row", ratio: 0.5, focus: "a" },
+          ],
+        }),
+      ),
+    );
+    const { result } = await mount();
+    f.grantsFilter.mockReset();
+    f.grantsFilter.mockResolvedValue([P]);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(fileTabOf(result, Q)).toBeUndefined());
+    expect(result.current.state.splits).toMatchObject([{ a: "f", b: "a" }]);
+  });
+
+  it("dropsASplitWhenTheLaterCheckRemovesAMember", async () => {
+    f.grantsFilter.mockRejectedValue(new Error("ipc"));
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile({
+          tabs: [fileTab("f", P), newTabState("a"), fileTab("g", Q)],
+          activeId: "f",
+          closed: [],
+          splits: [
+            { a: "f", b: "g", orientation: "row", ratio: 0.5, focus: "a" },
+          ],
+        }),
+      ),
+    );
+    const { result } = await mount();
+    f.grantsFilter.mockReset();
+    f.grantsFilter.mockResolvedValue([P]);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(fileTabOf(result, Q)).toBeUndefined());
+    expect(result.current.state.splits ?? []).toEqual([]);
+    expect(result.current.state.tabs.map((t) => t.id)).toEqual(["f", "a"]);
+  });
+
   it("quitWithHeldTabDoesNotBlock", async () => {
     s.readSession.mockResolvedValue(
       sessionJson([fileTab("f", P, { held: "missing" })]),

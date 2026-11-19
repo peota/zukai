@@ -1,6 +1,6 @@
 import { languageOf } from "../files/paths";
 import type { Kind } from "./kinds";
-import { itemsOf, normalizeSplits, splitOf } from "./split";
+import { itemsOf, normalizeSplits, otherHalf, splitOf } from "./split";
 import type { TabState, WorkspaceState } from "./types";
 
 export function newTabState(id: string, kind: Kind = "text"): TabState {
@@ -136,7 +136,10 @@ export function closeTab(
   const tabs = s.tabs.filter((t) => t.id !== id);
   let activeId = s.activeId;
   if (s.activeId === id) {
-    activeId = (tabs[index] ?? tabs[index - 1])?.id ?? "";
+    const sp = splitOf(s, id);
+    activeId = sp
+      ? otherHalf(sp, id)
+      : ((tabs[index] ?? tabs[index - 1])?.id ?? "");
   }
   // Closing a path again replaces its older Recently Closed entry.
   const key = tab.file ? keyOf(tab.file.path) : null;
