@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "zukai-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 1420
+    },
+    {
+      "name": "zukai-running",
+      "url": "http://localhost:1420",
+      "port": 1420
+    }
+  ]
+}
