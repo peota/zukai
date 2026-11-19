@@ -26,11 +26,13 @@ import {
 import type {
   FileFormat,
   SidebarState,
+  SplitOrientation,
   TabState,
   WorkspaceState,
 } from "../model/types";
 import type { FindRequest } from "../find/findExtension";
 import * as ws from "../model/workspace";
+import * as sp from "../model/split";
 import { deriveTitle } from "../model/title";
 import {
   clampFontSize,
@@ -137,6 +139,15 @@ export interface Workspace extends FilesApi {
   setSettings(patch: Partial<Settings>): void;
   /** A Markdown Tab's preview: beside the editor, alone, or off (null). */
   setPreview(id: string, mode: PreviewMode | null): void;
+  /** Joins Tab `b` to Tab `a` in a Split (a no-op if either is in one). */
+  splitWith(a: string, b: string, orientation?: SplitOrientation): void;
+  /** Ends the Split holding `id`; both Tabs stay open. */
+  unsplit(id: string): void;
+  swapSplit(id: string): void;
+  setSplitOrientation(id: string, o: SplitOrientation): void;
+  setSplitRatio(id: string, r: number): void;
+  /** Closes both Tabs of the Split holding `id`. */
+  closeSplit(id: string): Promise<void>;
 }
 
 export function useWorkspace(): Workspace {
@@ -155,6 +166,8 @@ export function useWorkspace(): Workspace {
   // Contents live in a map: async commands need the latest, and typing must
   // not re-render the App.
   const stateRef = useRef(state);
+  /** The Tab active just before (not saved): Mod+\ pairs with it. */
+  const previousActiveRef = useRef<string | null>(null);
   const readyRef = useRef(false);
   const [contents] = useState(() => new Map<string, string>());
   /** Text known to be on disk per id (last loaded or successfully written). */
@@ -200,6 +213,15 @@ export function useWorkspace(): Workspace {
     (next: WorkspaceState) => {
       const prev = stateRef.current;
       stateRef.current = next;
+      // Moving focus within a Split doesn't change the "previous" Tab.
+      const within = sp.splitOf(prev, prev.activeId);
+      if (
+        next.activeId !== prev.activeId &&
+        prev.activeId &&
+        !(within && sp.splitOf(prev, next.activeId) === within)
+      ) {
+        previousActiveRef.current = prev.activeId;
+      }
       setState(next);
       if (readyRef.current && heldChanged(prev, next)) void saveSessionNow();
     },
@@ -306,6 +328,34 @@ export function useWorkspace(): Workspace {
 
   const activate = useCallback(
     (id: string) => commit(ws.activate(stateRef.current, id)),
+    [commit],
+  );
+
+  const splitWith = useCallback(
+    (a: string, b: string, orientation?: SplitOrientation) =>
+      commit(sp.makeSplit(stateRef.current, a, b, orientation)),
+    [commit],
+  );
+
+  const unsplit = useCallback(
+    (id: string) => commit(sp.unsplit(stateRef.current, id)),
+    [commit],
+  );
+
+  const swapSplit = useCallback(
+    (id: string) => commit(sp.swapSides(stateRef.current, id)),
+    [commit],
+  );
+
+  const setSplitOrientation = useCallback(
+    (id: string, o: SplitOrientation) =>
+      commit(sp.setOrientation(stateRef.current, id, o)),
+    [commit],
+  );
+
+  const setSplitRatio = useCallback(
+    (id: string, r: number) =>
+      commit(sp.setSplitRatio(stateRef.current, id, r)),
     [commit],
   );
 
@@ -519,6 +569,16 @@ export function useWorkspace(): Workspace {
     ],
   );
 
+  const closeSplit = useCallback(
+    async (id: string) => {
+      const split = sp.splitOf(stateRef.current, id);
+      if (!split) return;
+      await closeTab(split.a);
+      await closeTab(split.b);
+    },
+    [closeTab],
+  );
+
   const isClosing = useCallback(
     (id: string) => closingIds.has(id),
     [closingIds],
@@ -574,6 +634,12 @@ export function useWorkspace(): Workspace {
           const next = NEXT_PREVIEW[tab.preview ?? "edit"];
           return setPreview(tab.id, next === "edit" ? null : next);
         }
+        case "toggleSplit": {
+          if (sp.splitOf(s, s.activeId)) return unsplit(s.activeId);
+          const prev = previousActiveRef.current;
+          if (prev && prev !== s.activeId) splitWith(s.activeId, prev);
+          return;
+        }
         case "zoom":
           // A canvas or an image zooms itself (Excalidraw, the viewer).
           if (s.tabs.find((t) => t.id === s.activeId)?.kind === "text") {
@@ -596,6 +662,8 @@ export function useWorkspace(): Workspace {
       toggleSidebar,
       zoomEditor,
       setPreview,
+      splitWith,
+      unsplit,
     ],
   );
 
@@ -741,6 +809,12 @@ export function useWorkspace(): Workspace {
     settings,
     setSettings,
     setPreview,
+    splitWith,
+    unsplit,
+    swapSplit,
+    setSplitOrientation,
+    setSplitRatio,
+    closeSplit,
   };
 }
 

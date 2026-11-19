@@ -21,7 +21,9 @@ export type Command =
   | { type: "zoom"; dir: 1 | -1 | 0 }
   | { type: "openSettings" }
   /** A Markdown Tab: Edit → Split → Preview → Edit. */
-  | { type: "togglePreview" };
+  | { type: "togglePreview" }
+  /** Splits the active Tab with the one active just before, or unsplits. */
+  | { type: "toggleSplit" };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -85,6 +87,10 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
     }
     if (!e.shiftKey && (e.key === "0" || e.code === "Numpad0")) {
       return { type: "zoom", dir: 0 };
+    }
+    // Mod+\ splits, by the typed backslash or the physical key.
+    if (!e.shiftKey && (e.key === "\\" || e.code === "Backslash")) {
+      return { type: "toggleSplit" };
     }
     // Mod+, opens Settings, by the typed comma or the physical key.
     if (!e.shiftKey && (e.key === "," || e.code === "Comma")) {
