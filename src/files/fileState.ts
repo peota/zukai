@@ -9,7 +9,7 @@ export type DiskEvent =
 export type FileAction = "ignore" | "reload" | "conflict" | "missing";
 
 /** An empty hash means "unread": it never matches anything. */
-function sameContent(a: Fingerprint | null, b: Fingerprint): boolean {
+export function sameContent(a: Fingerprint | null, b: Fingerprint): boolean {
   return a !== null && a.hash !== "" && b.hash !== "" && a.hash === b.hash;
 }
 

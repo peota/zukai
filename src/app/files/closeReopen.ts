@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { shadowWrite } from "../../files/api";
+import { inShadow } from "../../files/fileState";
 import { baseName } from "../../files/paths";
 import type { FileInfo } from "../../model/types";
 import * as ws from "../../model/workspace";
@@ -9,6 +10,7 @@ import {
   fileInfoOf,
   openFailure,
   readDisk,
+  unsavedDisk,
   type FilesContext,
 } from "./context";
 
@@ -26,8 +28,8 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
   const { markUnreadable, readShadow } = d;
 
   /**
-   * Called after the close wrote the Tab's text (a held File's went to its
-   * shadow). Rejects to abort the close.
+   * Called after the close wrote the Tab's text (a held or unsaved File's
+   * went to its shadow). Rejects to abort the close.
    */
   const closeFile = useCallback(
     // Under the lock: a disk check already running finishes first (and the
@@ -45,17 +47,13 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
         }
         // An Image never has text of its own to keep (and a Missing one
         // reopens from the disk, not from a lossy decode).
-        if (
-          file.held === null ||
-          file.held === "readonly" ||
-          tab.kind === "image"
-        ) {
+        if (!inShadow(file) || tab.kind === "image") {
           // Its text is on disk: nothing to keep, and the entry never expires.
           if (file.held !== null) patchFile(id, { ...file, held: null });
           return dropShadow(id);
         }
-        // A re-check may have held it after the final write went to the File:
-        // the entry must still carry the text.
+        // Unsaved or held, the entry carries its text in the shadow (and a
+        // re-check may have held it after the final write went to the File).
         await shadowWrite(id, contents.get(id) ?? "");
       }),
     [
@@ -91,7 +89,7 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
       const image =
         stateRef.current.closed.find((e) => e.tab.id === id)?.tab.kind ===
         "image";
-      if (file.held !== null && file.held !== "readonly" && !image) {
+      if (inShadow(file) && !image) {
         const kept = await readShadow(id, file);
         // Unreadable: the entry stays, with its shadow, for a later try.
         if (kept === undefined) {
@@ -99,6 +97,13 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
           return false;
         }
         text = kept;
+        // Unsaved: the disk has the text its edits started from, unless it
+        // changed or went away while closed.
+        if (kept !== null && file.held === null) {
+          const d = await unsavedDisk(file);
+          disk = d.text;
+          if (d.held !== null) info = { ...file, held: d.held };
+        }
       }
       if (text === null) {
         const r = await readDisk(file.path);
@@ -122,7 +127,7 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
       saver.resume(id);
       const { state } = ws.reopenClosed(stateRef.current, i);
       commit(ws.updateTab(state, id, { file: info }));
-      if (info.held !== null && info.held !== "readonly") {
+      if (inShadow(info)) {
         recheckSoonRef.current(id);
       }
       return true;

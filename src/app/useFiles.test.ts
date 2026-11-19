@@ -1105,8 +1105,10 @@ describe("useFiles text not loaded yet (final fix I2)", () => {
 
 describe("useFiles shadows the Session doesn't know are held (final fix I3)", () => {
   it("a shadow for a non-held Tab at restart holds the Tab with its text", async () => {
-    // A crash between the shadow write and the (debounced) Session save.
+    // A crash between the shadow write and the (debounced) Session save,
+    // after the disk changed.
     shadows.f = "unsaved";
+    disk[P] = { text: "{}", hash: "h2" };
     s.readSession.mockResolvedValue(
       sessionJson([fileTab("f", P), newTabState("a")]),
     );
@@ -1135,6 +1137,7 @@ describe("useFiles shadows the Session doesn't know are held (final fix I3)", ()
 
   it("does the same for a Recently Closed entry", async () => {
     shadows.f = "unsaved";
+    disk[P] = { text: "{}", hash: "h2" };
     s.readSession.mockResolvedValue(
       sessionJson(
         [newTabState("a")],
@@ -1165,6 +1168,181 @@ describe("useFiles shadows the Session doesn't know are held (final fix I3)", ()
         json.includes('"held":"conflict"'),
       ),
     ).toBe(true);
+  });
+});
+
+describe("useFiles unsaved Files (manual save)", () => {
+  const unsavedTab = (over: Partial<FileInfo> = {}) =>
+    fileTab("f", P, { unsaved: true, ...over });
+
+  it("hasPending counts an unsaved File that isn't loaded", async () => {
+    shadows.f = "mine";
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), unsavedTab()]),
+    );
+    const { result } = await mount(false);
+    expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+    expect(result.current.hasPending("f")).toBe(true);
+  });
+
+  it("restores an unsaved File's text from its shadow and keeps it unsaved", async () => {
+    shadows.f = "mine";
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), unsavedTab()]),
+    );
+    const { result } = await mount(false);
+    expect(await result.current.loadContent("f")).toBe("mine");
+    const file = fileTabOf(result)!.file!;
+    expect(file.unsaved).toBe(true);
+    expect(file.held).toBeNull();
+    expect(result.current.hasPending("f")).toBe(true);
+    // Typing back to the disk's text leaves nothing unsaved.
+    act(() => result.current.setContent("f", "{}"));
+    await settle();
+    expect(fileTabOf(result)!.file!.unsaved).toBeUndefined();
+    expect(shadows.f).toBeUndefined();
+    expect(f.fileWrite).not.toHaveBeenCalled();
+  });
+
+  it("restores an unsaved File as a conflict when the disk changed while closed", async () => {
+    shadows.f = "mine";
+    disk[P] = { text: "theirs", hash: "b" };
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), unsavedTab({ fingerprint: fp("a") })]),
+    );
+    const { result } = await mount(false);
+    expect(await result.current.loadContent("f")).toBe("mine");
+    expect(fileTabOf(result)!.file!.held).toBe("conflict");
+    expect(shadows.f).toBe("mine");
+    expect(disk[P].text).toBe("theirs");
+  });
+
+  it("restores an unsaved File as Missing when its File is gone", async () => {
+    shadows.f = "mine";
+    delete disk[P];
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), unsavedTab()]),
+    );
+    const { result } = await mount(false);
+    expect(await result.current.loadContent("f")).toBe("mine");
+    expect(fileTabOf(result)!.file!.held).toBe("missing");
+    expect(shadows.f).toBe("mine");
+  });
+
+  it("an unsaved File without a shadow reads its File", async () => {
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), unsavedTab()]),
+    );
+    const { result } = await mount(false);
+    expect(await result.current.loadContent("f")).toBe("{}");
+    expect(fileTabOf(result)!.file!.unsaved).toBeUndefined();
+    expect(result.current.hasPending("f")).toBe(false);
+  });
+
+  it("an orphaned shadow on an unchanged File restores as unsaved, not a conflict", async () => {
+    // A crash between the shadow write and the Session save that marks it.
+    shadows.f = "mine";
+    s.readSession.mockResolvedValue(
+      sessionJson([newTabState("a"), fileTab("f", P)]),
+    );
+    const { result } = await mount(false);
+    const file = fileTabOf(result)!.file!;
+    expect(file.held).toBeNull();
+    expect(file.unsaved).toBe(true);
+    expect(await result.current.loadContent("f")).toBe("mine");
+    expect(shadows.f).toBe("mine");
+  });
+
+  it("a disk change to an unsaved File becomes a Disk conflict", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    await settle();
+    expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+    disk[P] = { text: "theirs", hash: "h2" };
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
+    expect(await result.current.loadContent(id)).toBe("mine");
+    expect(shadows[id]).toBe("mine");
+    expect(disk[P].text).toBe("theirs");
+  });
+
+  it("a disk change to an unsaved Convert (text as on disk) is a Disk conflict", async () => {
+    shadows.f = "{}";
+    s.readSession.mockResolvedValue(
+      sessionJson([
+        newTabState("a"),
+        unsavedTab({ format: { ...FMT, lineEnding: "crlf" }, diskFormat: FMT }),
+      ]),
+    );
+    const { result } = await mount(false);
+    expect(await result.current.loadContent("f")).toBe("{}");
+    expect(fileTabOf(result)!.file!.held).toBeNull();
+    disk[P] = { text: "theirs", hash: "h2" };
+    act(() => h.fileChanged!({ path: P, kind: "changed" }));
+    await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
+    expect(await result.current.loadContent("f")).toBe("{}");
+    expect(shadows.f).toBe("{}");
+  });
+
+  it("Load disk version on an unsaved File drops the shadow and clears unsaved", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    await settle();
+    expect(shadows[id]).toBe("mine");
+    await act(() => result.current.loadDiskVersion(id));
+    expect(await result.current.loadContent(id)).toBe("{}");
+    expect(fileTabOf(result)!.file!.unsaved).toBeUndefined();
+    expect(shadows[id]).toBeUndefined();
+    expect(result.current.hasPending(id)).toBe(false);
+  });
+
+  it("closing an unsaved File keeps its shadow, and reopening restores it", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    await act(() => result.current.closeTab(id));
+    const entry = result.current.state.closed[0];
+    expect(entry.tab.file?.unsaved).toBe(true);
+    expect(entry.tab.file?.held).toBeNull();
+    expect(shadows[id]).toBe("mine");
+    expect(f.fileWrite).not.toHaveBeenCalled();
+
+    await act(() => result.current.reopenEntry(id));
+    expect(await result.current.loadContent(id)).toBe("mine");
+    expect(fileTabOf(result)!.file!.unsaved).toBe(true);
+    expect(fileTabOf(result)!.file!.held).toBeNull();
+    // The disk's text is known again: typing back to it leaves nothing unsaved.
+    act(() => result.current.setContent(id, "{}"));
+    await settle();
+    expect(fileTabOf(result)!.file!.unsaved).toBeUndefined();
+    expect(shadows[id]).toBeUndefined();
+  });
+
+  it("reopening an unsaved File whose disk changed is a conflict", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    await act(() => result.current.closeTab(id));
+    disk[P] = { text: "theirs", hash: "h2" };
+    await act(() => result.current.reopenEntry(id));
+    expect(fileTabOf(result)!.file!.held).toBe("conflict");
+    expect(await result.current.loadContent(id)).toBe("mine");
+    expect(shadows[id]).toBe("mine");
+  });
+
+  it("Save As of an unsaved File drops its shadow", async () => {
+    const { result } = await mount(false);
+    const id = await openP(result);
+    act(() => result.current.setContent(id, "mine"));
+    await settle();
+    expect(shadows[id]).toBe("mine");
+    f.filePickSave.mockResolvedValue(Q);
+    await act(() => result.current.saveAs(id));
+    expect(disk[Q].text).toBe("mine");
+    expect(fileTabOf(result, Q)!.file!.unsaved).toBeUndefined();
+    expect(shadows[id]).toBeUndefined();
   });
 });
 
