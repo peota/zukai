@@ -63,8 +63,8 @@ The owner compared it to Notepad++: new tabs are kept for you across restarts wi
 
 ### 4.4 Saving
 - **Save (Mod+S):** writes the File through today's fingerprinted write. If it's written, the shadow is deleted and the dot clears. If the File changed on disk, the Tab goes into a Disk conflict as today. A Scratchpad's Mod+S still opens Save As.
-- **Save all (Mod+Alt+S, and in the Command palette):** saves every File Tab with Unsaved changes.
-- Snapshots (ADR 0007) are taken before a save writes, under their existing rules.
+- **Save all (the tab bar's right-click menu):** saves every File Tab with Unsaved changes. There's no shortcut: Ctrl+Alt is AltGr on Windows and Linux, and Mod+Shift+S is already Save As. (Changed while planning; it was Mod+Alt+S.)
+- Snapshots (ADR 0007) aren't built yet. When they are, they're taken before a save writes.
 - Save As / Move to Library on a Scratchpad writes the new File immediately, as today. From then on it follows the File rule.
 
 ### 4.5 Closing a Tab
@@ -91,7 +91,7 @@ The owner compared it to Notepad++: new tabs are kept for you across restarts wi
 
 ### 4.9 Held Tabs with Unsaved changes (designer's call)
 A Held Tab (Disk conflict, Missing File, unencodable) still has Unsaved changes when its text differs from the disk, so it shows the dot. Its bar is where it gets resolved; Save never goes around the bar.
-- **Disk conflict:** Mod+S writes nothing. It shows the notice "Resolve the conflict first" and focuses the conflict bar. Save all skips the Tab and names it in the notice. Only **Keep mine** overwrites.
+- **Disk conflict:** Mod+S writes nothing. It shows the notice "Resolve the conflict first" (the conflict bar is already on screen). Save all skips the Tab and names it in the notice. Only **Keep mine** overwrites.
 - **Missing File:** Mod+S writes the content back to the path, the same as the bar's Save. Save all includes the Tab.
 - **Unencodable:** Mod+S and Save all fail with today's "some characters can't be written" notice. Save all moves on to the next Tab.
 - **Closing a Held Tab never prompts.** It closes as it does today: its text stays in its shadow and in Recently Closed, so nothing is lost. A prompt would only offer Don't save, which throws the text away, or Cancel, because Save can't succeed there.
@@ -104,7 +104,7 @@ A Held Tab (Disk conflict, Missing File, unencodable) still has Unsaved changes 
 ## 6. Calls made by the designer (not discussed with the owner)
 - Building on Shadow files (3, approach 1).
 - The tab dot replacing the close button until hover (4.3).
-- Save all on Mod+Alt+S (4.4).
+- Save all in the tab bar's right-click menu, with no shortcut (4.4).
 - One prompt per Tab when closing several, and Cancel stops the rest (4.5).
 - Turning the setting on doesn't flush existing unsaved Tabs (4.7).
 - Everything in 4.9.
