@@ -81,10 +81,16 @@ interface Size {
   h: number;
 }
 
-const CHECKER: CSSProperties = {
-  background:
-    "repeating-conic-gradient(var(--z-hairline) 0 25%, var(--z-editor) 0 50%) 0 0 / 16px 16px",
-};
+/**
+ * Transparency shows as a checkerboard behind the picture only; the rest of
+ * the viewer is the editor ground, like every other Tab. The squares stay
+ * 8px on screen at any zoom.
+ */
+const checker = (zoom: number): CSSProperties => ({
+  backgroundImage:
+    "repeating-conic-gradient(var(--z-hairline-strong) 0 25%, var(--z-sunken) 0 50%)",
+  backgroundSize: `${16 / zoom}px ${16 / zoom}px`,
+});
 
 const platform = detectPlatform();
 
@@ -270,8 +276,7 @@ export function ImageHost({
       data-x={view.x}
       data-y={view.y}
       onMouseDown={onMouseDown}
-      className="relative size-full cursor-grab select-none overflow-hidden active:cursor-grabbing"
-      style={CHECKER}
+      className="relative size-full cursor-grab select-none overflow-hidden bg-editor active:cursor-grabbing"
     >
       {message ? (
         <div className="flex size-full items-center justify-center text-[12px] text-muted">
@@ -288,6 +293,7 @@ export function ImageHost({
             onError={() => setFailed(true)}
             className="absolute left-0 top-0 max-w-none origin-top-left"
             style={{
+              ...checker(view.zoom),
               transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
               opacity: nat ? 1 : 0,
               imageRendering: view.zoom > 2 ? "pixelated" : "auto",

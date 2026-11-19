@@ -81,6 +81,33 @@ const TEXT_ONLY: ReadonlySet<Command["type"]> = new Set([
 ]);
 
 /**
+ * A drawing on Excalidraw's default white paper shows on Zukai's own editor
+ * ground instead: the canvas is transparent while shown, so it matches the
+ * theme (and its tab), and is written back as white, so the file never
+ * changes for it. A drawing with a background of its own keeps it.
+ */
+const DEFAULT_PAPER = "#ffffff";
+
+function shownBackground<T extends { viewBackgroundColor?: unknown }>(
+  appState: T,
+): T {
+  const bg = appState.viewBackgroundColor;
+  const plain =
+    bg === undefined ||
+    (typeof bg === "string" &&
+      ["#ffffff", "#fff", "white"].includes(bg.toLowerCase()));
+  return plain ? { ...appState, viewBackgroundColor: "transparent" } : appState;
+}
+
+function savedBackground<T extends { viewBackgroundColor?: unknown }>(
+  appState: T,
+): T {
+  return appState.viewBackgroundColor === "transparent"
+    ? { ...appState, viewBackgroundColor: DEFAULT_PAPER }
+    : appState;
+}
+
+/**
  * The appState a `.excalidraw` file keeps (background, grid…), by
  * Excalidraw's own export filter rather than a list of our own.
  */
@@ -268,7 +295,7 @@ function CanvasTab({
       repairBindings: true,
     });
     const appState: ExcalidrawInitialDataState["appState"] = {
-      ...doc.scene.appState,
+      ...shownBackground(doc.scene.appState),
       ...(startView && {
         scrollX: startView.scrollX,
         scrollY: startView.scrollY,
@@ -318,7 +345,7 @@ function CanvasTab({
         );
         a.updateScene({
           elements,
-          appState,
+          appState: shownBackground(appState),
           captureUpdate: mod.CaptureUpdateAction.NEVER,
         });
         a.history.clear();
@@ -360,16 +387,17 @@ function CanvasTab({
       }, VIEWPORT_DELAY);
     }
     if (!mod || host.current.isReadOnly(id)) return;
+    const saved = savedBackground(appState);
     const signature = sceneSignature(
       elements,
       files,
-      savedAppState(mod, appState),
+      savedAppState(mod, saved),
     );
     if (signature === baseline.current) return;
     baseline.current = signature;
     host.current.onChange(
       id,
-      mod.serializeAsJSON(elements, appState, files, "local"),
+      mod.serializeAsJSON(elements, saved, files, "local"),
     );
   };
 

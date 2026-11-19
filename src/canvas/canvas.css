@@ -15,3 +15,29 @@
 .z-canvas .HelpDialog__header {
   display: none;
 }
+
+/*
+ * Zukai's ground and chrome inside Excalidraw: the editor ground behind a
+ * plain drawing (CanvasHost shows the default white as transparent), its
+ * floating islands on Zukai's raised surface, and the accent for tools.
+ */
+.z-canvas {
+  background: var(--z-editor);
+}
+.z-canvas .excalidraw,
+.z-canvas .excalidraw.theme--dark {
+  --default-bg-color: var(--z-editor);
+  --island-bg-color: var(--z-surface);
+  --color-surface-lowest: var(--z-editor);
+  --color-surface-low: var(--z-surface);
+  --color-primary: var(--z-accent);
+  --color-primary-darker: var(--z-accent);
+  --color-primary-darkest: var(--z-accent);
+  --color-primary-hover: var(--z-accent);
+  --color-primary-light: var(--z-accent-soft);
+  --color-primary-light-darker: var(--z-accent-soft);
+  --color-brand-hover: var(--z-accent);
+  --color-brand-active: var(--z-accent);
+  --color-surface-primary-container: var(--z-accent-soft);
+  --color-on-primary-container: var(--z-text);
+}
