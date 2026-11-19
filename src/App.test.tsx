@@ -445,4 +445,69 @@ describe("App", () => {
     expect(r.getByRole("tab", { name: "alpha | beta" })).toBeTruthy();
     await waitFor(() => expect(r.getAllByTestId("editor")).toHaveLength(2));
   });
+
+  it("dropOnTheRightEdgeSplits", async () => {
+    s.listScratchpads.mockResolvedValue([
+      { id: "a", ext: "txt" },
+      { id: "b", ext: "txt" },
+    ]);
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile({
+          tabs: [
+            { ...newTabState("a"), title: "alpha" },
+            { ...newTabState("b"), title: "beta" },
+          ],
+          activeId: "a",
+          closed: [],
+        }),
+      ),
+    );
+    const r = render(<App />);
+    await waitFor(() => expect(r.getAllByRole("tab")).toHaveLength(2));
+    const main = r.container.querySelector("main")!;
+    main.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 100,
+        right: 900,
+        bottom: 700,
+        width: 900,
+        height: 600,
+        x: 0,
+        y: 100,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    const beta = r.getByText("beta").closest("[role=tab]")!;
+    const move = (x: number, y: number) =>
+      fireEvent.pointerMove(beta, {
+        pointerId: 1,
+        buttons: 1,
+        clientX: x,
+        clientY: y,
+      });
+    // A drop in the middle does nothing.
+    fireEvent.pointerDown(beta, { button: 0, pointerId: 1, clientX: 100 });
+    move(110, 400);
+    expect(main.querySelector("[data-split-drop]")).toBeNull();
+    fireEvent.pointerUp(beta, { pointerId: 1, clientX: 450, clientY: 400 });
+    expect(r.getAllByRole("tab")).toHaveLength(2);
+    // The right third shows the zone; Esc clears it.
+    fireEvent.pointerDown(beta, { button: 0, pointerId: 1, clientX: 100 });
+    move(800, 400);
+    expect(main.querySelector("[data-split-drop=row]")).not.toBeNull();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(main.querySelector("[data-split-drop]")).toBeNull();
+    fireEvent.pointerUp(beta, { pointerId: 1, clientX: 800, clientY: 400 });
+    expect(r.getAllByRole("tab")).toHaveLength(2);
+    // Dropping there splits: a first, b second.
+    fireEvent.pointerDown(beta, { button: 0, pointerId: 1, clientX: 100 });
+    move(800, 400);
+    fireEvent.pointerUp(beta, { pointerId: 1, clientX: 800, clientY: 400 });
+    await waitFor(() => expect(r.getAllByRole("tab")).toHaveLength(1));
+    expect(r.getByRole("tab", { name: "alpha | beta" })).toBeTruthy();
+    expect(main.querySelector("[data-split-drop]")).toBeNull();
+    await waitFor(() => expect(r.getAllByTestId("editor")).toHaveLength(2));
+    expect(r.getAllByTestId("editor")[1]).toHaveAttribute("data-id", "b");
+  });
 });
