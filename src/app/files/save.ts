@@ -6,6 +6,7 @@ import {
   fileSaveAs,
   type WriteOutcome,
 } from "../../files/api";
+import { inShadow } from "../../files/fileState";
 import { baseName, languageOf, stemOf, suggestedName } from "../../files/paths";
 import { CANVAS_EXT, kindOf, type Kind } from "../../model/kinds";
 import * as ws from "../../model/workspace";
@@ -122,7 +123,7 @@ export function useSave(c: FilesContext, d: SaveDeps) {
         await saveSessionNow();
         if (!now.file) {
           await deleteScratchpad(id).catch(logError("delete scratchpad"));
-        } else if (now.file.held !== null) {
+        } else if (inShadow(now.file)) {
           await dropShadow(id);
         }
         if (contents.get(id) !== latest) keepAside(id);

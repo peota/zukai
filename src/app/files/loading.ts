@@ -5,8 +5,14 @@ import {
   shadowList,
   shadowRead,
 } from "../../files/api";
+import { inShadow, sameContent } from "../../files/fileState";
 import { baseName } from "../../files/paths";
-import type { FileInfo, TabState, WorkspaceState } from "../../model/types";
+import type {
+  FileInfo,
+  Fingerprint,
+  TabState,
+  WorkspaceState,
+} from "../../model/types";
 import * as ws from "../../model/workspace";
 import { deriveTitle } from "../../model/title";
 import { parseScene } from "../../canvas/scene";
@@ -17,6 +23,7 @@ import {
   fileInfoOf,
   openFailure,
   readDisk,
+  unsavedDisk,
   type FilesContext,
 } from "./context";
 
@@ -76,16 +83,27 @@ export function useLoading(c: FilesContext) {
     async (id: string, file: FileInfo): Promise<string> => {
       // An Image has no shadow: it always reads its File.
       const image = tabOf(id)?.kind === "image";
-      if (file.held !== null && file.held !== "readonly" && !image) {
+      if (inShadow(file) && !image) {
         const kept = await readShadow(id, file);
         if (kept === undefined) {
-          // It stays held as it was (that is what the Session keeps), and
-          // nothing is written for it until its shadow reads again.
+          // It stays held or unsaved as it was (that is what the Session
+          // keeps), and nothing is written for it until its shadow reads.
           onDisk.set(id, "");
           return "";
         }
-        // The disk doesn't have this text: it stays pending.
-        if (kept !== null) return kept;
+        if (kept !== null) {
+          // The disk doesn't have this text: it stays pending.
+          if (file.held !== null) return kept;
+          // Unsaved: the disk has the text its edits started from, unless
+          // it changed or went away meanwhile.
+          const disk = await unsavedDisk(file);
+          if (disk.text !== undefined) onDisk.set(id, disk.text);
+          if (disk.held !== null) {
+            patchFile(id, { ...(tabOf(id)?.file ?? file), held: disk.held });
+          }
+          return kept;
+        }
+        // No shadow after all: the File's own text, and nothing unsaved.
       }
       const r = await readDisk(file.path);
       const cur = tabOf(id)?.file ?? file;
@@ -128,7 +146,7 @@ export function useLoading(c: FilesContext) {
           })
           .finally(() => loadsRef.current.delete(id));
         loadsRef.current.set(id, p);
-        if (file && file.held !== null && file.held !== "readonly") {
+        if (file && inShadow(file)) {
           void p.then(
             () => recheckSoonRef.current(id),
             () => {},
@@ -155,8 +173,9 @@ export function useLoading(c: FilesContext) {
   /**
    * Shadow files are unsaved text, never thrown away:
    * - One whose File Tab (or Recently Closed entry) the Session doesn't say is
-   *   held (a crash before the Session was saved) holds that Tab: a Disk
-   *   conflict if the File exists, Missing if not, with the shadow as its text.
+   *   held or unsaved (a crash before the Session was saved) is its text. The
+   *   File unchanged since, it is unsaved; otherwise the Tab is held: a Disk
+   *   conflict if the File exists, Missing if not.
    * - One that no Tab or entry refers to (its entry was dropped) is recovered
    *   as a new Scratchpad (a Canvas if it is a drawing), then deleted.
    */
@@ -173,16 +192,19 @@ export function useLoading(c: FilesContext) {
       const holdIfShadowed = async (tab: TabState): Promise<TabState> => {
         const file = tab.file;
         if (!file || !shadowed.has(tab.id) || tab.kind === "image") return tab;
-        if (file.held !== null && file.held !== "readonly") return tab;
-        let gone = false;
+        if (inShadow(file)) return tab;
+        let disk: Fingerprint | null | undefined;
         try {
-          gone = (await fileFingerprint(file.path)) === null;
+          disk = await fileFingerprint(file.path);
         } catch (err) {
           logError("check file")(err);
         }
+        if (file.held === null && disk && sameContent(file.fingerprint, disk)) {
+          return { ...tab, file: { ...file, unsaved: true } };
+        }
         return {
           ...tab,
-          file: { ...file, held: gone ? "missing" : "conflict" },
+          file: { ...file, held: disk === null ? "missing" : "conflict" },
         };
       };
       let next: WorkspaceState = {

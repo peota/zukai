@@ -7,7 +7,7 @@ import {
   onOpenPaths,
   type OpenPaths,
 } from "../../files/api";
-import { decide, type DiskEvent } from "../../files/fileState";
+import { decide, inShadow, type DiskEvent } from "../../files/fileState";
 import { baseName } from "../../files/paths";
 import type { WorkspaceState } from "../../model/types";
 import * as ws from "../../model/workspace";
@@ -60,7 +60,7 @@ export function useDiskChanges(
       }
       patchFile(id, fileInfoOf(cur.path, r.read));
       replaceText(id, r.read.text);
-      if (cur.held !== null) await dropShadow(id);
+      if (inShadow(cur)) await dropShadow(id);
     },
     [
       contents,

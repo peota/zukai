@@ -13,6 +13,7 @@ import type {
   TabState,
   WorkspaceState,
 } from "../../model/types";
+import { sameContent } from "../../files/fileState";
 import * as ws from "../../model/workspace";
 import type { Saver } from "../../storage/autosave";
 import type { KeyedLock } from "../keyedLock";
@@ -104,6 +105,22 @@ export async function readDisk(path: string): Promise<DiskRead> {
   }
 }
 
+/**
+ * The disk under an unsaved File whose text comes from its shadow: its text
+ * (undefined if it can't be read) and the hold it needs, if any. A changed
+ * disk is a Disk conflict; a gone one is Missing.
+ */
+export async function unsavedDisk(
+  file: FileInfo,
+): Promise<{ text?: string; held: FileInfo["held"] }> {
+  const r = await readDisk(file.path);
+  if (r.kind === "missing") return { held: "missing" };
+  // A failed read changes nothing: a later disk check tries again.
+  if (r.kind === "failed") return { held: file.held };
+  const same = sameContent(file.fingerprint, r.read.fingerprint);
+  return { text: r.read.text, held: same ? file.held : "conflict" };
+}
+
 export function openFailure(name: string, e: FileError): string {
   if (e.kind === "too_large") return "Too large to open yet";
   if (e.kind === "not_a_file") return "Open files, not folders";
@@ -149,7 +166,7 @@ export interface FilesContext extends Omit<FilesInternals, "state" | "ready"> {
   tabOf(id: string): TabState | undefined;
   patchFile(id: string, file: FileInfo): void;
   showNotice(text: string): void;
-  /** Edits not yet in the File itself (held text counts). */
+  /** Edits not yet in the File itself (held or unsaved text counts). */
   hasPending(id: string): boolean;
   keepAside(id: string): void;
   hold(id: string, file: FileInfo, held: FileInfo["held"]): void;
@@ -198,13 +215,14 @@ export function useFilesContext(x: FilesInternals) {
     }, NOTICE_MS);
   }, []);
 
-  /** Edits not yet in the File itself (held text counts). */
+  /** Edits not yet in the File itself (held or unsaved text counts). */
   const { richPending } = x;
   const hasPending = useCallback(
     (id: string) =>
       (richPending?.(id) ?? false) ||
+      tabOf(id)?.file?.unsaved === true ||
       (contents.has(id) && contents.get(id) !== onDisk.get(id)),
-    [contents, onDisk, richPending],
+    [contents, onDisk, richPending, tabOf],
   );
 
   /** Loads a Tab's text; set by useLoading (loadContent is defined there). */
