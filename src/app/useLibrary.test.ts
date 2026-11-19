@@ -528,7 +528,7 @@ describe("useLibrary", () => {
     expect(err).toBe("b.md already exists");
   });
 
-  it("inboxDragSavesWithSuggestedName", async () => {
+  it("scratchpadDragSavesWithSuggestedName", async () => {
     scratch = { a: "My: idea\nmore" };
     const reserved = `${PROJ}\\My idea.txt`;
     l.libraryReserve.mockResolvedValue(reserved);
@@ -536,11 +536,11 @@ describe("useLibrary", () => {
       { ...newTabState("a"), title: "My: idea" },
     ]);
     await waitFor(() =>
-      expect(result.current.library.inbox).toEqual([
+      expect(result.current.library.scratchpads).toEqual([
         { id: "a", title: "My: idea", kind: "text" },
       ]),
     );
-    await act(() => result.current.library.inboxMove("a", PROJ));
+    await act(() => result.current.library.scratchpadMove("a", PROJ));
     expect(l.libraryReserve).toHaveBeenCalledWith(PROJ, "My idea", "txt");
     expect(f.fileSaveAs).toHaveBeenCalledWith(
       reserved,
@@ -550,12 +550,12 @@ describe("useLibrary", () => {
     expect(f.filePickSave).not.toHaveBeenCalled();
     const tab = result.current.state.tabs.find((t) => t.id === "a")!;
     expect(tab.file?.path).toBe(reserved);
-    expect(result.current.library.inbox).toEqual([]);
+    expect(result.current.library.scratchpads).toEqual([]);
   });
 
   it("moveToLibraryUsesSaveDialogInRoot", async () => {
     const { result } = await mount([{ ...newTabState("a"), title: "alpha" }]);
-    await act(() => result.current.library.inboxMove("a", null));
+    await act(() => result.current.library.scratchpadMove("a", null));
     expect(f.filePickSave).toHaveBeenCalledWith("alpha.txt", R);
   });
 

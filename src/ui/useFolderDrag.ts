@@ -6,7 +6,7 @@ import { isUnder, parentOf, sameDir } from "./libraryEntries";
 
 /** What is being dragged onto a Library folder. */
 export type DragSource =
-  { kind: "entry"; entry: Entry } | { kind: "inbox"; id: string };
+  { kind: "entry"; entry: Entry } | { kind: "scratchpad"; id: string };
 
 export interface PointerHandlers {
   onPointerDown(e: PointerEvent<HTMLElement>): void;
@@ -48,14 +48,14 @@ export function parentIndex(rows: Row[]): Int32Array {
 
 /** A drop that would do nothing or can't be done lands nowhere. */
 function allowed(source: DragSource, dest: string | null): string | null {
-  if (dest === null || source.kind === "inbox") return dest;
+  if (dest === null || source.kind === "scratchpad") return dest;
   const path = source.entry.path;
   if (sameDir(dest, path) || isUnder(dest, path)) return null;
   return sameDir(dest, parentOf(path)) ? null : dest;
 }
 
 /**
- * Pointer-event drag of tree rows and Inbox items onto Library folders, the
+ * Pointer-event drag of tree rows and Scratchpad items onto Library folders, the
  * same way the tab bar drags Tabs: a threshold, Esc to cancel, the click
  * after a drag swallowed, and a window-level release guard. The target is
  * the one row under the pointer, hit-tested.

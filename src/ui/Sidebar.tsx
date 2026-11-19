@@ -4,7 +4,7 @@ import type { Entry } from "../library/api";
 import type { Row, TreeState } from "../library/tree";
 import { detectPlatform, type Platform } from "../app/shortcuts";
 import { PlusIcon, SearchIcon } from "./icons";
-import { Inbox, type InboxItem } from "./Inbox";
+import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
 import { Pinned, type PinnedItem } from "./Pinned";
 import { LibraryTree, type PendingTrash } from "./LibraryTree";
 import { Menu, type MenuItem } from "./Menu";
@@ -16,7 +16,7 @@ import {
   clampSidebarWidth as clampWidth,
 } from "../model/session";
 
-export type { InboxItem } from "./Inbox";
+export type { ScratchpadItem } from "./ScratchpadList";
 export type { PinnedItem } from "./Pinned";
 
 export type NewItem = "folder" | "note" | "text" | "canvas";
@@ -40,10 +40,10 @@ export interface SidebarProps {
   searching: boolean;
   search: { query: string; results: Entry[]; ready: boolean };
   onSearch(q: string): void;
-  inbox: InboxItem[];
+  scratchpads: ScratchpadItem[];
   /** The active Tab's File path, highlighted in the tree. */
   activePath: string | null;
-  /** The active Tab's id, highlighted in the Inbox. */
+  /** The active Tab's id, highlighted in the Pinned and Scratchpads lists. */
   activeId: string | null;
   onOpen(entry: Entry): void;
   onToggle(dir: string): void;
@@ -58,9 +58,9 @@ export interface SidebarProps {
   onCopyPath(path: string): void;
   onChooseRoot(): void;
   onRecreateRoot(): void;
-  onInboxActivate(id: string): void;
+  onScratchpadActivate(id: string): void;
   /** `destDir` null: Move to Library… through the save dialog. */
-  onInboxMove(id: string, destDir: string | null): void;
+  onScratchpadMove(id: string, destDir: string | null): void;
   /** Pinned Tabs, open ones first. */
   pinned: PinnedItem[];
   /** Activates an open pinned Tab, or reopens a closed one. */
@@ -114,7 +114,7 @@ function SidebarPanel({
   searching,
   search,
   onSearch,
-  inbox,
+  scratchpads,
   activePath,
   activeId,
   onOpen,
@@ -127,8 +127,8 @@ function SidebarPanel({
   onCopyPath,
   onChooseRoot,
   onRecreateRoot,
-  onInboxActivate,
-  onInboxMove,
+  onScratchpadActivate,
+  onScratchpadMove,
   pinned,
   onPinnedOpen,
   onUnpin,
@@ -209,7 +209,7 @@ function SidebarPanel({
     blocked: (e) => blockedReason(e) !== null,
     onDrop: (source, dest) => {
       if (source.kind === "entry") onMove(source.entry.path, dest);
-      else onInboxMove(source.id, dest);
+      else onScratchpadMove(source.id, dest);
     },
   });
 
@@ -318,7 +318,12 @@ function SidebarPanel({
     );
   };
 
-  const showInboxMenu = (id: string, x: number, y: number, from: HTMLElement) =>
+  const showScratchpadMenu = (
+    id: string,
+    x: number,
+    y: number,
+    from: HTMLElement,
+  ) =>
     openMenu(
       {
         label: "Scratchpad",
@@ -331,7 +336,7 @@ function SidebarPanel({
             reason: available
               ? undefined
               : "The Library folder isn't available.",
-            onSelect: () => onInboxMove(id, null),
+            onSelect: () => onScratchpadMove(id, null),
           },
         ],
       },
@@ -482,12 +487,12 @@ function SidebarPanel({
         </div>
       )}
 
-      <Inbox
-        items={inbox}
+      <ScratchpadList
+        items={scratchpads}
         activeId={activeId}
-        onActivate={onInboxActivate}
-        onContextMenu={showInboxMenu}
-        dragHandlers={(id) => drag.handlers({ kind: "inbox", id })}
+        onActivate={onScratchpadActivate}
+        onContextMenu={showScratchpadMenu}
+        dragHandlers={(id) => drag.handlers({ kind: "scratchpad", id })}
         swallowClick={drag.swallowClick}
       />
 

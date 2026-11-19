@@ -260,7 +260,7 @@ export default function App() {
         searching={lib.searching}
         search={lib.search}
         onSearch={lib.setQuery}
-        inbox={lib.inbox}
+        scratchpads={lib.scratchpads}
         activePath={lib.activePath}
         activeId={activeId}
         onOpen={(entry) => void lib.open(entry).then(refocus)}
@@ -273,11 +273,11 @@ export default function App() {
         onCopyPath={lib.copyPath}
         onChooseRoot={() => void lib.chooseRoot()}
         onRecreateRoot={() => void lib.recreateRoot()}
-        onInboxActivate={(id) => {
+        onScratchpadActivate={(id) => {
           w.activate(id);
           refocus();
         }}
-        onInboxMove={(id, dest) => void lib.inboxMove(id, dest)}
+        onScratchpadMove={(id, dest) => void lib.scratchpadMove(id, dest)}
         pinned={pinnedItems(w.state.tabs, w.state.closed)}
         onPinnedOpen={(id) => {
           if (w.state.tabs.some((t) => t.id === id)) {
