@@ -711,8 +711,15 @@ export function EditorHost(props: EditorHostProps) {
     return e;
   };
 
+  /** A failing listener is logged; it never stops the view's own work. */
   const tellOutside = (id: string, text: string) => {
-    for (const cb of [...(outside.current.get(id) ?? [])]) cb(text);
+    for (const cb of [...(outside.current.get(id) ?? [])]) {
+      try {
+        cb(text);
+      } catch (err) {
+        console.error("outside-change listener failed", err);
+      }
+    }
   };
 
   /** Settle the `ready` promise of `id`, if one is waiting. */

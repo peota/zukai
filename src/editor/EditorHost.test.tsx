@@ -1080,6 +1080,50 @@ describe("EditorHost text bridge", () => {
     await expect(bridge().ready("a")).resolves.toBeUndefined();
   });
 
+  it("bridge_throwing_subscriber_breaks_nothing", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      let resolve!: (s: string) => void;
+      const { container, props, bridge } = withBridge({
+        loadContent: () => new Promise<string>((r) => (resolve = r)),
+      });
+      const heard = vi.fn();
+      bridge().onOutsideChange("a", () => {
+        throw new Error("subscriber failed");
+      });
+      bridge().onOutsideChange("a", heard);
+      const ready = bridge().ready("a");
+      await act(async () => resolve("loaded a"));
+      // Loading still finishes: ready resolves and the view shows.
+      await expect(ready).resolves.toBeUndefined();
+      const v = await activeView(container, "loaded a");
+      expect(v.dom.parentElement!.style.display).toBe("");
+      expect(heard).toHaveBeenLastCalledWith("loaded a");
+      // A later edit still reaches onChange, the other subscriber and the
+      // selection patch.
+      act(() =>
+        v.dispatch({
+          changes: { from: 0, insert: "X" },
+          selection: { anchor: 1 },
+          userEvent: "input.type",
+        }),
+      );
+      expect(props.onChange).toHaveBeenLastCalledWith("a", "Xloaded a");
+      expect(heard).toHaveBeenLastCalledWith("Xloaded a");
+      await waitFor(() =>
+        expect(props.onTabPatch).toHaveBeenCalledWith("a", {
+          selection: { anchor: 1, head: 1 },
+        }),
+      );
+      expect(error).not.toHaveBeenCalledWith(
+        "load scratchpad failed",
+        expect.anything(),
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("bridge_ready_rejects_when_the_tab_closes_first", async () => {
     const { rerender, bridge } = withBridge({
       loadContent: () => new Promise<string>(() => {}),
