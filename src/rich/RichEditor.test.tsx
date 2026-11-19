@@ -1,4 +1,5 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import { useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import type { TextBridge } from "../editor/EditorHost";
@@ -72,6 +73,7 @@ function mount(
   const r = render(
     <RichEditor {...props}>
       <Grab id={id} />
+      {over.children}
     </RichEditor>,
   );
   return { ...r, props };
@@ -330,5 +332,63 @@ describe("RichEditor", () => {
       bridge.replace.mock.invocationCallOrder[0],
     );
     expect(view.state.doc.textContent).toBe("Oh Hi");
+  });
+
+  it("a_throwing_ui_listener_never_loses_an_edit", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      function Thrower() {
+        const rich = useRich();
+        useEffect(
+          () =>
+            rich?.subscribe(() => {
+              throw new Error("listener broke");
+            }),
+          [rich],
+        );
+        return null;
+      }
+      const bridge = fakeBridge({ a: "# Hi\n" });
+      mount(bridge, { children: <Thrower /> });
+      const view = await viewOf();
+      act(() => view.dispatch(view.state.tr.insertText("Oh ", 1)));
+      await waitFor(() =>
+        expect(bridge.replace).toHaveBeenCalledWith("a", "# Oh Hi\n"),
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("only_an_app_shortcut_writes_at_once", async () => {
+    const bridge = fakeBridge({ a: "# Hi\n" });
+    mount(bridge);
+    const view = await viewOf();
+    act(() => view.dispatch(view.state.tr.insertText("Oh ", 1)));
+    // AltGr+E is "ę" in Polish (Ctrl+Alt on Windows): a character, not a
+    // Command, so it waits for the debounce like typing.
+    fireEvent.keyDown(view.dom, {
+      key: "ę",
+      code: "KeyE",
+      ctrlKey: true,
+      altKey: true,
+    });
+    fireEvent.keyDown(view.dom, {
+      key: "Control",
+      code: "ControlLeft",
+      ctrlKey: true,
+    });
+    expect(bridge.replace).not.toHaveBeenCalled();
+    fireEvent.keyDown(view.dom, { key: "s", code: "KeyS", ctrlKey: true });
+    expect(bridge.replace).toHaveBeenCalledWith("a", "# Oh Hi\n");
+  });
+
+  it("the_editable_area_is_a_named_textbox", async () => {
+    const bridge = fakeBridge({ a: "# Hi\n" });
+    mount(bridge);
+    const view = await viewOf();
+    expect(view.dom.getAttribute("role")).toBe("textbox");
+    expect(view.dom.getAttribute("aria-multiline")).toBe("true");
+    expect(view.dom.getAttribute("aria-label")).toBe("Rich editor");
   });
 });

@@ -163,10 +163,19 @@ describe("checklists", () => {
 
   it("clicking_the_text_does_not_tick", async () => {
     const { view, md } = await mountRich("- [ ] a\n");
-    act(() => {
-      const p = view.dom.querySelector('li[data-item-type="task"] p')!;
-      fireEvent.mouseDown(p, { clientX: 20, button: 0 });
-    });
+    // ProseMirror handles this press itself, and asks where it landed:
+    // jsdom has no layout to say.
+    const doc = document as { elementFromPoint?: unknown };
+    doc.elementFromPoint = () => null;
+    try {
+      act(() => {
+        const p = view.dom.querySelector('li[data-item-type="task"] p')!;
+        fireEvent.mouseDown(p, { clientX: 20, button: 0 });
+        fireEvent.mouseUp(p, { clientX: 20, button: 0 });
+      });
+    } finally {
+      delete doc.elementFromPoint;
+    }
     expect(md()).toBe("- [ ] a\n");
   });
 

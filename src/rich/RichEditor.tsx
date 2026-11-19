@@ -26,7 +26,7 @@ import {
   TOO_LARGE_NOTICE,
   tooLargeForRich,
 } from "../model/markdownMode";
-import { detectPlatform } from "../app/shortcuts";
+import { detectPlatform, matchShortcut } from "../app/shortcuts";
 import { toggleTask, toggleTaskAt } from "./commands";
 import { canKeep, richPlugins } from "./richMarkdown";
 import { PROGRAMMATIC, RichContext, type RichHandle } from "./richContext";
@@ -38,7 +38,8 @@ export { useRich, type RichHandle } from "./richContext";
 /** How long typing settles before it is written to the Tab's text. */
 export const RICH_DEBOUNCE_MS = 300;
 
-const mac = detectPlatform() === "mac";
+const platform = detectPlatform();
+const mac = platform === "mac";
 
 export interface RichEditorProps {
   id: string;
@@ -166,11 +167,19 @@ export function RichEditor(p: RichEditorProps) {
       const user = mounted && tr.docChanged && !tr.getMeta(PROGRAMMATIC);
       if (user && latest.current.readOnly) return;
       this.updateState(this.state.apply(tr));
-      for (const cb of [...listeners]) cb(tr);
-      if (!user) return;
-      dirty = true;
-      clearTimeout(timer);
-      timer = setTimeout(write, RICH_DEBOUNCE_MS);
+      // Marked before the UI hears of it: a failing listener can't lose it.
+      if (user) {
+        dirty = true;
+        clearTimeout(timer);
+        timer = setTimeout(write, RICH_DEBOUNCE_MS);
+      }
+      for (const cb of [...listeners]) {
+        try {
+          cb(tr);
+        } catch (err) {
+          console.error("rich editor UI failed", err);
+        }
+      }
     }
 
     /** Show the Tab's new text; anything not yet written gives way to it. */
@@ -270,6 +279,12 @@ export function RichEditor(p: RichEditorProps) {
           ctx.update(editorViewOptionsCtx, (o) => ({
             ...o,
             editable: () => !latest.current.readOnly,
+            attributes: {
+              ...(typeof o.attributes === "object" ? o.attributes : {}),
+              role: "textbox",
+              "aria-multiline": "true",
+              "aria-label": "Rich editor",
+            },
             dispatchTransaction,
             handleKeyDown: onKeyDown,
             handleDOMEvents: {
@@ -281,8 +296,9 @@ export function RichEditor(p: RichEditorProps) {
                 return false;
               },
               // Before an app Command (save, close, switch…) reads the text.
+              // Only a Command's key: AltGr characters (Ctrl+Alt) type.
               keydown: (_v, e) => {
-                if (e.ctrlKey || e.metaKey || e.altKey) write();
+                if (matchShortcut(e, platform)) write();
                 return false;
               },
             },

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, type Settings } from "./settings";
 import { effectiveMode, tooLargeForRich } from "./markdownMode";
 import type { TabState } from "./types";
@@ -43,5 +43,18 @@ describe("tooLargeForRich", () => {
     expect(tooLargeForRich("a".repeat(1_048_577))).toBe(true);
     expect(tooLargeForRich("é".repeat(524_289))).toBe(true);
     expect(tooLargeForRich("é".repeat(524_288))).toBe(false);
+  });
+
+  it("encodes_only_when_the_length_cannot_tell", () => {
+    const encode = vi.spyOn(TextEncoder.prototype, "encode");
+    try {
+      // Over the limit in UTF-16 units is over it in bytes; a third of it
+      // can't be (3 bytes per unit at most).
+      expect(tooLargeForRich("a".repeat(1_048_577))).toBe(true);
+      expect(tooLargeForRich("é".repeat(349_525))).toBe(false);
+      expect(encode).not.toHaveBeenCalled();
+    } finally {
+      encode.mockRestore();
+    }
   });
 });

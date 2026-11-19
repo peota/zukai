@@ -273,8 +273,7 @@ function withoutCode(text: string): string {
   const walk = (node: MdNode) => {
     if (node.type === "code" || node.type === "inlineCode") {
       const pos = node.position as
-        | { start: { offset?: number }; end: { offset?: number } }
-        | undefined;
+        { start: { offset?: number }; end: { offset?: number } } | undefined;
       const from = pos?.start.offset;
       const to = pos?.end.offset;
       if (from !== undefined && to !== undefined) ranges.push([from, to]);
