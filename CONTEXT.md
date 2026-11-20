@@ -104,7 +104,7 @@ A folder outside the Library that the user added to the Sidebar with **Add folde
 _Avoid_: linked folder, workspace folder, mount.
 
 **Sidebar**
-The panel left of the tab bar that shows, top to bottom, the Recent list, the Pinned list, the Library tree, each Added folder in the order added, and the Scratchpads list. The Library heading has buttons for **New file**, **New folder** and **New canvas** (each made at the Library's top level, then named in place) and a ⋯ menu for the rest. Mod+B toggles it (hidden, Zukai looks as before), and Mod+Shift+E focuses it. It is 240 px wide by default and its width can be dragged. Whether it's open, its width and which folders are expanded are stored in the Session (`sidebar { open, width, expanded }`).
+The panel left of the tab bar that shows, top to bottom, the Recent list, the Pinned list, the Library tree, each Added folder in the order added, and the Scratchpads list. The Library heading has buttons for **New file**, **New folder** and **New canvas** (each made at the Library's top level, then named in place), **Collapse all** (closes every expanded folder, Added folders included) and a ⋯ menu for the rest. Mod+B toggles it (hidden, Zukai looks as before), and Mod+Shift+E focuses it. It is 240 px wide by default and its width can be dragged. Whether it's open, its width and which folders are expanded are stored in the Session (`sidebar { open, width, expanded }`).
 _Avoid_: explorer, file tree (when you mean the whole panel).
 
 **Scratchpads list**

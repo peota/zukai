@@ -67,6 +67,11 @@ export function toggle(s: TreeState, dir: string): TreeState {
   return { ...s, expanded };
 }
 
+/** Every folder closed, added folders included; listings stay cached. */
+export function collapseAll(s: TreeState): TreeState {
+  return s.expanded.size === 0 ? s : { ...s, expanded: new Set() };
+}
+
 interface Frame<T> {
   list: T[];
   i: number;

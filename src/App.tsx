@@ -455,6 +455,7 @@ export default function App() {
         activeId={activeId}
         onOpen={(entry) => void lib.open(entry).then(refocus)}
         onToggle={lib.toggle}
+        onCollapseAll={lib.collapseAll}
         onCreate={lib.create}
         onRename={lib.rename}
         onMove={(path, dest) => void lib.move(path, dest)}
