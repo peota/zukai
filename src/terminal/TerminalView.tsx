@@ -76,7 +76,8 @@ export function TerminalView(props: TerminalViewProps) {
       }
       const route = routeKey(e, live.current.platform, term.hasSelection());
       if (route === "shell") return true;
-      if (route === "copy" && e.type === "keydown") {
+      // Copying nothing would empty the clipboard.
+      if (route === "copy" && e.type === "keydown" && term.hasSelection()) {
         void navigator.clipboard.writeText(term.getSelection());
         term.clearSelection();
       }
