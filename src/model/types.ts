@@ -85,6 +85,11 @@ export interface TabState {
    * until first shown, when it's decided from the Settings default.
    */
   markdownMode?: MarkdownMode;
+  /**
+   * Text ranges drawn as dots (a password, a token), as sorted [from, to)
+   * offsets. Only the display changes; the text is never stored here.
+   */
+  hidden?: [number, number][];
 }
 
 export type MarkdownMode = "rich" | "markdown";
