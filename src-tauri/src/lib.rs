@@ -2,6 +2,7 @@ pub mod commands;
 mod files;
 pub mod library;
 pub mod storage;
+pub mod terminal;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
