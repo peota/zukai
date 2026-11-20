@@ -16,6 +16,8 @@ export type Command =
   | { type: "format" }
   | { type: "toggleSidebar" }
   | { type: "focusSidebar" }
+  /** Folds every open folder in the Library tree. */
+  | { type: "collapseLibrary" }
   | { type: "newCanvas" }
   /** Editor text size: 1 bigger, -1 smaller, 0 back to the default. */
   | { type: "zoom"; dir: 1 | -1 | 0 }
@@ -125,6 +127,9 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
         return { type: "saveAs" };
       case "e":
         return { type: "focusSidebar" };
+      // In a terminal Mod+Shift+C stays copy (see routeKey).
+      case "c":
+        return { type: "collapseLibrary" };
       case "n":
         return { type: "newCanvas" };
       case "v":

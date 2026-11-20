@@ -670,6 +670,7 @@ export function useWorkspace(): Workspace {
     saveTo,
     showNotice,
   });
+  const collapseLibrary = library.collapseAll;
 
   const setClosing = useCallback((id: string, on: boolean) => {
     if (on) closing.current.add(id);
@@ -909,6 +910,8 @@ export function useWorkspace(): Workspace {
           return toggleSidebar();
         case "focusSidebar":
           return focusSidebar();
+        case "collapseLibrary":
+          return collapseLibrary();
         case "newCanvas":
           return newCanvas();
         case "togglePreview": {
@@ -943,6 +946,7 @@ export function useWorkspace(): Workspace {
     },
     [
       closeTab,
+      collapseLibrary,
       commit,
       focusSidebar,
       newCanvas,

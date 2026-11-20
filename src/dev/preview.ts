@@ -3,6 +3,7 @@
  * notebook so the UI can be seen and designed in a plain browser at
  * http://localhost:1420/preview.html. Never part of the app build.
  */
+import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 
 const ROOT = "C:\\Users\\dev\\Zukai";
@@ -269,6 +270,30 @@ const handlers: Record<string, (a: Args) => unknown> = {
     files[path] = "";
     return path;
   },
+  library_rename: (a) => {
+    const from = a.path as string;
+    const dir = from.split(sep).slice(0, -1).join(sep);
+    const name = from.split(sep).pop() ?? "";
+    const dot = dirs.has(from) ? -1 : name.lastIndexOf(".");
+    const to = join(dir, (a.newName as string) + (dot > 0 ? name.slice(dot) : ""));
+    if (to === from) return from;
+    if (dirs.has(from)) {
+      dirs.delete(from);
+      dirs.add(to);
+    } else {
+      files[to] = files[from] ?? "";
+      delete files[from];
+    }
+    // Like Rust's watcher: the folder's change event can beat the reply.
+    void emit("zukai://library-changed", { dirs: [dir] });
+    return to;
+  },
+  library_follow: (a) =>
+    (a.paths as string[]).map((p) =>
+      p === a.from || p.startsWith((a.from as string) + sep)
+        ? (a.to as string) + p.slice((a.from as string).length)
+        : null,
+    ),
   file_read: (a) => {
     const text = files[a.path as string] ?? "";
     return { text, format: fmt, readable: true, fingerprint: fp(text) };
