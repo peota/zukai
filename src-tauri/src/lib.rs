@@ -34,6 +34,8 @@ pub const SHOW_FALLBACK_DELAY: Duration = Duration::from_secs(3);
 
 pub const BEFORE_EXIT_EVENT: &str = "zukai://before-exit";
 
+/// Ending the terminals can hold this up for about 300 ms on Unix: killing a
+/// live terminal's tree waits that long before its final SIGKILL.
 #[tauri::command]
 fn app_exit_after_flush(app: AppHandle) {
     FLUSHED.store(true, Ordering::SeqCst);
