@@ -32,7 +32,7 @@ export function ScratchpadList({
   const stop = items.some((i) => i.id === activeId) ? activeId : items[0].id;
   return (
     <section className="flex max-h-[40%] min-h-0 shrink-0 flex-col">
-      <div className="px-2 pt-2.5 pb-1 text-[11px] font-semibold tracking-[0.06em] text-faint">
+      <div className="px-2 pt-2.5 pb-1 text-ui-xs font-semibold tracking-[0.06em] text-faint">
         SCRATCHPADS
       </div>
       <ul aria-label="Scratchpads" className="min-h-0 overflow-y-auto pb-2">

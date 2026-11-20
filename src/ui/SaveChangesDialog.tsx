@@ -28,11 +28,11 @@ export function SaveChangesDialog({
         aria-modal="true"
         aria-labelledby="z-save-changes-title"
         onKeyDown={onKeyDown}
-        className="z-fade-in flex w-[min(400px,calc(100vw-32px))] flex-col gap-4 rounded-[12px] bg-surface p-5 text-[13px] text-text shadow-float outline-none"
+        className="z-fade-in flex w-[min(400px,calc(100vw-32px))] flex-col gap-4 rounded-[12px] bg-surface p-5 text-ui text-text shadow-float outline-none"
       >
         <h2
           id="z-save-changes-title"
-          className="m-0 text-[14px] font-semibold break-all"
+          className="m-0 text-ui-lg font-semibold break-all"
         >
           Save changes to {name}?
         </h2>

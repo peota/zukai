@@ -197,7 +197,7 @@ export function QuickOpen({
         className="mb-1 h-9 w-full shrink-0 rounded-[6px] border border-hairline bg-sunken px-3 text-text outline-none placeholder:text-faint focus:border-accent"
       />
       {!q && tabs.length > 0 && (
-        <div className="px-2.5 pt-1 pb-0.5 text-[11px] tracking-wide text-faint uppercase">
+        <div className="px-2.5 pt-1 pb-0.5 text-ui-xs tracking-wide text-faint uppercase">
           Open tabs
         </div>
       )}
@@ -222,7 +222,7 @@ export function QuickOpen({
       </ul>
       {empty && <div className="px-2.5 py-1.5 text-faint">{empty}</div>}
       {q && result && !result.ready && rows.length > 0 && (
-        <div className="px-2.5 pt-1 text-[11px] text-faint">
+        <div className="px-2.5 pt-1 text-ui-xs text-faint">
           Still indexing; more files may appear…
         </div>
       )}
@@ -291,7 +291,7 @@ function QuickRow({
     >
       <Icon name={icon} size={15} className="text-muted" />
       <span className="shrink-0 truncate">{name}</span>
-      <span className="min-w-0 truncate text-[12px] text-faint">{detail}</span>
+      <span className="min-w-0 truncate text-ui-sm text-faint">{detail}</span>
     </li>
   );
 }

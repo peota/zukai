@@ -62,7 +62,7 @@ export function EncodingPicker({
       aria-label={title}
       className="z-fade-in absolute right-2 bottom-7 z-20 w-56 rounded-float bg-surface p-1 shadow-float"
     >
-      <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold tracking-[0.04em] text-faint">
+      <div className="px-2.5 pt-1.5 pb-1 text-ui-xs font-semibold tracking-[0.04em] text-faint">
         {title.toUpperCase()}
       </div>
       <input

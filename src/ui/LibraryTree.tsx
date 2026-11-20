@@ -209,7 +209,7 @@ export function LibraryTree({
         const copyHint = target && dropCopy && (
           <span
             data-copy-hint=""
-            className="shrink-0 rounded-[4px] bg-accent-soft px-1.5 text-[11px] text-text"
+            className="shrink-0 rounded-[4px] bg-accent-soft px-1.5 text-ui-xs text-text"
           >
             Copy
           </span>
@@ -258,11 +258,11 @@ export function LibraryTree({
                 {e.name}
               </span>
               {/* The parent path, cut from the left so its end shows. */}
-              <span className="min-w-0 flex-1 truncate text-left text-[12px] text-faint [direction:rtl]">
+              <span className="min-w-0 flex-1 truncate text-left text-ui-sm text-faint [direction:rtl]">
                 <bdi>{parentOf(e.path)}</bdi>
               </span>
               {missing && (
-                <span className="shrink-0 text-[12px] text-faint">
+                <span className="shrink-0 text-ui-sm text-faint">
                   Not found
                 </span>
               )}
@@ -410,7 +410,7 @@ function TrashConfirm({
         }
       }}
       onClick={(e) => e.stopPropagation()}
-      className="z-fade-in my-1 mr-1 rounded-float bg-surface px-3 py-2.5 text-[13px] whitespace-normal text-text shadow-float"
+      className="z-fade-in my-1 mr-1 rounded-float bg-surface px-3 py-2.5 text-ui whitespace-normal text-text shadow-float"
     >
       <div>{trashQuestion(pending)}</div>
       <div className="mt-2 flex gap-1.5">
@@ -529,7 +529,7 @@ function RenameField({
         <div
           role="alert"
           style={{ position: "fixed", left: error.left, top: error.top }}
-          className="z-fade-in z-30 max-w-[280px] rounded-float bg-surface px-2.5 py-1.5 text-[12px] whitespace-normal text-danger shadow-float"
+          className="z-fade-in z-30 max-w-[280px] rounded-float bg-surface px-2.5 py-1.5 text-ui-sm whitespace-normal text-danger shadow-float"
         >
           {error.text}
         </div>
