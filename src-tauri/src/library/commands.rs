@@ -257,7 +257,7 @@ pub(crate) fn recreate_root(g: &Grants, data: &Path) -> Result<RootState, FileEr
 }
 
 /// A folder inside a granted root (or a root itself).
-fn folder(g: &Grants, p: &str) -> Result<PathBuf, FileError> {
+pub(crate) fn folder(g: &Grants, p: &str) -> Result<PathBuf, FileError> {
     let dir = g.in_root(Path::new(p))?;
     if dir.is_dir() {
         Ok(dir)

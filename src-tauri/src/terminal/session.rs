@@ -306,7 +306,7 @@ fn flush_loop(output: &Output, sink: &(dyn Fn(TerminalEvent) + Send + Sync)) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::terminal::shell::current_shell;
     use std::sync::mpsc;
@@ -339,14 +339,28 @@ mod tests {
         session: &Session,
         rx: &mpsc::Receiver<TerminalEvent>,
     ) -> (String, Vec<TerminalEvent>) {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        collect_with(
+            |reply| session.write(reply).unwrap(),
+            rx,
+            Duration::from_secs(10),
+        )
+    }
+
+    /// Every event until `Exit`, or until `timeout` has passed, with the
+    /// output joined. Answers each cursor position request through `reply`.
+    pub(crate) fn collect_with(
+        reply: impl Fn(&[u8]),
+        rx: &mpsc::Receiver<TerminalEvent>,
+        timeout: Duration,
+    ) -> (String, Vec<TerminalEvent>) {
+        let deadline = Instant::now() + timeout;
         let mut events = Vec::new();
         while let Some(left) = deadline.checked_duration_since(Instant::now()) {
             match rx.recv_timeout(left) {
                 Ok(ev) => {
                     if let TerminalEvent::Data { data } = &ev {
                         for _ in data.matches("\x1b[6n") {
-                            session.write(b"\x1b[1;1R").unwrap();
+                            reply(b"\x1b[1;1R");
                         }
                     }
                     let done = matches!(ev, TerminalEvent::Exit { .. });
