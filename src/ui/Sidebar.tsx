@@ -400,7 +400,10 @@ function SidebarPanel({
     const library = root !== null && available;
     const items: MenuItem[] = [
       ...(library
-        ? [{ label: revealLabel(platform), onSelect: () => onReveal(root) }]
+        ? [
+            { label: revealLabel(platform), onSelect: () => onReveal(root) },
+            terminalItem(root),
+          ]
         : []),
       { label: "Choose Library folder…", onSelect: onChooseRoot },
       { ...addFolderItem, separated: true },
