@@ -148,6 +148,41 @@ pub fn extra_env() -> [(&'static str, String); 4] {
     ]
 }
 
+/// A UTF-8 `LANG` for the shell when the app's environment names no locale
+/// (`LC_ALL`, `LC_CTYPE` and `LANG` all unset or empty), as when macOS starts
+/// it from Finder; `None` when one is set, and on Windows.
+pub fn locale_env(
+    os: Os,
+    lang: Option<&OsStr>,
+    lc_all: Option<&OsStr>,
+    lc_ctype: Option<&OsStr>,
+) -> Option<(&'static str, String)> {
+    if [lang, lc_all, lc_ctype]
+        .into_iter()
+        .any(|v| v.is_some_and(|v| !v.is_empty()))
+    {
+        return None;
+    }
+    let lang = match os {
+        Os::Windows => return None,
+        Os::Mac => "en_US.UTF-8",
+        Os::Linux => "C.UTF-8",
+    };
+    Some(("LANG", lang.to_string()))
+}
+
+/// [`locale_env`] for the real process environment.
+pub fn current_locale_env() -> Option<(&'static str, String)> {
+    let var = std::env::var_os;
+    let (lang, lc_all, lc_ctype) = (var("LANG"), var("LC_ALL"), var("LC_CTYPE"));
+    locale_env(
+        Os::current(),
+        lang.as_deref(),
+        lc_all.as_deref(),
+        lc_ctype.as_deref(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +302,24 @@ mod tests {
         let spec = pick(Os::Linux, None, None, None, None, &[]);
         assert_eq!(spec.program, PathBuf::from("/bin/sh"));
         assert_eq!(spec.args, ["-l"]);
+    }
+
+    #[test]
+    fn locale_env_sets_a_utf8_lang_only_when_no_locale_is_set() {
+        let os = |v: &'static str| Some(OsStr::new(v));
+        let utf8 = |o| locale_env(o, None, None, None);
+        assert_eq!(utf8(Os::Mac), Some(("LANG", "en_US.UTF-8".to_string())));
+        assert_eq!(utf8(Os::Linux), Some(("LANG", "C.UTF-8".to_string())));
+        assert_eq!(utf8(Os::Windows), None);
+        // Empty counts as unset.
+        assert_eq!(
+            locale_env(Os::Mac, os(""), os(""), os("")),
+            Some(("LANG", "en_US.UTF-8".to_string()))
+        );
+        // Any one of them set: the user's choice stands.
+        assert_eq!(locale_env(Os::Mac, os("de_DE.UTF-8"), None, None), None);
+        assert_eq!(locale_env(Os::Linux, None, os("C"), None), None);
+        assert_eq!(locale_env(Os::Linux, None, None, os("UTF-8")), None);
     }
 
     #[test]
