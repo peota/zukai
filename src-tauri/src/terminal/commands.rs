@@ -47,11 +47,12 @@ impl Terminals {
         self.sessions.lock().unwrap().get(&id).cloned()
     }
 
-    /// Sends `data` to the terminal's shell. An unknown id or a shell that
-    /// has exited is ignored.
+    /// Queues `data` for the terminal's shell without waiting for it to be
+    /// written; input reaches the shell in the order it was queued. An
+    /// unknown id or a shell that has exited is ignored.
     pub fn write(&self, id: u32, data: &str) {
         if let Some(session) = self.get(id) {
-            let _ = session.write(data.as_bytes());
+            session.write(data.as_bytes());
         }
     }
 
@@ -104,14 +105,12 @@ pub async fn terminal_open(
     .await
 }
 
+/// Synchronous on purpose: Tauri runs sync commands one at a time, in the
+/// order they arrive, so keystrokes reach the shell in the order typed.
+/// Queuing never blocks.
 #[tauri::command]
-pub async fn terminal_write(app: AppHandle, id: u32, data: String) {
-    let handle = app.clone();
-    let _ = blocking(app, move |_| {
-        handle.state::<Terminals>().write(id, &data);
-        Ok(())
-    })
-    .await;
+pub fn terminal_write(app: AppHandle, id: u32, data: String) {
+    app.state::<Terminals>().write(id, &data);
 }
 
 #[tauri::command]
@@ -293,6 +292,32 @@ mod tests {
             }
         }
         assert_eq!(want, LAST + 1, "line {want} missing or out of order");
+    }
+
+    #[test]
+    fn rapid_single_key_writes_arrive_in_order() {
+        let (_tmp, g, root, _outside) = library();
+        let t = Open(Terminals::default());
+        let (sink, rx) = channel();
+        let id = t.0.open(&g, root.to_str().unwrap(), 200, 30, sink).unwrap();
+        // 150 digits in a known order, typed one key per write, behind a
+        // big write that is still being written.
+        let digits: String = (0..150)
+            .map(|i| char::from(b'0' + (i * 7 % 10) as u8))
+            .collect();
+        t.0.write(id, &format!("{}{NL}", "#".repeat(4000)));
+        t.0.write(id, &format!("echo z{NL}"));
+        for key in format!("echo q{digits}q{NL}exit{NL}").chars() {
+            t.0.write(id, &key.to_string());
+        }
+        let (text, events) = collect(&t.0, id, &rx, Duration::from_secs(30));
+        assert!(matches!(events.last(), Some(TerminalEvent::Exit { .. })));
+        let text = strip_ansi(&text);
+        let want = format!("q{digits}q");
+        assert!(
+            text.lines().any(|line| line.trim() == want),
+            "no line {want:?} in {text:?}"
+        );
     }
 
     #[test]
