@@ -40,13 +40,16 @@ export const RECENT_SHOWN = 8;
 
 /**
  * The Recent list: File Tabs by `recent` (ids, newest first), open or in
- * Recently Closed, one per File, without pinned ones (they're listed above).
+ * Recently Closed, one per File, without pinned ones (they're listed above)
+ * or deleted ones: an open Tab whose File is Missing, or a closed one in
+ * `gone` (ids whose File was found not to exist).
  */
 export function recentItems(
   recent: readonly string[],
   tabs: readonly TabState[],
   closed: readonly ClosedEntry[],
   keyOf: (path: string) => string,
+  gone: ReadonlySet<string> = new Set(),
 ): PinnedItem[] {
   const open = new Map(tabs.map((t) => [t.id, t]));
   const shut = new Map(closed.map((e) => [e.tab.id, e.tab]));
@@ -55,6 +58,7 @@ export function recentItems(
   for (const id of recent) {
     const t = open.get(id) ?? shut.get(id);
     if (!t?.file || t.pinned) continue;
+    if (t.file.held === "missing" || gone.has(id)) continue;
     const key = keyOf(t.file.path);
     if (seen.has(key)) continue;
     seen.add(key);
