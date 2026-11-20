@@ -127,14 +127,11 @@ pub fn terminal_ack(app: AppHandle, id: u32, n: usize) {
     app.state::<Terminals>().ack(id, n);
 }
 
+/// Synchronous, like `terminal_write`, so resizes during a drag apply in the
+/// order they were sent; resizing the PTY never blocks for long.
 #[tauri::command]
-pub async fn terminal_resize(app: AppHandle, id: u32, cols: u16, rows: u16) {
-    let handle = app.clone();
-    let _ = blocking(app, move |_| {
-        handle.state::<Terminals>().resize(id, cols, rows);
-        Ok(())
-    })
-    .await;
+pub fn terminal_resize(app: AppHandle, id: u32, cols: u16, rows: u16) {
+    app.state::<Terminals>().resize(id, cols, rows);
 }
 
 #[tauri::command]
