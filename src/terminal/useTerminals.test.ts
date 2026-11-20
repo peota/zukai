@@ -21,6 +21,7 @@ vi.mock("./api", () => ({
     },
   ),
   terminalWrite: vi.fn(),
+  terminalAck: vi.fn(),
   terminalResize: vi.fn(async () => {}),
   terminalKill: vi.fn(async () => {}),
 }));
@@ -101,6 +102,21 @@ describe("useTerminals", () => {
       result.current.register(3, third);
     });
     expect(third).not.toHaveBeenCalled();
+  });
+
+  it("acks output it has to drop, so the backend never waits for it", async () => {
+    const { result } = renderHook(() => useTerminals());
+    await act(() => result.current.open("C:\\L"));
+    // No view yet: logged for replay, and acked by the view that replays it.
+    act(() => h.emit!({ kind: "data", data: "prompt" }));
+    expect(a.terminalAck).not.toHaveBeenCalled();
+    // Past the log's limit with no view to take it: dropped, so acked here.
+    const flood = "x".repeat(300 * 1024);
+    act(() => h.emit!({ kind: "data", data: flood }));
+    expect(a.terminalAck).toHaveBeenCalledWith(3, flood.length);
+    const sink = vi.fn();
+    act(() => result.current.register(3, sink));
+    expect(sink.mock.calls.map((c) => c[0].data)).toEqual(["early ", "prompt"]);
   });
 
   it("kill ends the session, then forgets the terminal", async () => {

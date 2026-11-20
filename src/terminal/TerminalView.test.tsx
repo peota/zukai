@@ -66,8 +66,9 @@ vi.mock("@xterm/addon-fit", () => ({
 vi.mock("@xterm/addon-web-links", () => ({
   WebLinksAddon: class {},
 }));
-vi.mock("./api", () => ({ terminalResize: vi.fn() }));
+vi.mock("./api", () => ({ terminalResize: vi.fn(), terminalAck: vi.fn() }));
 
+import * as api from "./api";
 import { TerminalView } from "./TerminalView";
 
 function props(over: Record<string, unknown> = {}) {
@@ -119,6 +120,26 @@ describe("TerminalView", () => {
     expect(unregister).not.toHaveBeenCalled();
     r.unmount();
     expect(unregister).toHaveBeenCalledTimes(1);
+  });
+
+  it("acksOutputOnceXtermHasParsedIt", () => {
+    let sink: ((e: unknown) => void) | null = null;
+    const p = props({
+      register: vi.fn((_id: number, s: (e: unknown) => void) => {
+        sink = s;
+        return () => {};
+      }),
+    });
+    vi.mocked(api.terminalAck).mockClear();
+    render(<TerminalView {...p} />);
+    sink!({ kind: "data", data: "héllo \u{1F600}" });
+    const [data, parsed] = h.term!.write.mock.calls[0];
+    expect(data).toBe("héllo \u{1F600}");
+    // Nothing is acked until xterm calls back.
+    expect(api.terminalAck).not.toHaveBeenCalled();
+    (parsed as () => void)();
+    // In UTF-16 code units, as the backend counts.
+    expect(api.terminalAck).toHaveBeenCalledWith(1, 8);
   });
 
   it("exitedTerminalClosesOnAnyKey", () => {

@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import type { Platform } from "../app/shortcuts";
-import { terminalResize, type TerminalEvent } from "./api";
+import { terminalAck, terminalResize, type TerminalEvent } from "./api";
 import { routeKey } from "./keys";
 import { xtermTheme, type Palette } from "./xtermTheme";
 
@@ -85,8 +85,12 @@ export function TerminalView(props: TerminalViewProps) {
     });
     term.open(root);
     // After open: replayed output goes to an xterm that can answer it.
+    // Each batch is acked once xterm has parsed it; the backend holds back
+    // output while too much is unacked, so a flood can't swamp the UI.
     const unregister = live.current.register(live.current.id, (ev) => {
-      if (ev.kind === "data") term.write(ev.data);
+      if (ev.kind !== "data") return;
+      const n = ev.data.length;
+      term.write(ev.data, () => terminalAck(live.current.id, n));
     });
     const ro = new ResizeObserver(refit);
     ro.observe(root);
