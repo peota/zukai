@@ -166,6 +166,26 @@ describe("TerminalView", () => {
     expect(r).toBe(false);
   });
 
+  it("copyWithNothingSelectedLeavesTheClipboardAlone", () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    render(<TerminalView {...props()} />);
+    const r = h.term!.keyHandler!({
+      type: "keydown",
+      key: "C",
+      code: "KeyC",
+      ctrlKey: true,
+      metaKey: false,
+      altKey: false,
+      shiftKey: true,
+    });
+    expect(r).toBe(false);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
   it("fontSizeChangeUpdatesOptions", () => {
     const p = props();
     const { rerender } = render(<TerminalView {...p} />);
