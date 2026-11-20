@@ -3,7 +3,8 @@
 //! Four threads serve each session. The writer owns the PTY's input and
 //! writes queued input to it in order. The reader copies PTY output into a
 //! shared buffer. The flusher sends it on in batches, holding back a split
-//! UTF-8 character until the rest arrives. The waiter reaps the shell, closes
+//! UTF-8 character until the rest arrives. The waiter reaps the shell (under
+//! the lock `kill` takes, so a reused pid is never signalled), closes
 //! the PTY, closes the input queue, lets the reader drain, has the flusher send what is left, then
 //! sends `Exit`, exactly once.
 
@@ -88,6 +89,10 @@ pub struct Session {
     /// Input for the writer thread, in order. `None` once the shell has exited.
     input: Arc<Mutex<Option<mpsc::Sender<Vec<u8>>>>>,
     exited: Arc<AtomicBool>,
+    /// Held by `kill` while it signals, and by the waiter while it reaps the
+    /// shell and sets `exited`: once the shell's pid is free for another
+    /// process to take, `kill` sees `exited` and signals nothing.
+    reaping: Arc<Mutex<()>>,
     tree: TreeGuard,
 }
 
@@ -141,6 +146,7 @@ impl Session {
             master: Arc::new(Mutex::new(None)),
             input: Arc::new(Mutex::new(None)),
             exited: Arc::new(AtomicBool::new(false)),
+            reaping: Arc::new(Mutex::new(())),
             tree,
         };
         if let Err(err) = session.start(pair.master, child, sink) {
@@ -189,14 +195,11 @@ impl Session {
         let master = Arc::clone(&self.master);
         let input = Arc::clone(&self.input);
         let exited = Arc::clone(&self.exited);
+        let reaping = Arc::clone(&self.reaping);
         thread::Builder::new()
             .name("terminal-waiter".into())
             .spawn(move || {
-                let code = match child.wait() {
-                    Ok(status) if status.signal().is_none() => Some(status.exit_code() as i32),
-                    _ => None,
-                };
-                exited.store(true, Ordering::SeqCst);
+                let code = wait_and_reap(&mut *child, &reaping, &exited);
                 // Closing the terminal ends the reader. On Windows the
                 // pseudoconsole only flushes its last output and closes its
                 // pipe when it is closed, so the reader would wait forever.
@@ -238,9 +241,94 @@ impl Session {
     }
 
     /// Ends the shell and everything it started. The waiter thread then reaps
-    /// the shell and sends `Exit`.
+    /// the shell and sends `Exit`. Does nothing once the shell has exited:
+    /// on Unix its pid may already belong to an unrelated process.
     pub fn kill(&self) {
+        let _held = self.reaping.lock().unwrap();
+        if self.exited.load(Ordering::SeqCst) {
+            return;
+        }
+        // The shell can't be reaped while this is held, so on Unix its pid
+        // (a zombie at worst) can't be reused until the signals are sent.
         self.tree.kill();
+    }
+}
+
+/// The code a shell exited with; `None` when a signal ended it.
+fn exit_code(status: std::io::Result<portable_pty::ExitStatus>) -> Option<i32> {
+    match status {
+        Ok(status) if status.signal().is_none() => Some(status.exit_code() as i32),
+        _ => None,
+    }
+}
+
+/// Waits for the shell to exit, then reaps it and sets `exited` while holding
+/// `reaping`, and returns its exit code.
+#[cfg(windows)]
+fn wait_and_reap(
+    child: &mut (dyn Child + Send + Sync),
+    reaping: &Mutex<()>,
+    exited: &AtomicBool,
+) -> Option<i32> {
+    // The child's process handle keeps its pid from being reused, and the
+    // tree is killed through its Job Object, so the order matters less here.
+    let status = child.wait();
+    let _held = reaping.lock().unwrap();
+    exited.store(true, Ordering::SeqCst);
+    exit_code(status)
+}
+
+/// Waits for the shell to exit, then reaps it and sets `exited` while holding
+/// `reaping`, and returns its exit code. Until it is reaped the shell's pid
+/// can't be reused, so `kill` never signals a stranger.
+#[cfg(unix)]
+fn wait_and_reap(
+    child: &mut (dyn Child + Send + Sync),
+    reaping: &Mutex<()>,
+    exited: &AtomicBool,
+) -> Option<i32> {
+    let pid = child.process_id();
+    loop {
+        if let Some(pid) = pid {
+            wait_unreaped(pid);
+        }
+        let held = reaping.lock().unwrap();
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                exited.store(true, Ordering::SeqCst);
+                return exit_code(Ok(status));
+            }
+            Ok(None) => {
+                // waitid failed or is unsupported: poll instead.
+                drop(held);
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => {
+                exited.store(true, Ordering::SeqCst);
+                return None;
+            }
+        }
+    }
+}
+
+/// Blocks until `pid` has exited, leaving it unreaped. Returns at once if
+/// waitid fails.
+#[cfg(unix)]
+fn wait_unreaped(pid: u32) {
+    loop {
+        // SAFETY: `info` is plain data waitid fills in; no other preconditions.
+        let done = unsafe {
+            let mut info: libc::siginfo_t = std::mem::zeroed();
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        if done == 0 || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+            return;
+        }
     }
 }
 
@@ -462,10 +550,26 @@ pub(crate) mod tests {
             .count();
         assert_eq!(exits, 1, "events: {events:?}");
         assert!(matches!(events.last(), Some(TerminalEvent::Exit { .. })));
+        assert_eq!(running.0.tree.kills(), 1);
+        // The shell is gone: killing again signals nothing.
+        running.0.kill();
+        assert_eq!(running.0.tree.kills(), 1);
         running.0.write(b"echo late\r");
         running.0.resize(100, 40).unwrap();
         // Nothing follows `Exit`.
         assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
+    }
+
+    #[test]
+    fn kill_after_the_shell_exits_signals_nothing() {
+        // Its pid may already belong to an unrelated process.
+        let dir = tempfile::tempdir().unwrap();
+        let (running, rx) = start(dir.path());
+        running.0.write(format!("exit{NL}").as_bytes());
+        let (_, events) = collect(&running.0, &rx);
+        assert!(matches!(events.last(), Some(TerminalEvent::Exit { .. })));
+        running.0.kill();
+        assert_eq!(running.0.tree.kills(), 0);
     }
 
     /// Records what is written, slowly, so queued input piles up behind it.

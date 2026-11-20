@@ -12,6 +12,9 @@ pub struct TreeGuard {
     job: win::Job,
     #[cfg(unix)]
     root: u32,
+    /// How many times `kill` has run, so tests can see it wasn't called.
+    #[cfg(test)]
+    kills: std::sync::atomic::AtomicUsize,
 }
 
 /// Starts tracking the tree rooted at `pid`. Call it right after spawning, before
@@ -20,19 +23,26 @@ pub struct TreeGuard {
 pub fn guard(pid: u32) -> std::io::Result<TreeGuard> {
     Ok(TreeGuard {
         job: win::Job::containing(pid)?,
+        #[cfg(test)]
+        kills: Default::default(),
     })
 }
 
 /// Starts tracking the tree rooted at `pid`.
 #[cfg(unix)]
 pub fn guard(pid: u32) -> std::io::Result<TreeGuard> {
-    Ok(TreeGuard { root: pid })
+    Ok(TreeGuard {
+        root: pid,
+        #[cfg(test)]
+        kills: Default::default(),
+    })
 }
 
 impl TreeGuard {
     /// Ends the root process and every process descended from it.
     #[cfg(windows)]
     pub fn kill(&self) {
+        self.count_kill();
         self.job.terminate();
     }
 
@@ -40,6 +50,7 @@ impl TreeGuard {
     /// alive 300 ms later.
     #[cfg(unix)]
     pub fn kill(&self) {
+        self.count_kill();
         let mut pids = vec![self.root];
         pids.extend(descendants(self.root, &process_pairs()));
         for &pid in &pids {
@@ -51,6 +62,20 @@ impl TreeGuard {
                 signal(pid, libc::SIGKILL);
             }
         }
+    }
+
+    #[cfg(test)]
+    fn count_kill(&self) {
+        self.kills.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    #[cfg(not(test))]
+    fn count_kill(&self) {}
+
+    /// How many times `kill` has run.
+    #[cfg(test)]
+    pub fn kills(&self) -> usize {
+        self.kills.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 
