@@ -97,7 +97,7 @@ A project folder inside the Library: an ordinary folder whose notes, canvases an
 _Avoid_: project, notebook.
 
 **Added folder**
-A folder outside the Library that the user added to the Sidebar with **Add folder…** (in the Library heading's ⋯ menu, or a right-click on empty sidebar space). Only the OS folder dialog, run by Rust, can add one, and its path is kept by Rust in `library.json` beside the root. It shows under its own heading, after the Library, in the order added, and works like the Library inside: new, rename, move, delete to the trash, copy-in, search, live updates.
+A folder outside the Library that the user added to the Sidebar with **Add folder…** (in the Library heading's + menu, or a right-click on empty sidebar space). Only the OS folder dialog, run by Rust, can add one, and its path is kept by Rust in `library.json` beside the root. It shows under its own heading, after the Library, in the order added, and works like the Library inside: new, rename, move, delete to the trash, copy-in, search, live updates.
 - Each added folder is its own tree. Dragging an item into another tree (Library ↔ added, or between added folders) **copies** it, and the drop target says "Copy"; the source is untouched. Moves never cross trees, and a link only works if it resolves inside its own tree.
 - **Remove from sidebar** forgets the folder and its grant. Nothing on disk changes, and open Tabs from it stay open and keep saving.
 - If the folder goes missing (an unplugged drive, a rename outside Zukai), its heading stays, greyed out and marked **Not found**, with **Locate…** to pick its new place and **Remove from sidebar**. It comes back by itself when the folder does.

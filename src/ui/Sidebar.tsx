@@ -3,7 +3,7 @@ import type { KeyboardEvent, PointerEvent } from "react";
 import type { AddedState, Entry } from "../library/api";
 import type { Row, TreeState } from "../library/tree";
 import { detectPlatform, type Platform } from "../app/shortcuts";
-import { MoreIcon, PlusIcon, SearchIcon } from "./icons";
+import { PlusIcon, SearchIcon } from "./icons";
 import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
 import { Pinned, TabList, type PinnedItem } from "./Pinned";
 import { LibraryTree, type PendingTrash } from "./LibraryTree";
@@ -359,39 +359,23 @@ function SidebarPanel({
       const items = heading ? headingItems(heading) : entryItems(entry);
       openMenu({ label: entry.name, x, y, items }, from);
     } else {
-      // The empty part of the tree: the Library's menu, then Add folder…
-      const library = root !== null && available;
-      const items: MenuItem[] = [
-        ...(library ? rootItems(root) : []),
-        { ...addFolderItem, separated: library },
-      ];
-      openMenu({ label: "Library", x, y, items }, from);
+      // The empty part of the tree: the Library's menu.
+      openMenu({ label: "Library", x, y, items: libraryItems() }, from);
     }
   };
 
-  const moreRef = useRef<HTMLButtonElement>(null);
-  const toggleMoreMenu = () => {
-    if (menu?.ignore) return setMenu(null);
-    const b = moreRef.current?.getBoundingClientRect();
-    openMenu(
-      {
-        label: "Library",
-        x: b?.left ?? 0,
-        y: (b?.bottom ?? 0) + 4,
-        items: [addFolderItem],
-        ignore: "[data-z-library-more]",
-      },
-      moreRef.current,
-    );
-  };
+  /** The Library's own menu (+ and the tree's empty part): Add folder… last. */
+  const libraryItems = (): MenuItem[] => [
+    ...(root !== null && available
+      ? rootItems(root)
+      : [{ label: "Choose Library folder…", onSelect: onChooseRoot }]),
+    { ...addFolderItem, separated: true },
+  ];
 
   const togglePlusMenu = () => {
     if (menu?.ignore) return setMenu(null);
     const b = plusRef.current?.getBoundingClientRect();
-    const items: MenuItem[] =
-      root && available
-        ? rootItems(root)
-        : [{ label: "Choose Library folder…", onSelect: onChooseRoot }];
+    const items = libraryItems();
     openMenu(
       {
         label: "Library",
@@ -542,17 +526,6 @@ function SidebarPanel({
 
       <div className="flex shrink-0 items-center px-2 pt-3 pb-1 text-[11px] font-semibold tracking-[0.06em] text-faint">
         <span className="flex-1">LIBRARY</span>
-        <button
-          ref={moreRef}
-          type="button"
-          aria-label="Library actions"
-          title="Library actions"
-          data-z-library-more=""
-          onClick={toggleMoreMenu}
-          className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
-        >
-          <MoreIcon />
-        </button>
         <button
           ref={plusRef}
           type="button"
