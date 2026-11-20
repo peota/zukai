@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 import type { Platform } from "../app/shortcuts";
 import {
@@ -166,11 +166,47 @@ export function TerminalPanel({
   const bottom = position === "bottom";
   const { terms, activeId, shown } = t.state;
   const labels = tabLabels(terms.map((x) => x.cwd));
+  const base = useId();
+  const tabId = (id: number) => `${base}-tab-${id}`;
+  const panelId = `${base}-panel`;
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const tabAt = (i: number) =>
+    tabsRef.current?.querySelectorAll<HTMLElement>("[role=tab]")[i];
 
   /** Killing the last terminal hides the panel: the editor takes the keys. */
   const kill = (id: number) => {
     t.kill(id);
     if (terms.length === 1) onFocusEditor();
+  };
+
+  /**
+   * The tabs' keys: arrows, Home and End move between them (wrapping),
+   * Enter or Space shows that terminal, Delete kills it.
+   */
+  const onTabKey = (e: KeyboardEvent<HTMLDivElement>, i: number) => {
+    const n = terms.length;
+    const to =
+      e.key === "ArrowRight"
+        ? (i + 1) % n
+        : e.key === "ArrowLeft"
+          ? (i - 1 + n) % n
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? n - 1
+              : null;
+    if (to !== null) {
+      e.preventDefault();
+      tabAt(to)?.focus();
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      t.activate(terms[i].id);
+    } else if (e.key === "Delete") {
+      e.preventDefault();
+      // The keyboard moves to a neighbour before this tab goes away.
+      if (n > 1) tabAt(i + 1 < n ? i + 1 : i - 1)?.focus();
+      kill(terms[i].id);
+    }
   };
 
   return (
@@ -189,6 +225,7 @@ export function TerminalPanel({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex h-8 shrink-0 select-none items-center gap-2 border-b border-hairline bg-chrome pr-1.5 pl-1.5 text-ui-sm">
           <div
+            ref={tabsRef}
             role="tablist"
             aria-label="Terminals"
             className="z-no-scrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
@@ -201,7 +238,11 @@ export function TerminalPanel({
                 <div
                   key={x.id}
                   role="tab"
+                  id={tabId(x.id)}
                   aria-selected={active}
+                  aria-controls={panelId}
+                  tabIndex={active ? 0 : -1}
+                  onKeyDown={(e) => onTabKey(e, i)}
                   data-exited={exited ? "" : undefined}
                   title={x.cwd}
                   onClick={() => t.activate(x.id)}
@@ -212,7 +253,7 @@ export function TerminalPanel({
                     if (e.button === 1) kill(x.id);
                   }}
                   className={
-                    "group flex h-6 max-w-[200px] shrink-0 cursor-default items-center gap-1.5 rounded-[5px] pr-0.5 pl-2 " +
+                    "group flex h-6 max-w-[200px] shrink-0 cursor-default items-center gap-1.5 rounded-[5px] pr-0.5 pl-2 focus-visible:shadow-[inset_0_0_0_1px_var(--z-focus)] " +
                     (active
                       ? "bg-editor text-text"
                       : "text-muted hover:bg-row-hover hover:text-text") +
@@ -274,7 +315,12 @@ export function TerminalPanel({
             />
           </div>
         </div>
-        <div className="relative min-h-0 flex-1">
+        <div
+          role="tabpanel"
+          id={panelId}
+          aria-labelledby={activeId === null ? undefined : tabId(activeId)}
+          className="relative min-h-0 flex-1"
+        >
           <div className="absolute inset-0 py-1 pr-1 pl-2">
             {terms.map((x) => (
               <TerminalView

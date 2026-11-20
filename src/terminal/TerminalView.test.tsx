@@ -9,6 +9,7 @@ const h = vi.hoisted(() => {
       emitData(d: string): void;
       keyHandler: ((e: unknown) => boolean) | null;
       disposed: boolean;
+      opened: boolean;
     },
   };
   return state;
@@ -24,12 +25,15 @@ vi.mock("@xterm/xterm", () => ({
     dataCb: ((d: string) => void) | null = null;
     keyHandler: ((e: unknown) => boolean) | null = null;
     disposed = false;
+    opened = false;
     constructor(opts: Record<string, unknown>) {
       this.options = { ...opts };
       h.term = this as never;
     }
     loadAddon() {}
-    open() {}
+    open() {
+      this.opened = true;
+    }
     focus() {}
     hasSelection() {
       return false;
@@ -75,7 +79,7 @@ function props(over: Record<string, unknown> = {}) {
     palette: "paper" as const,
     platform: "windows" as const,
     onData: vi.fn(),
-    register: vi.fn(),
+    register: vi.fn(() => () => {}),
     onClose: vi.fn(),
     onOpenUrl: vi.fn(),
     ...over,
@@ -98,6 +102,23 @@ describe("TerminalView", () => {
     h.term!.emitData("ls\r");
     expect(p.onData).toHaveBeenCalledWith("ls\r");
     expect(p.register).toHaveBeenCalledWith(1, expect.any(Function));
+  });
+
+  it("registersOnlyOnceOpenedAndUnregistersOnUnmount", () => {
+    const unregister = vi.fn();
+    let openedAtRegister: boolean | undefined;
+    const p = props({
+      register: vi.fn(() => {
+        openedAtRegister = h.term?.opened;
+        return unregister;
+      }),
+    });
+    const r = render(<TerminalView {...p} />);
+    // Replayed output is written to an xterm that's already open.
+    expect(openedAtRegister).toBe(true);
+    expect(unregister).not.toHaveBeenCalled();
+    r.unmount();
+    expect(unregister).toHaveBeenCalledTimes(1);
   });
 
   it("exitedTerminalClosesOnAnyKey", () => {

@@ -59,7 +59,7 @@ function fakeT(state: Partial<TermState> = {}): T {
     show: vi.fn(),
     hide: vi.fn(),
     write: vi.fn(),
-    register: vi.fn(),
+    register: vi.fn(() => () => {}),
   };
 }
 
@@ -148,6 +148,48 @@ describe("TerminalPanel", () => {
     expect(t.kill).toHaveBeenCalledWith(2);
     fireEvent.click(screen.getByRole("button", { name: "Kill docs · a" }));
     expect(t.kill).toHaveBeenCalledWith(1);
+  });
+
+  it("terminalTabsWorkFromTheKeyboard", () => {
+    const t = fakeT({
+      terms: [
+        { id: 1, cwd: "C:\\a", exited: undefined },
+        { id: 2, cwd: "C:\\b", exited: undefined },
+        { id: 3, cwd: "C:\\c", exited: undefined },
+      ],
+      activeId: 1,
+    });
+    render(<TerminalPanel {...props({ t })} />);
+    const tabs = screen.getAllByRole("tab");
+    // Roving tabindex: only the active tab is in the Tab order.
+    expect(tabs.map((el) => el.tabIndex)).toEqual([0, -1, -1]);
+    const panel = screen.getByRole("tabpanel");
+    expect(tabs[0]).toHaveAttribute("aria-controls", panel.id);
+    expect(panel).toHaveAttribute("aria-labelledby", tabs[0].id);
+
+    tabs[0].focus();
+    fireEvent.keyDown(tabs[0], { key: "ArrowRight" });
+    expect(document.activeElement).toBe(tabs[1]);
+    fireEvent.keyDown(tabs[1], { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(tabs[0]);
+    // Wraps around.
+    fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(tabs[2]);
+    fireEvent.keyDown(tabs[2], { key: "Home" });
+    expect(document.activeElement).toBe(tabs[0]);
+    fireEvent.keyDown(tabs[0], { key: "End" });
+    expect(document.activeElement).toBe(tabs[2]);
+
+    fireEvent.keyDown(tabs[2], { key: "Enter" });
+    expect(t.activate).toHaveBeenLastCalledWith(3);
+    fireEvent.keyDown(tabs[1], { key: " " });
+    expect(t.activate).toHaveBeenLastCalledWith(2);
+
+    // Delete kills that terminal; the keyboard moves to a neighbour.
+    tabs[1].focus();
+    fireEvent.keyDown(tabs[1], { key: "Delete" });
+    expect(t.kill).toHaveBeenCalledWith(2);
+    expect(document.activeElement).toBe(tabs[2]);
   });
 
   it("the top edge resizes at the bottom, clamped to the window", () => {

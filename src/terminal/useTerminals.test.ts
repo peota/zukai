@@ -64,6 +64,45 @@ describe("useTerminals", () => {
     expect(a.terminalWrite).toHaveBeenCalledWith(3, "ls\r");
   });
 
+  it("a view that registers again (StrictMode) still gets the early output once", async () => {
+    const { result } = renderHook(() => useTerminals());
+    await act(() => result.current.open("C:\\L"));
+    act(() => h.emit!({ kind: "data", data: "\x1b[6n" }));
+
+    // Mount, cleanup, mount again: the first view is gone before parsing.
+    const first = vi.fn();
+    let unregister = () => {};
+    act(() => {
+      unregister = result.current.register(3, first);
+    });
+    act(() => unregister());
+    const second = vi.fn();
+    act(() => {
+      result.current.register(3, second);
+    });
+    act(() => h.emit!({ kind: "data", data: "live" }));
+    expect(second.mock.calls.map((c) => c[0].data)).toEqual([
+      "early ",
+      "\x1b[6n",
+      "live",
+    ]);
+    // The unregistered view gets nothing live.
+    expect(first.mock.calls.map((c) => c[0].data)).toEqual([
+      "early ",
+      "\x1b[6n",
+    ]);
+
+    // After the first input the early log is dropped: a later view starts
+    // empty rather than replaying output the shell has moved past.
+    result.current.write(3, "x");
+    act(() => h.emit!({ kind: "data", data: "after" }));
+    const third = vi.fn();
+    act(() => {
+      result.current.register(3, third);
+    });
+    expect(third).not.toHaveBeenCalled();
+  });
+
   it("kill ends the session, then forgets the terminal", async () => {
     const { result } = renderHook(() => useTerminals());
     await act(() => result.current.open("C:\\L"));
