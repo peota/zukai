@@ -36,7 +36,7 @@ import { baseName, languageRename } from "./files/paths";
 import { inShadow } from "./files/fileState";
 import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
-import { pinnedItems } from "./ui/Pinned";
+import { pinnedItems, recentItems } from "./ui/Pinned";
 import { useColorScheme } from "./ui/useColorScheme";
 import { SaveChangesDialog } from "./ui/SaveChangesDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
@@ -419,6 +419,16 @@ export default function App() {
     />
   );
 
+  /** Activates an open Tab, or reopens a closed one (a pin stays pinned). */
+  const openTabOrClosed = (id: string) => {
+    if (w.state.tabs.some((t) => t.id === id)) {
+      w.activate(id);
+      refocus();
+    } else {
+      void w.reopenEntry(id).then(refocus);
+    }
+  };
+
   return (
     <div className="relative flex h-full bg-chrome text-text">
       <Sidebar
@@ -451,16 +461,15 @@ export default function App() {
         }}
         onScratchpadMove={(id, dest) => void lib.scratchpadMove(id, dest)}
         pinned={pinnedItems(w.state.tabs, w.state.closed)}
-        onPinnedOpen={(id) => {
-          if (w.state.tabs.some((t) => t.id === id)) {
-            w.activate(id);
-            refocus();
-          } else {
-            // A closed pin comes back as a Tab, still pinned.
-            void w.reopenEntry(id).then(refocus);
-          }
-        }}
+        onPinnedOpen={openTabOrClosed}
         onUnpin={(id) => w.setPinned(id, false)}
+        recent={recentItems(
+          w.sidebar.recent,
+          w.state.tabs,
+          w.state.closed,
+          keyOf,
+        )}
+        onRecentOpen={openTabOrClosed}
         onLeave={refocus}
         added={lib.added}
         onAddFolder={() => void lib.addFolder()}

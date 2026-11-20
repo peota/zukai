@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { newTabState } from "../model/workspace";
 import type { TabState } from "../model/types";
-import { pinnedItems } from "./Pinned";
+import { pinnedItems, recentItems, RECENT_SHOWN } from "./Pinned";
 
 const file = (id: string, path: string): TabState => ({
   ...newTabState(id),
@@ -40,5 +40,33 @@ describe("pinnedItems", () => {
       { id: "d", title: "data.json", icon: "data", open: false },
       { id: "t", title: "Todo", icon: "scratchpad", open: false },
     ]);
+  });
+});
+
+describe("recentItems", () => {
+  const key = (p: string) => p.toLowerCase();
+
+  it("lists Files newest first, open or closed, once each, without pins", () => {
+    const tabs = [
+      file("a", "C:/L/a.md"),
+      { ...file("p", "C:/L/pin.md"), pinned: true },
+      newTabState("scratch"),
+      file("a2", "C:/L/A.md"),
+    ];
+    const closed = [{ tab: file("c", "C:/L/c.json"), index: 0, closedAt: 1 }];
+    expect(
+      recentItems(["scratch", "c", "p", "a2", "a", "gone"], tabs, closed, key),
+    ).toEqual([
+      { id: "c", title: "c.json", icon: "data", open: false },
+      { id: "a2", title: "A.md", icon: "markdown", open: true },
+    ]);
+  });
+
+  it("shows at most RECENT_SHOWN", () => {
+    const tabs = Array.from({ length: 12 }, (_, i) =>
+      file(`t${i}`, `C:/L/${i}.md`),
+    );
+    const ids = tabs.map((t) => t.id);
+    expect(recentItems(ids, tabs, [], key)).toHaveLength(RECENT_SHOWN);
   });
 });

@@ -33,6 +33,7 @@ import type {
 import type { FindRequest } from "../find/findExtension";
 import * as ws from "../model/workspace";
 import * as sp from "../model/split";
+import { touchRecent } from "../model/recent";
 import { deriveTitle } from "../model/title";
 import {
   clampFontSize,
@@ -100,7 +101,9 @@ const sameSidebar = (a: SidebarState, b: SidebarState) =>
   a.open === b.open &&
   a.width === b.width &&
   a.expanded.length === b.expanded.length &&
-  a.expanded.every((p, i) => p === b.expanded[i]);
+  a.expanded.every((p, i) => p === b.expanded[i]) &&
+  a.recent.length === b.recent.length &&
+  a.recent.every((id, i) => id === b.recent[i]);
 
 const platform = detectPlatform();
 const keyOf = (p: string) => pathKey(p, platform);
@@ -1067,6 +1070,17 @@ export function useWorkspace(): Workspace {
   useEffect(() => {
     if (ready) scheduleSession();
   }, [ready, state, sidebar, fontSize, settings, scheduleSession]);
+
+  // A File Tab that becomes active goes to the front of the Recent list.
+  useEffect(() => {
+    if (!ready) return;
+    const s = stateRef.current;
+    const tab = s.tabs.find((t) => t.id === state.activeId);
+    if (!tab?.file) return;
+    patchSidebar({
+      recent: touchRecent(sidebarRef.current.recent, tab.id, s),
+    });
+  }, [ready, state.activeId, patchSidebar]);
 
   // The active Tab's text is read lazily when it is first shown.
   useEffect(() => {

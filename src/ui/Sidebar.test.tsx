@@ -76,6 +76,8 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     onScratchpadMove: vi.fn(),
     pinned: [],
     onPinnedOpen: vi.fn(),
+    recent: [],
+    onRecentOpen: vi.fn(),
     onUnpin: vi.fn(),
     onLeave: vi.fn(),
     added: tree.added,
@@ -1154,5 +1156,41 @@ describe("Sidebar Pinned section", () => {
   it("is hidden with nothing pinned", () => {
     setup({ pinned: [] });
     expect(screen.queryByText("PINNED")).toBeNull();
+  });
+});
+
+describe("Recent", () => {
+  const RECENT = [
+    { id: "r1", title: "plan.md", icon: "markdown" as const, open: true },
+    { id: "r2", title: "data.json", icon: "data" as const, open: false },
+  ];
+
+  it("lists recent files at the very top, above Pinned", () => {
+    setup({
+      recent: RECENT,
+      pinned: [{ id: "p", title: "x.md", icon: "markdown", open: true }],
+      activeId: "r1",
+    });
+    const header = screen.getByText("RECENT");
+    expect(
+      header.compareDocumentPosition(screen.getByText("PINNED")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const list = screen.getByRole("list", { name: "Recent" });
+    const [open, closed] = within(list).getAllByRole("listitem");
+    expect(open.getAttribute("aria-current")).toBe("true");
+    expect(closed.getAttribute("title")).toBe("data.json (closed)");
+  });
+
+  it("a click opens the file, open or closed", () => {
+    const { p } = setup({ recent: RECENT });
+    const list = within(screen.getByRole("list", { name: "Recent" }));
+    fireEvent.click(list.getByText("data.json"));
+    expect(p.onRecentOpen).toHaveBeenCalledWith("r2");
+  });
+
+  it("is hidden with nothing recent", () => {
+    setup({ recent: [] });
+    expect(screen.queryByText("RECENT")).toBeNull();
   });
 });

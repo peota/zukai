@@ -104,12 +104,15 @@ A folder outside the Library that the user added to the Sidebar with **Add folde
 _Avoid_: linked folder, workspace folder, mount.
 
 **Sidebar**
-The panel left of the tab bar that shows, top to bottom, the Pinned list, the Library tree, each Added folder in the order added, and the Scratchpads list. Mod+B toggles it (hidden, Zukai looks as before), and Mod+Shift+E focuses it. It is 240 px wide by default and its width can be dragged. Whether it's open, its width and which folders are expanded are stored in the Session (`sidebar { open, width, expanded }`).
+The panel left of the tab bar that shows, top to bottom, the Recent list, the Pinned list, the Library tree, each Added folder in the order added, and the Scratchpads list. Mod+B toggles it (hidden, Zukai looks as before), and Mod+Shift+E focuses it. It is 240 px wide by default and its width can be dragged. Whether it's open, its width and which folders are expanded are stored in the Session (`sidebar { open, width, expanded }`).
 _Avoid_: explorer, file tree (when you mean the whole panel).
 
 **Scratchpads list**
 The Sidebar's list of open, unpinned Scratchpads, by Title, headed SCRATCHPADS. Scratchpads stay loose until moved into the Library with **Move to Library…** or by dragging onto a Library folder; both are Save As into that folder.
 _Avoid_: Inbox (its earlier name), Drafts.
+
+**Recent**
+The Sidebar's list of the Files last viewed, newest first, headed RECENT, at its top: a File goes to the front each time its Tab becomes active. It shows up to 8 Files, open or in Recently Closed (dimmed), one entry per File, without pinned ones (they're in the Pinned list). A click goes to the open Tab or reopens the closed one. Scratchpads never appear. Stored in the Session as Tab ids (`sidebar.recent`), so a rename or move keeps its place.
 
 **Pinned**
 A Tab marked to stay at hand: it sits at the start of the tab bar, with a pin in place of its close button, and in the Sidebar's Pinned list. Closing it keeps it in the Pinned list, dimmed, and in Recently Closed, where it never expires; reopening it keeps the pin. Stored on the Tab in the Session (`pinned`).
