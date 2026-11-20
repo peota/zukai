@@ -40,7 +40,7 @@ export interface MenuProps {
 
 /** The menu's panel and its rows, for lists that look like a Menu. */
 export const MENU_PANEL =
-  "z-fade-in min-w-48 max-w-[360px] select-none rounded-float bg-surface p-1.5 text-[13px] text-text shadow-float outline-none";
+  "z-fade-in min-w-48 max-w-[360px] select-none rounded-float bg-surface p-1.5 text-ui text-text shadow-float outline-none";
 export const menuRow = (active: boolean, disabled = false) =>
   "flex cursor-default items-start gap-3 rounded-[6px] px-2.5 py-[6px] " +
   (disabled ? "text-faint" : active ? "bg-row-sel text-text" : "");
@@ -198,7 +198,7 @@ function MenuList({
       }
     >
       {heading && (
-        <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold tracking-[0.04em] text-faint">
+        <div className="px-2.5 pt-1.5 pb-1 text-ui-xs font-semibold tracking-[0.04em] text-faint">
           {heading}
         </div>
       )}
@@ -224,12 +224,12 @@ function MenuList({
             <span className="min-w-0 flex-1">
               <span className="block truncate">{item.label}</span>
               {item.detail && (
-                <span className="block truncate text-[12px] text-faint">
+                <span className="block truncate text-ui-sm text-faint">
                   {item.detail}
                 </span>
               )}
               {item.disabled && item.reason && (
-                <span className="block text-[12px] text-faint">
+                <span className="block text-ui-sm text-faint">
                   {item.reason}
                 </span>
               )}
@@ -240,7 +240,7 @@ function MenuList({
               </span>
             )}
             {item.hint && (
-              <span className="shrink-0 text-[12px] text-faint">
+              <span className="shrink-0 text-ui-sm text-faint">
                 {item.hint}
               </span>
             )}

@@ -25,6 +25,7 @@ describe("SettingsDialog", () => {
         lightTheme: "paper",
         darkTheme: "graphite",
         accent: "blue",
+        uiFontSize: 14,
         wrapNewTabs: true,
         lineNumbers: false,
         autosaveFiles: false,
@@ -43,9 +44,9 @@ describe("SettingsDialog", () => {
       "aria-checked",
       "false",
     );
-    expect(screen.getByRole("spinbutton", { name: "Font size" })).toHaveValue(
-      18,
-    );
+    expect(
+      screen.getByRole("spinbutton", { name: "Editor font size" }),
+    ).toHaveValue(18);
     expect(
       screen.getByRole("checkbox", { name: "Word wrap in new tabs" }),
     ).toBeChecked();
@@ -94,21 +95,55 @@ describe("SettingsDialog", () => {
 
   it("the font size steps, takes a typed number, and resets", () => {
     const { props, rerender } = setup({ fontSize: 15 });
-    fireEvent.click(screen.getByRole("button", { name: "Larger" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Editor font size larger" }),
+    );
     expect(props.onFontSize).toHaveBeenLastCalledWith(16);
-    fireEvent.click(screen.getByRole("button", { name: "Smaller" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Editor font size smaller" }),
+    );
     expect(props.onFontSize).toHaveBeenLastCalledWith(14);
-    const input = screen.getByRole("spinbutton", { name: "Font size" });
+    const input = screen.getByRole("spinbutton", { name: "Editor font size" });
     fireEvent.change(input, { target: { value: "21" } });
     expect(props.onFontSize).toHaveBeenLastCalledWith(21);
     // A half-typed value isn't applied.
     vi.mocked(props.onFontSize).mockClear();
     fireEvent.change(input, { target: { value: "" } });
     expect(props.onFontSize).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reset editor font size" }),
+    );
     expect(props.onFontSize).toHaveBeenLastCalledWith(14);
     rerender(<SettingsDialog {...props} fontSize={14} />);
-    expect(screen.getByRole("button", { name: "Reset" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Reset editor font size" }),
+    ).toBeDisabled();
+  });
+
+  it("the interface font size steps and resets through Settings", () => {
+    const { props, rerender } = setup();
+    const input = screen.getByRole("spinbutton", {
+      name: "Interface font size",
+    });
+    expect(input).toHaveValue(14);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Interface font size larger" }),
+    );
+    expect(props.onSettings).toHaveBeenLastCalledWith({ uiFontSize: 15 });
+    fireEvent.change(input, { target: { value: "17" } });
+    expect(props.onSettings).toHaveBeenLastCalledWith({ uiFontSize: 17 });
+    fireEvent.change(input, { target: { value: "40" } });
+    expect(props.onSettings).not.toHaveBeenLastCalledWith({ uiFontSize: 40 });
+    rerender(
+      <SettingsDialog
+        {...props}
+        settings={{ ...props.settings, uiFontSize: 16 }}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reset interface font size" }),
+    );
+    expect(props.onSettings).toHaveBeenLastCalledWith({ uiFontSize: 14 });
   });
 
   it("lists shortcuts for the platform, searchable", () => {

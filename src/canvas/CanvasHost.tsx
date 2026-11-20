@@ -199,7 +199,7 @@ export function CanvasHost(props: CanvasHostProps) {
 
 function Message({ children }: { children: string }) {
   return (
-    <div className="grid size-full select-none place-items-center text-[12px] text-faint">
+    <div className="grid size-full select-none place-items-center text-ui-sm text-faint">
       {children}
     </div>
   );

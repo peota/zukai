@@ -118,7 +118,7 @@ export function StatusBar({
   const scratchEnding = platformLineEnding === "crlf" ? "CRLF" : "LF";
 
   return (
-    <div className="flex h-7 shrink-0 select-none items-center gap-3 border-t border-hairline bg-chrome px-3 text-[12px] text-muted">
+    <div className="flex h-7 shrink-0 select-none items-center gap-3 border-t border-hairline bg-chrome px-3 text-ui-sm text-muted">
       {onSettings && (
         <button
           type="button"

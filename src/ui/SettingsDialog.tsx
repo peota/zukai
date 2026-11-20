@@ -7,6 +7,11 @@ import {
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
 } from "../model/session";
+import {
+  DEFAULT_UI_FONT_SIZE,
+  MAX_UI_FONT_SIZE,
+  MIN_UI_FONT_SIZE,
+} from "../model/settings";
 import type {
   Accent,
   DarkTheme,
@@ -82,7 +87,7 @@ export function SettingsDialog({
           // Into the dialog on open, unless something in it already has it.
           if (el && !el.contains(document.activeElement)) el.focus();
         }}
-        className="z-fade-in flex h-[min(620px,85vh)] w-[min(600px,calc(100vw-32px))] flex-col rounded-[12px] bg-surface text-[13px] text-text shadow-float outline-none"
+        className="z-fade-in flex h-[min(620px,85vh)] w-[min(600px,calc(100vw-32px))] flex-col rounded-[12px] bg-surface text-ui text-text shadow-float outline-none"
       >
         <div className="flex shrink-0 items-center gap-1 border-b border-hairline px-4 pt-3">
           <div
@@ -275,7 +280,7 @@ function Swatches<T extends string>({
           role="radio"
           aria-checked={value === o.id}
           onClick={() => onChange(o.id)}
-          className="group flex w-[84px] flex-col items-center gap-1.5 rounded-[8px] p-1 text-[12px] text-muted aria-checked:text-text"
+          className="group flex w-[84px] flex-col items-center gap-1.5 rounded-[8px] p-1 text-ui-sm text-muted aria-checked:text-text"
         >
           <span
             aria-hidden="true"
@@ -314,6 +319,78 @@ function Row({ label, children }: { label: ReactNode; children: ReactNode }) {
   );
 }
 
+/** A px size: −, a typed value, +, and Reset to the default. */
+function SizeStepper({
+  label,
+  value,
+  min,
+  max,
+  defaultValue,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  defaultValue: number;
+  onChange(px: number): void;
+}) {
+  // What's typed, until it's a valid size.
+  const [typed, setTyped] = useState<string | null>(null);
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={`${label} smaller`}
+        disabled={value <= min}
+        onClick={() => onChange(value - 1)}
+        className={BUTTON}
+      >
+        <Icon name="minus" size={14} />
+      </button>
+      <input
+        type="number"
+        aria-label={label}
+        min={min}
+        max={max}
+        value={typed ?? value}
+        onChange={(e) => {
+          const v = e.target.value;
+          const n = Number(v);
+          const ok =
+            v.trim() !== "" && Number.isFinite(n) && n >= min && n <= max;
+          setTyped(ok ? null : v);
+          if (ok) onChange(n);
+        }}
+        onBlur={() => setTyped(null)}
+        className="w-12 h-7 rounded-[6px] border border-hairline bg-sunken px-1.5 text-center text-text outline-none focus:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] [&::-webkit-inner-spin-button]:appearance-none"
+      />
+      <button
+        type="button"
+        aria-label={`${label} larger`}
+        disabled={value >= max}
+        onClick={() => onChange(value + 1)}
+        className={BUTTON}
+      >
+        <Icon name="plus" size={14} />
+      </button>
+      <span className="w-5 text-faint">px</span>
+      <button
+        type="button"
+        aria-label={`Reset ${label.toLowerCase()}`}
+        disabled={value === defaultValue}
+        onClick={() => {
+          setTyped(null);
+          onChange(defaultValue);
+        }}
+        className={BUTTON}
+      >
+        Reset
+      </button>
+    </>
+  );
+}
+
 function General({
   settings,
   fontSize,
@@ -323,8 +400,6 @@ function General({
   SettingsDialogProps,
   "settings" | "fontSize" | "onSettings" | "onFontSize"
 >) {
-  // What's typed, until it's a valid size.
-  const [typed, setTyped] = useState<string | null>(null);
   return (
     <div className="flex flex-col">
       <Row label="Mode">
@@ -393,63 +468,31 @@ function General({
           onChange={(markdownDefault) => onSettings({ markdownDefault })}
         />
       </Row>
+      <Row label="Interface font size">
+        <SizeStepper
+          label="Interface font size"
+          value={settings.uiFontSize}
+          min={MIN_UI_FONT_SIZE}
+          max={MAX_UI_FONT_SIZE}
+          defaultValue={DEFAULT_UI_FONT_SIZE}
+          onChange={(uiFontSize) => onSettings({ uiFontSize })}
+        />
+      </Row>
       <Row label="Editor font size">
-        <button
-          type="button"
-          aria-label="Smaller"
-          disabled={fontSize <= MIN_FONT_SIZE}
-          onClick={() => onFontSize(fontSize - 1)}
-          className={BUTTON}
-        >
-          <Icon name="minus" size={14} />
-        </button>
-        <input
-          type="number"
-          aria-label="Font size"
+        <SizeStepper
+          label="Editor font size"
+          value={fontSize}
           min={MIN_FONT_SIZE}
           max={MAX_FONT_SIZE}
-          value={typed ?? fontSize}
-          onChange={(e) => {
-            const v = e.target.value;
-            const n = Number(v);
-            const ok =
-              v.trim() !== "" &&
-              Number.isFinite(n) &&
-              n >= MIN_FONT_SIZE &&
-              n <= MAX_FONT_SIZE;
-            setTyped(ok ? null : v);
-            if (ok) onFontSize(n);
-          }}
-          onBlur={() => setTyped(null)}
-          className="w-12 h-7 rounded-[6px] border border-hairline bg-sunken px-1.5 text-center text-text outline-none focus:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] [&::-webkit-inner-spin-button]:appearance-none"
+          defaultValue={DEFAULT_FONT_SIZE}
+          onChange={onFontSize}
         />
-        <button
-          type="button"
-          aria-label="Larger"
-          disabled={fontSize >= MAX_FONT_SIZE}
-          onClick={() => onFontSize(fontSize + 1)}
-          className={BUTTON}
-        >
-          <Icon name="plus" size={14} />
-        </button>
-        <span className="w-5 text-faint">px</span>
-        <button
-          type="button"
-          disabled={fontSize === DEFAULT_FONT_SIZE}
-          onClick={() => {
-            setTyped(null);
-            onFontSize(DEFAULT_FONT_SIZE);
-          }}
-          className={BUTTON}
-        >
-          Reset
-        </button>
       </Row>
       <Row
         label={
           <>
             <label htmlFor="z-wrap-new">Word wrap in new tabs</label>
-            <span id="z-wrap-new-hint" className="block text-[11px] text-faint">
+            <span id="z-wrap-new-hint" className="block text-ui-xs text-faint">
               Alt+Z still toggles it in each tab.
             </span>
           </>
@@ -479,7 +522,7 @@ function General({
             <label htmlFor="z-autosave-files">Save files automatically</label>
             <span
               id="z-autosave-files-hint"
-              className="block text-[11px] text-faint"
+              className="block text-ui-xs text-faint"
             >
               Scratchpads always save themselves. When off, a file changes on
               disk only when you save it.
@@ -541,7 +584,7 @@ function Shortcuts({ platform }: { platform: Platform }) {
                 <th
                   colSpan={2}
                   scope="colgroup"
-                  className="pt-4 pb-1.5 text-left text-[11px] font-semibold tracking-[0.06em] text-faint"
+                  className="pt-4 pb-1.5 text-left text-ui-xs font-semibold tracking-[0.06em] text-faint"
                 >
                   {g.toUpperCase()}
                 </th>
@@ -558,7 +601,7 @@ function Shortcuts({ platform }: { platform: Platform }) {
                       {r.shown.map((k, i) => (
                         <span key={k}>
                           {i > 0 && <span className="px-1 text-faint">or</span>}
-                          <kbd className="rounded-[5px] border border-hairline border-b-hairline-strong bg-sunken px-1.5 py-0.5 font-[inherit] text-[12px] text-muted">
+                          <kbd className="rounded-[5px] border border-hairline border-b-hairline-strong bg-sunken px-1.5 py-0.5 font-[inherit] text-ui-sm text-muted">
                             {k}
                           </kbd>
                         </span>

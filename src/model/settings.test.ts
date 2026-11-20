@@ -9,6 +9,7 @@ describe("parseSettings", () => {
         lightTheme: "solar-light",
         darkTheme: "midnight",
         accent: "violet",
+        uiFontSize: 16,
         wrapNewTabs: true,
         lineNumbers: false,
         autosaveFiles: true,
@@ -20,6 +21,7 @@ describe("parseSettings", () => {
       lightTheme: "solar-light",
       darkTheme: "midnight",
       accent: "violet",
+      uiFontSize: 16,
       wrapNewTabs: true,
       lineNumbers: false,
       autosaveFiles: true,
@@ -45,6 +47,7 @@ describe("parseSettings", () => {
       lightTheme: "paper",
       darkTheme: "graphite",
       accent: "blue",
+      uiFontSize: 14,
       wrapNewTabs: false,
       lineNumbers: false,
       autosaveFiles: false,
@@ -84,5 +87,15 @@ describe("previewSplit", () => {
     expect(parseSettings({ previewSplit: 0.05 }).previewSplit).toBe(0.2);
     expect(parseSettings({ previewSplit: 2 }).previewSplit).toBe(0.8);
     expect(parseSettings({ previewSplit: "x" }).previewSplit).toBe(0.5);
+  });
+});
+
+describe("uiFontSize", () => {
+  it("is 14px by default, kept within 11–18 when a number", () => {
+    expect(DEFAULT_SETTINGS.uiFontSize).toBe(14);
+    expect(parseSettings({ uiFontSize: 16 }).uiFontSize).toBe(16);
+    expect(parseSettings({ uiFontSize: 40 }).uiFontSize).toBe(18);
+    expect(parseSettings({ uiFontSize: 2 }).uiFontSize).toBe(11);
+    expect(parseSettings({ uiFontSize: "big" }).uiFontSize).toBe(14);
   });
 });

@@ -363,7 +363,7 @@ export function TabBar({
               shift !== 0 ? { transform: `translateX(${shift}px)` } : undefined
             }
             className={
-              "group flex h-[34px] min-w-[120px] flex-[0_1_220px] cursor-default select-none items-center gap-2 rounded-t-[8px] pr-1.5 pl-3 text-[13px] " +
+              "group flex h-[34px] min-w-[120px] flex-[0_1_220px] cursor-default select-none items-center gap-2 rounded-t-[8px] pr-1.5 pl-3 text-ui " +
               (joined ? "max-w-[380px] " : "max-w-[220px] ") +
               (lifted ? "relative z-10 shadow-float " : "") +
               (active
@@ -560,7 +560,7 @@ function RenameInput({
         <div
           role="alert"
           style={{ position: "fixed", left: error.left, top: error.top }}
-          className="z-fade-in z-30 max-w-[280px] rounded-float bg-surface px-2.5 py-1.5 text-[12px] text-danger shadow-float"
+          className="z-fade-in z-30 max-w-[280px] rounded-float bg-surface px-2.5 py-1.5 text-ui-sm text-danger shadow-float"
         >
           {error.text}
         </div>

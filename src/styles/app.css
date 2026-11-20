@@ -59,6 +59,7 @@
   --z-accent: #2563eb;
   --z-accent-fg: #ffffff;
 
+  --z-ui-font: 14px;
   --z-radius-tab: 8px;
   --z-radius-float: 10px;
   --z-font-mono:
@@ -253,6 +254,13 @@
 
   --font-sans: var(--z-font-ui);
   --font-mono: var(--z-font-mono);
+
+  /* UI text (sidebar, tabs, menus, dialogs), all scaled from --z-ui-font,
+     which App sets from Settings.uiFontSize. */
+  --text-ui-xs: calc(var(--z-ui-font) - 2px);
+  --text-ui-sm: calc(var(--z-ui-font) - 1px);
+  --text-ui: var(--z-ui-font);
+  --text-ui-lg: calc(var(--z-ui-font) + 1px);
 }
 
 html,
@@ -266,7 +274,7 @@ body {
   background: var(--z-chrome);
   color: var(--z-text);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--z-ui-font);
   line-height: 1.4;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;

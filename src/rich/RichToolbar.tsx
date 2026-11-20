@@ -232,7 +232,7 @@ export function RichToolbar() {
           }}
           onBlur={() => setHref(null)}
           // Never wider than the toolbar, so it fits a narrow Split.
-          className="h-7 w-60 max-w-full min-w-0 rounded-[6px] border border-hairline bg-sunken px-2.5 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent"
+          className="h-7 w-60 max-w-full min-w-0 rounded-[6px] border border-hairline bg-sunken px-2.5 text-ui text-text outline-none placeholder:text-faint focus:border-accent"
         />
       )}
       {INSERT_TOOLS.map((group, i) => (

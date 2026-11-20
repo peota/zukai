@@ -154,6 +154,13 @@ export default function App() {
     root.palette = palette;
     root.accent = accent;
   }, [theme, palette, accent]);
+  const uiFontSize = w.settings.uiFontSize;
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--z-ui-font",
+      `${uiFontSize}px`,
+    );
+  }, [uiFontSize]);
   /** The text editor only sees text (a Canvas is JSON, an Image bytes). */
   const editorTabs = useMemo(
     () => w.state.tabs.filter((t) => t.kind === "text"),

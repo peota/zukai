@@ -64,7 +64,7 @@ export function TableControls() {
         onClick={(e) =>
           setAt(at ? null : e.currentTarget.getBoundingClientRect())
         }
-        className="flex h-7 shrink-0 items-center gap-1.5 rounded-[6px] bg-accent-tint pl-2 pr-1.5 text-[13px] text-accent hover:bg-accent-soft disabled:bg-transparent disabled:text-faint"
+        className="flex h-7 shrink-0 items-center gap-1.5 rounded-[6px] bg-accent-tint pl-2 pr-1.5 text-ui text-accent hover:bg-accent-soft disabled:bg-transparent disabled:text-faint"
       >
         <Icon name="insertTable" size={15} />
         <span>Table</span>

@@ -221,7 +221,7 @@ export function FindBar({
 
   const invalid = state.regexp && state.search !== "" && !toQuery(state).valid;
   const field =
-    "h-7 min-w-0 flex-1 rounded-[6px] border bg-sunken px-2 font-mono text-[13px] text-text outline-none focus:border-accent";
+    "h-7 min-w-0 flex-1 rounded-[6px] border bg-sunken px-2 font-mono text-ui text-text outline-none focus:border-accent";
   // Keep focus in the input when clicking the bar's buttons.
   const keepFocus = (e: MouseEvent) => e.preventDefault();
 
@@ -230,7 +230,7 @@ export function FindBar({
       role="search"
       aria-label="Find in text"
       data-find-bar
-      className="z-fade-in absolute top-3 right-3 z-10 flex w-[420px] max-w-[calc(100%-24px)] flex-col gap-1.5 rounded-float bg-surface p-2 text-[13px] text-text shadow-float"
+      className="z-fade-in absolute top-3 right-3 z-10 flex w-[420px] max-w-[calc(100%-24px)] flex-col gap-1.5 rounded-float bg-surface p-2 text-ui text-text shadow-float"
     >
       <div className="flex items-center gap-1">
         <button

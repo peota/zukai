@@ -279,7 +279,7 @@ export function ImageHost({
       className="relative size-full cursor-grab select-none overflow-hidden bg-editor active:cursor-grabbing"
     >
       {message ? (
-        <div className="flex size-full items-center justify-center text-[12px] text-muted">
+        <div className="flex size-full items-center justify-center text-ui-sm text-muted">
           {message}
         </div>
       ) : (

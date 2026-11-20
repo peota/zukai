@@ -511,11 +511,11 @@ function SidebarPanel({
       // on macOS it also clears room for the traffic lights.
       data-tauri-drag-region=""
       className={
-        "relative flex h-full shrink-0 flex-col border-r border-hairline bg-side px-2 text-[14px] select-none " +
+        "relative flex h-full shrink-0 flex-col border-r border-hairline bg-side px-2 text-ui-lg select-none " +
         (platform === "mac" ? "pt-11" : "pt-2.5")
       }
     >
-      <label className="mx-0.5 mb-2 flex h-8 shrink-0 items-center gap-2 rounded-[8px] border border-hairline bg-sunken px-2.5 text-[13px] text-faint focus-within:border-accent">
+      <label className="mx-0.5 mb-2 flex h-8 shrink-0 items-center gap-2 rounded-[8px] border border-hairline bg-sunken px-2.5 text-ui text-faint focus-within:border-accent">
         <SearchIcon />
         <input
           type="search"
@@ -544,7 +544,7 @@ function SidebarPanel({
         onContextMenu={showPinnedMenu}
       />
 
-      <div className="flex shrink-0 items-center px-2 pt-3 pb-1 text-[11px] font-semibold tracking-[0.06em] text-faint">
+      <div className="flex shrink-0 items-center px-2 pt-3 pb-1 text-ui-xs font-semibold tracking-[0.06em] text-faint">
         <span className="flex-1">LIBRARY</span>
         {root !== null &&
           available &&
@@ -590,9 +590,7 @@ function SidebarPanel({
           >
             <p className="m-0">The Library folder isn't available.</p>
             {root && (
-              <p className="m-0 mt-1 text-[12px] break-all text-faint">
-                {root}
-              </p>
+              <p className="m-0 mt-1 text-ui-sm break-all text-faint">{root}</p>
             )}
             <div className="mt-3 flex flex-col items-start gap-1.5">
               <button

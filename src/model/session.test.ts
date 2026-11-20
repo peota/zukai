@@ -66,6 +66,7 @@ describe("session file", () => {
       lightTheme: "solar-light" as const,
       darkTheme: "midnight" as const,
       accent: "green" as const,
+      uiFontSize: 16,
       wrapNewTabs: true,
       lineNumbers: false,
       autosaveFiles: true,

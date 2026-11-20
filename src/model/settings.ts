@@ -30,6 +30,8 @@ export interface Settings {
   lightTheme: LightTheme;
   darkTheme: DarkTheme;
   accent: Accent;
+  /** The base text size of the app's chrome (sidebar, tabs, menus, dialogs), in px. */
+  uiFontSize: number;
   /** New and newly opened Tabs start with word wrap on (Alt+Z per Tab). */
   wrapNewTabs: boolean;
   /** The line-number gutter in the text editor. */
@@ -40,6 +42,15 @@ export interface Settings {
   previewSplit: number;
   /** How a Markdown file (or a picked-Markdown Scratchpad) opens. */
   markdownDefault: MarkdownMode;
+}
+
+export const DEFAULT_UI_FONT_SIZE = 14;
+export const MIN_UI_FONT_SIZE = 11;
+export const MAX_UI_FONT_SIZE = 18;
+
+/** A UI font size in whole pixels within MIN_UI_FONT_SIZE–MAX_UI_FONT_SIZE. */
+export function clampUiFontSize(px: number): number {
+  return Math.min(MAX_UI_FONT_SIZE, Math.max(MIN_UI_FONT_SIZE, Math.round(px)));
 }
 
 export const SPLIT_MIN = 0.2;
@@ -55,6 +66,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   lightTheme: "paper",
   darkTheme: "graphite",
   accent: "blue",
+  uiFontSize: DEFAULT_UI_FONT_SIZE,
   wrapNewTabs: false,
   lineNumbers: true,
   autosaveFiles: false,
@@ -85,6 +97,10 @@ export function parseSettings(v: unknown): Settings {
     lightTheme: oneOf(v.lightTheme, LIGHT_THEMES, d.lightTheme),
     darkTheme: oneOf(v.darkTheme, DARK_THEMES, d.darkTheme),
     accent: oneOf(v.accent, ACCENTS, d.accent),
+    uiFontSize:
+      typeof v.uiFontSize === "number" && Number.isFinite(v.uiFontSize)
+        ? clampUiFontSize(v.uiFontSize)
+        : d.uiFontSize,
     wrapNewTabs:
       typeof v.wrapNewTabs === "boolean" ? v.wrapNewTabs : d.wrapNewTabs,
     lineNumbers:

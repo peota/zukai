@@ -420,6 +420,7 @@ describe("useWorkspace settings", () => {
       theme: "system",
       lightTheme: "paper",
       darkTheme: "graphite",
+      uiFontSize: 14,
       accent: "blue",
       wrapNewTabs: false,
       lineNumbers: true,

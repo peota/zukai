@@ -143,7 +143,7 @@ export function Bar({
     <div
       role="alert"
       data-kind={kind}
-      className={`z-fade-in flex shrink-0 select-none items-center gap-3 border-b border-hairline px-4 py-2 text-[13px] ${KIND_CLASS[kind]}`}
+      className={`z-fade-in flex shrink-0 select-none items-center gap-3 border-b border-hairline px-4 py-2 text-ui ${KIND_CLASS[kind]}`}
     >
       {kind === "warn" && (
         <TriangleAlert
@@ -177,7 +177,7 @@ function BarButton({
       disabled={disabled}
       onClick={onClick}
       className={
-        "shrink-0 rounded-[6px] px-2.5 py-1 text-[12px] font-medium disabled:pointer-events-none disabled:opacity-50 " +
+        "shrink-0 rounded-[6px] px-2.5 py-1 text-ui-sm font-medium disabled:pointer-events-none disabled:opacity-50 " +
         (primary
           ? "bg-bar-btn-primary-bg text-bar-btn-primary-fg hover:opacity-90"
           : "bg-bar-btn-bg text-text shadow-[0_0_0_1px_var(--z-bar-btn-ring)] hover:bg-bar-btn-hover")
