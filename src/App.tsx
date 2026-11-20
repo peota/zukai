@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useWorkspace } from "./app/useWorkspace";
 import { isTerminalTarget, routeKey } from "./terminal/keys";
+import { defaultFolder, plusFolder } from "./terminal/defaultFolder";
+import { useTerminals } from "./terminal/useTerminals";
 import { detectPlatform, matchShortcut, type Command } from "./app/shortcuts";
 import {
   allowsContextMenu,
@@ -57,6 +67,14 @@ const BEAUTIFY_HINT = platform === "mac" ? "⇧⌥F" : "Shift+Alt+F";
 const SETTINGS_HINT = platform === "mac" ? "⌘," : "Ctrl+,";
 const PREVIEW_HINT = platform === "mac" ? "⇧⌘V" : "Ctrl+Shift+V";
 const RICH_HINT = platform === "mac" ? "⇧⌘M" : "Ctrl+Shift+M";
+const NO_TERMINAL_FOLDER = "Choose a Library folder to open a terminal";
+
+// xterm loads with the first terminal, never at startup.
+const TerminalPanel = lazy(() =>
+  import("./terminal/TerminalPanel").then((m) => ({
+    default: m.TerminalPanel,
+  })),
+);
 
 interface Cursor {
   id: string;
@@ -87,18 +105,79 @@ export default function App() {
   const [focusSignal, setFocusSignal] = useState(0);
   /** Give the keyboard back to the editor. */
   const refocus = useCallback(() => setFocusSignal((n) => n + 1), []);
+  const { showNotice } = w;
+
+  const terms = useTerminals();
+  const termState = terms.state;
+  const { open: openTerm, show: showTerm, hide: hideTerm } = terms;
+  const { root: libRoot, available: libAvailable, added: libAdded } = w.library;
+  /** Where a new terminal opens: the active File's folder, else a root. */
+  const termFolder = defaultFolder({
+    activeFile: w.state.tabs.find((x) => x.id === activeId)?.file?.path,
+    root: libRoot,
+    rootAvailable: libAvailable,
+    added: libAdded,
+  });
+  /** A new terminal in `cwd`, shown and focused; none without a folder. */
+  const openTerminal = useCallback(
+    (cwd: string | null) => {
+      if (cwd === null) {
+        showNotice(NO_TERMINAL_FOLDER);
+        return;
+      }
+      openTerm(cwd).catch((err) =>
+        showNotice(`Can't open a terminal: ${asFileError(err).message}`),
+      );
+    },
+    [openTerm, showNotice],
+  );
+  /** The panel's +: the active terminal's folder while it's still granted. */
+  const plusTerminal = () =>
+    openTerminal(
+      plusFolder(
+        termState.terms.find((x) => x.id === termState.activeId),
+        [
+          ...(libRoot !== null && libAvailable ? [libRoot] : []),
+          ...libAdded.filter((a) => a.available).map((a) => a.path),
+        ],
+        termFolder,
+      ),
+    );
+  // The panel loads with the first terminal and stays mounted after that.
+  const [panelLoaded, setPanelLoaded] = useState(false);
+  if (!panelLoaded && termState.terms.length > 0) setPanelLoaded(true);
+
   const run = useCallback(
     async (cmd: Command) => {
       if (cmd.type === "openSettings") setSettingsOpen(true);
       else if (cmd.type === "quickOpen") setQuickOpen(true);
-      // Wired to the terminal panel later.
-      else if (cmd.type === "toggleTerminal" || cmd.type === "newTerminal") {
+      else if (cmd.type === "toggleTerminal") {
+        if (termState.shown) {
+          hideTerm();
+          refocus();
+        } else if (termState.terms.length > 0) {
+          // The active terminal takes the keyboard once it's visible.
+          showTerm();
+        } else {
+          openTerminal(termFolder);
+        }
+        return;
+      } else if (cmd.type === "newTerminal") {
+        openTerminal(termFolder);
         return;
       } else await workspaceRun(cmd);
       // The other editor takes the keyboard.
       if (cmd.type === "toggleRichMarkdown") refocus();
     },
-    [workspaceRun, refocus],
+    [
+      workspaceRun,
+      refocus,
+      termState,
+      hideTerm,
+      showTerm,
+      openTerminal,
+      termFolder,
+    ],
   );
   /** The side a dragged Tab would split the editor area on, while shown. */
   const [dropZone, setDropZone] = useState<SplitOrientation | null>(null);
@@ -248,7 +327,6 @@ export default function App() {
     [activeId],
   );
 
-  const { showNotice } = w;
   const onFormatResult = useCallback(
     (r: FormatResult) => {
       if (!r.ok) showNotice(`Invalid JSON at line ${r.line}, col ${r.col}`);
@@ -496,6 +574,7 @@ export default function App() {
         onAddFolder={() => void lib.addFolder()}
         onLocateFolder={(path) => void lib.locateFolder(path)}
         onRemoveFolder={(path) => void lib.removeFolder(path)}
+        onOpenTerminal={openTerminal}
         platform={platform}
       />
       <div className="flex h-full min-w-0 flex-1 flex-col" data-z-workspace="">
@@ -548,50 +627,90 @@ export default function App() {
           />
           <WindowControls platform={platform} />
         </div>
-        <main ref={mainRef} className="relative min-h-0 flex-1 bg-editor">
-          {dropZone && <SplitDropZone side={dropZone} />}
-          {w.ready && (
-            <div className="hidden">
-              <EditorHost
-                tabs={editorTabs}
-                activeId={active?.kind === "text" ? activeId : ""}
-                shown={visible
-                  .filter((t) => t.kind === "text")
-                  .map((t) => t.id)}
-                slots={slots}
-                loadContent={w.loadContent}
-                onChange={onEditorChange}
-                onTabPatch={updateTab}
-                onCursor={onCursor}
-                isClosing={w.isClosing}
-                focusSignal={focusSignal}
-                findRequest={w.findRequest}
-                formatRequest={w.formatRequest}
-                convertRequest={w.convertRequest}
-                replaceRequests={w.replaceRequests}
-                shadowUnreadable={w.shadowUnreadable}
-                onFormatResult={onFormatResult}
+        {/* The editor area and the terminal panel: under it at the bottom,
+            right of it at the side (the tab bar keeps its full width). */}
+        <div
+          className={`flex min-h-0 flex-1 ${
+            w.settings.terminalPosition === "side" ? "flex-row" : "flex-col"
+          }`}
+        >
+          <main
+            ref={mainRef}
+            className="relative min-h-0 min-w-0 flex-1 bg-editor"
+          >
+            {dropZone && <SplitDropZone side={dropZone} />}
+            {w.ready && (
+              <div className="hidden">
+                <EditorHost
+                  tabs={editorTabs}
+                  activeId={active?.kind === "text" ? activeId : ""}
+                  shown={visible
+                    .filter((t) => t.kind === "text")
+                    .map((t) => t.id)}
+                  slots={slots}
+                  loadContent={w.loadContent}
+                  onChange={onEditorChange}
+                  onTabPatch={updateTab}
+                  onCursor={onCursor}
+                  isClosing={w.isClosing}
+                  focusSignal={focusSignal}
+                  findRequest={w.findRequest}
+                  formatRequest={w.formatRequest}
+                  convertRequest={w.convertRequest}
+                  replaceRequests={w.replaceRequests}
+                  shadowUnreadable={w.shadowUnreadable}
+                  onFormatResult={onFormatResult}
+                  fontSize={w.fontSize}
+                  onZoom={w.zoomEditor}
+                  lineNumbers={w.settings.lineNumbers}
+                  bridgeRef={w.bridgeRef}
+                />
+              </div>
+            )}
+            {w.ready &&
+              (split && visible.length === 2 ? (
+                <SplitView
+                  orientation={split.orientation}
+                  ratio={split.ratio}
+                  onRatio={(r) => w.setSplitRatio(split.a, r)}
+                  focus={split.focus}
+                  first={pane(visible[0])}
+                  second={pane(visible[1])}
+                />
+              ) : (
+                visible[0] && pane(visible[0])
+              ))}
+          </main>
+          {panelLoaded && (
+            <Suspense fallback={null}>
+              <TerminalPanel
+                t={terms}
+                position={w.settings.terminalPosition}
+                size={
+                  w.settings.terminalPosition === "side"
+                    ? w.settings.terminalWidth
+                    : w.settings.terminalHeight
+                }
+                onSize={(px) =>
+                  w.setSettings(
+                    w.settings.terminalPosition === "side"
+                      ? { terminalWidth: px }
+                      : { terminalHeight: px },
+                  )
+                }
+                onPosition={(p) => w.setSettings({ terminalPosition: p })}
+                onNew={plusTerminal}
                 fontSize={w.fontSize}
-                onZoom={w.zoomEditor}
-                lineNumbers={w.settings.lineNumbers}
-                bridgeRef={w.bridgeRef}
+                palette={palette}
+                platform={platform}
+                onOpenUrl={(url) =>
+                  void openUrl(url).catch(() => showNotice(`Can't open ${url}`))
+                }
+                onFocusEditor={refocus}
               />
-            </div>
+            </Suspense>
           )}
-          {w.ready &&
-            (split && visible.length === 2 ? (
-              <SplitView
-                orientation={split.orientation}
-                ratio={split.ratio}
-                onRatio={(r) => w.setSplitRatio(split.a, r)}
-                focus={split.focus}
-                first={pane(visible[0])}
-                second={pane(visible[1])}
-              />
-            ) : (
-              visible[0] && pane(visible[0])
-            ))}
-        </main>
+        </div>
         <StatusBar
           line={here.line}
           col={here.col}

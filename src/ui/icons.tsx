@@ -1,6 +1,7 @@
 import {
   Bold,
   Braces,
+  ChevronDown,
   ChevronRight,
   Code,
   File,
@@ -26,7 +27,9 @@ import {
   MoreHorizontal,
   ChevronsDownUp,
   NotebookPen,
+  PanelBottom,
   PanelLeft,
+  PanelRight,
   PenTool,
   Pilcrow,
   Pin,
@@ -37,6 +40,7 @@ import {
   Strikethrough,
   Table,
   TextQuote,
+  Trash2,
   X,
   FileSpreadsheet,
 } from "lucide-react";
@@ -66,6 +70,12 @@ export type IconName =
   | "search"
   | "settings"
   | "sidebar"
+  // The terminal panel's header.
+  | "trash"
+  | "panelBottom"
+  | "panelRight"
+  | "chevronDown"
+  | "chevronRight"
   // The rich editor's toolbar.
   | "paragraph"
   | "h1"
@@ -147,6 +157,11 @@ const ICONS: Record<IconName, LucideIcon> = {
   search: Search,
   settings: Settings,
   sidebar: PanelLeft,
+  trash: Trash2,
+  panelBottom: PanelBottom,
+  panelRight: PanelRight,
+  chevronDown: ChevronDown,
+  chevronRight: ChevronRight,
   paragraph: Pilcrow,
   h1: Heading1,
   h2: Heading2,

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as storage from "./storage/api";
 import * as files from "./files/api";
 import * as lib from "./library/api";
+import * as term from "./terminal/api";
 import App from "./App";
 import { toSessionFile } from "./model/session";
 import { newTabState } from "./model/workspace";
@@ -137,6 +138,24 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({ emit: vi.fn() }));
 
+vi.mock("./terminal/api", () => ({
+  terminalOpen: vi.fn(),
+  terminalWrite: vi.fn(),
+  terminalResize: vi.fn(),
+  terminalKill: vi.fn(),
+}));
+
+// The panel itself has its own tests; here only where App puts it.
+vi.mock("./terminal/TerminalPanel", () => ({
+  TerminalPanel: (p: { position: string; size: number }) => (
+    <div
+      data-testid="terminal-panel"
+      data-position={p.position}
+      data-size={p.size}
+    />
+  ),
+}));
+
 vi.mock("./app/exit", () => ({
   BEFORE_EXIT_EVENT: "zukai://before-exit",
   installExitHandshake: async (flushAll: () => Promise<void>) => {
@@ -148,6 +167,7 @@ vi.mock("./app/exit", () => ({
 const s = vi.mocked(storage);
 const f = vi.mocked(files);
 const l = vi.mocked(lib);
+const tm = vi.mocked(term);
 
 const R = "C:\\L";
 
@@ -176,6 +196,9 @@ beforeEach(() => {
   l.onLibraryChanged.mockResolvedValue(() => {});
   l.onLibraryDropped.mockResolvedValue(() => {});
   l.onDragDrop.mockResolvedValue(() => {});
+  tm.terminalOpen.mockResolvedValue(1);
+  tm.terminalKill.mockResolvedValue(undefined);
+  tm.terminalResize.mockResolvedValue(undefined);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -184,6 +207,15 @@ afterEach(async () => {
   h.flushAll = null;
 });
 
+const toggleTerminal = () =>
+  fireEvent.keyDown(window, { key: "`", code: "Backquote", ctrlKey: true });
+const newTerminal = () =>
+  fireEvent.keyDown(window, {
+    key: "~",
+    code: "Backquote",
+    ctrlKey: true,
+    shiftKey: true,
+  });
 const modB = () =>
   fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
 
@@ -747,5 +779,92 @@ describe("App", () => {
     expect(main.querySelector("[data-split-drop]")).toBeNull();
     await waitFor(() => expect(r.getAllByTestId("editor")).toHaveLength(2));
     expect(r.getAllByTestId("editor")[1]).toHaveAttribute("data-id", "b");
+  });
+
+  it("toggleTerminalWithNoFolderShowsNotice", async () => {
+    l.libraryRoot.mockResolvedValue({
+      root: null,
+      available: false,
+      added: [],
+    });
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    act(() => toggleTerminal());
+    await waitFor(() =>
+      expect(
+        r.getByText("Choose a Library folder to open a terminal"),
+      ).toBeTruthy(),
+    );
+    act(() => newTerminal());
+    expect(tm.terminalOpen).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+` opens a terminal in the Library root, under the editor", async () => {
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    // Until the Library root is known there's no folder: press until it is.
+    await waitFor(() => {
+      act(() => toggleTerminal());
+      expect(tm.terminalOpen).toHaveBeenCalledWith(
+        R,
+        80,
+        24,
+        expect.any(Function),
+      );
+    });
+    expect(tm.terminalOpen).toHaveBeenCalledTimes(1);
+    const panel = await r.findByTestId("terminal-panel");
+    expect(panel).toHaveAttribute("data-position", "bottom");
+    expect(panel).toHaveAttribute("data-size", "280");
+    // Beside <main> in a column: across the workspace, above the status bar.
+    const main = r.container.querySelector("main")!;
+    expect(panel.parentElement).toBe(main.parentElement);
+    expect(main.parentElement!.className).toContain("flex-col");
+  });
+
+  it("terminalCodeIsNotInStartupGraph", () => {
+    // Every source module's text, keyed like "./app/useWorkspace.ts".
+    const sources = import.meta.glob<string>(
+      ["./**/*.ts", "./**/*.tsx", "!./**/*.test.*"],
+      { query: "?raw", import: "default", eager: true },
+    );
+    const join = (dir: string, spec: string) => {
+      const parts = dir.split("/");
+      for (const seg of spec.split("/")) {
+        if (seg === "..") parts.pop();
+        else if (seg !== ".") parts.push(seg);
+      }
+      return parts.join("/");
+    };
+    const resolveFile = (base: string) =>
+      [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, base].find(
+        (f) => f in sources,
+      );
+    const seen = new Set<string>();
+    const bad: string[] = [];
+    const visit = (file: string) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      // Static imports and re-exports; `import(` is a lazy chunk.
+      const specs = [
+        ...sources[file].matchAll(/\bfrom\s+["']([^"']+)["']/g),
+        ...sources[file].matchAll(/\bimport\s+["']([^"']+)["']/g),
+      ].map((m) => m[1]);
+      for (const spec of specs) {
+        if (spec.startsWith("@xterm/") || spec.includes("TerminalPanel")) {
+          bad.push(`${file}: ${spec}`);
+        }
+        if (spec.startsWith(".")) {
+          const dir = file.slice(0, file.lastIndexOf("/"));
+          const next = resolveFile(join(dir, spec));
+          if (next) visit(next);
+        }
+      }
+    };
+    visit("./App.tsx");
+    // The walk really followed the graph (the panel's own modules included).
+    expect(seen.size).toBeGreaterThan(20);
+    expect(seen).toContain("./terminal/useTerminals.ts");
+    expect(bad).toEqual([]);
   });
 });

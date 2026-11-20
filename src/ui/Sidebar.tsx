@@ -90,6 +90,8 @@ export interface SidebarProps {
   onLocateFolder(path: string): void;
   /** Remove from sidebar: forgets the folder; nothing on disk changes. */
   onRemoveFolder(path: string): void;
+  /** Open in terminal: a new terminal in this folder. */
+  onOpenTerminal(path: string): void;
   /** Decides the Windows-only name rule and the "Show in …" label. */
   platform?: Platform;
 }
@@ -162,6 +164,7 @@ function SidebarPanel({
   onAddFolder,
   onLocateFolder,
   onRemoveFolder,
+  onOpenTerminal,
   platform: platformProp,
 }: SidebarProps) {
   // With the Library offline its rows are stale: only the added folders show.
@@ -283,6 +286,11 @@ function SidebarPanel({
     { label: "New canvas", onSelect: () => void create(parent, "canvas") },
   ];
 
+  const terminalItem = (path: string): MenuItem => ({
+    label: "Open in terminal",
+    onSelect: () => onOpenTerminal(path),
+  });
+
   const rootItems = (r: string): MenuItem[] => [
     ...newItems(r),
     {
@@ -290,6 +298,7 @@ function SidebarPanel({
       separated: true,
       onSelect: () => onReveal(r),
     },
+    terminalItem(r),
     { label: "Choose Library folder…", onSelect: onChooseRoot },
   ];
 
@@ -319,6 +328,7 @@ function SidebarPanel({
         separated: true,
         onSelect: () => onReveal(a.path),
       },
+      terminalItem(a.path),
       remove,
     ];
   };
@@ -342,6 +352,7 @@ function SidebarPanel({
         separated: true,
         onSelect: () => onReveal(e.path),
       },
+      ...(e.isDir ? [{ ...terminalItem(e.path), disabled: off }] : []),
       { label: "Copy path", onSelect: () => onCopyPath(e.path) },
     ];
     if (e.isDir) {
