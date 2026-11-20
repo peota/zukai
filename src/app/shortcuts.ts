@@ -27,7 +27,11 @@ export type Command =
   /** Splits the active Tab with the one active just before, or unsplits. */
   | { type: "toggleSplit" }
   /** A Markdown Tab: the rich editor or the Markdown source. */
-  | { type: "toggleRichMarkdown" };
+  | { type: "toggleRichMarkdown" }
+  /** Shows or hides the terminal panel. */
+  | { type: "toggleTerminal" }
+  /** Opens a new terminal. */
+  | { type: "newTerminal" };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -72,6 +76,12 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
     letterOf(e) === "f"
   ) {
     return { type: "format" };
+  }
+
+  // Ctrl+` and Ctrl+Shift+` on every platform, macOS included: Cmd+` is the
+  // system's window switcher.
+  if (e.code === "Backquote" && e.ctrlKey && !e.metaKey && !e.altKey) {
+    return { type: e.shiftKey ? "newTerminal" : "toggleTerminal" };
   }
 
   const modDown = mac ? e.metaKey : e.ctrlKey;

@@ -26,6 +26,8 @@ const ALL: Record<Command["type"], true> = {
   togglePreview: true,
   toggleSplit: true,
   toggleRichMarkdown: true,
+  toggleTerminal: true,
+  newTerminal: true,
 };
 
 describe("the shortcut list", () => {

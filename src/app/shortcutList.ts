@@ -192,6 +192,18 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "View",
+    action: "Toggle terminal",
+    keys: [["Ctrl", "`"]],
+    command: "toggleTerminal",
+  },
+  {
+    group: "View",
+    action: "New terminal",
+    keys: [["Ctrl", "Shift", "`"]],
+    command: "newTerminal",
+  },
+  {
+    group: "View",
     action: "Settings",
     keys: [["Mod", ","]],
     command: "openSettings",
