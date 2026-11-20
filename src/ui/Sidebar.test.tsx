@@ -953,10 +953,16 @@ describe("Sidebar added folders", () => {
     expect(p.onRemoveFolder).toHaveBeenCalledWith(ADDED);
   });
 
-  it("add_folder_in_library_menu_and_empty_space_menu", () => {
+  it("add_folder_in_plus_menu_and_empty_space_menu", () => {
     const { p } = setupAdded();
-    fireEvent.click(actions("Library"));
-    expect(menuItems()).toEqual(["Add folder…"]);
+    // No separate ⋯ button: Add folder… ends the + menu.
+    expect(
+      screen.queryByRole("button", { name: "Library actions" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "New in Library" }));
+    const plus = menuItems();
+    expect(plus[0]).toBe("New folder");
+    expect(plus[plus.length - 1]).toBe("Add folder…");
     fireEvent.click(screen.getByRole("menuitem", { name: "Add folder…" }));
     expect(p.onAddFolder).toHaveBeenCalledTimes(1);
 
