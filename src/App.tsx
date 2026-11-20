@@ -36,6 +36,7 @@ import { baseName, languageRename } from "./files/paths";
 import { inShadow } from "./files/fileState";
 import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
+import { SidebarToggle } from "./ui/SidebarToggle";
 import { pinnedItems, recentItems } from "./ui/Pinned";
 import { useColorScheme } from "./ui/useColorScheme";
 import { SaveChangesDialog } from "./ui/SaveChangesDialog";
@@ -485,11 +486,17 @@ export default function App() {
         platform={platform}
       />
       <div className="flex h-full min-w-0 flex-1 flex-col" data-z-workspace="">
-        {/* The title bar: tabs, then the window controls (none on macOS). */}
+        {/* The title bar: the sidebar toggle, tabs, then the window controls
+            (none on macOS). */}
         <div className="flex shrink-0 bg-chrome" data-tauri-drag-region="">
-          <TabBar
+          <SidebarToggle
+            open={w.sidebar.open}
+            platform={platform}
             // macOS draws its traffic lights over the bar's left end.
             inset={platform === "mac" && !w.sidebar.open ? 78 : 0}
+            onToggle={w.toggleSidebar}
+          />
+          <TabBar
             tabs={w.state.tabs.map((t) => ({
               id: t.id,
               title: t.title,

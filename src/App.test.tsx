@@ -1,4 +1,10 @@
-import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  getByRole,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as storage from "./storage/api";
 import * as files from "./files/api";
@@ -194,10 +200,15 @@ describe("App", () => {
       expect(root.querySelector("[data-z-sidebar]")).toBeNull();
       expect([...root.children]).toEqual([workspace]);
       expect(workspace.className).toContain("flex-1");
-      // The title bar row leads: the tabs, then the window controls.
+      // The title bar row leads: the sidebar toggle, the tabs, then the
+      // window controls.
       const titleBar = workspace.firstElementChild!;
       expect(titleBar.hasAttribute("data-tauri-drag-region")).toBe(true);
-      expect(titleBar.firstElementChild?.getAttribute("role")).toBe("tablist");
+      const toggle = titleBar.firstElementChild!.querySelector("button")!;
+      expect(toggle.getAttribute("aria-label")).toBe("Show sidebar");
+      expect(
+        titleBar.firstElementChild?.nextElementSibling?.getAttribute("role"),
+      ).toBe("tablist");
     };
     hidden();
 
@@ -212,8 +223,11 @@ describe("App", () => {
     expect(side.nextElementSibling).toBe(workspace);
     expect(side.style.width).toBe("260px");
     await waitFor(() => expect(l.libraryList).toHaveBeenCalledWith(R));
+    const hide = getByRole(root, "button", { name: "Hide sidebar" });
+    expect(hide).toHaveAttribute("aria-expanded", "true");
 
-    act(() => modB());
+    // The title bar button hides it, as Mod+B does.
+    fireEvent.click(hide);
     hidden();
     // The same workspace column: the editor was never remounted.
     expect(root.querySelector("[data-z-workspace]")).toBe(workspace);
