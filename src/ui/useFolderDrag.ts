@@ -6,7 +6,20 @@ import { isUnder, parentOf, sameDir } from "./libraryEntries";
 
 /** What is being dragged onto a Library folder. */
 export type DragSource =
-  { kind: "entry"; entry: Entry } | { kind: "scratchpad"; id: string };
+  | {
+      kind: "entry";
+      entry: Entry;
+      /** The selection it carries along (it included), when it's selected. */
+      group?: Entry[];
+    }
+  | { kind: "scratchpad"; id: string };
+
+/** The entries a drag of `source` moves: its group, or just itself. */
+export function draggedEntries(
+  source: Extract<DragSource, { kind: "entry" }>,
+): Entry[] {
+  return source.group ?? [source.entry];
+}
 
 export interface PointerHandlers {
   onPointerDown(e: PointerEvent<HTMLElement>): void;
@@ -49,9 +62,12 @@ export function parentIndex(rows: Row[]): Int32Array {
 /** A drop that would do nothing or can't be done lands nowhere. */
 function allowed(source: DragSource, dest: string | null): string | null {
   if (dest === null || source.kind === "scratchpad") return dest;
-  const path = source.entry.path;
-  if (sameDir(dest, path) || isUnder(dest, path)) return null;
-  return sameDir(dest, parentOf(path)) ? null : dest;
+  const group = draggedEntries(source);
+  // Nothing goes into itself, and at least one item has to actually move.
+  if (group.some((e) => sameDir(dest, e.path) || isUnder(dest, e.path))) {
+    return null;
+  }
+  return group.every((e) => sameDir(dest, parentOf(e.path))) ? null : dest;
 }
 
 /**
@@ -205,10 +221,13 @@ export function useFolderDrag({
     press.current = { ...d, moving: true, dest };
     if (!d.moving || dest !== d.dest) {
       // A drop into another tree copies (Rust never moves across roots).
+      const source = d.source;
       const copy =
-        d.source.kind === "entry" &&
+        source.kind === "entry" &&
         dest !== null &&
-        rootOf(d.source.entry.path, roots) !== rootOf(dest, roots);
+        draggedEntries(source).some(
+          (e) => rootOf(e.path, roots) !== rootOf(dest, roots),
+        );
       setView({ dest, copy });
     }
   };
