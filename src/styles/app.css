@@ -350,6 +350,13 @@ body {
   font-size: 15px;
   line-height: 1.65;
   user-select: text;
+  /*
+   * The 720px column sits in the middle of a wide pane. .z-md is the
+   * scroller, so the side padding centres it and the scrollbar stays at the
+   * edge; a narrow pane keeps the 56px gutter (px-14). The 10px is the
+   * scrollbar, which takes its width out of the content box.
+   */
+  padding-inline: max(3.5rem, calc((100% - 730px) / 2));
 }
 .z-md > *,
 .z-rich .ProseMirror > * {
