@@ -124,9 +124,9 @@ describe("Sidebar", () => {
     const { p } = setup();
     expect(screen.getByPlaceholderText("Search Library")).toBeInTheDocument();
     expect(screen.getByText("LIBRARY")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "New in Library" }),
-    ).toBeInTheDocument();
+    for (const name of ["New file", "New folder", "New canvas"]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    }
 
     const names = screen
       .getAllByRole("treeitem")
@@ -589,11 +589,14 @@ describe("Sidebar", () => {
     expect(input).toHaveValue("Untitled");
     key(input, "Escape");
 
-    // The header + offers the same for the root, plus Choose Library folder…
-    fireEvent.click(screen.getByRole("button", { name: "New in Library" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "New file" }));
+    // The heading's buttons make each at the root; its ⋯ has the rest.
+    fireEvent.click(screen.getByRole("button", { name: "New file" }));
     expect(onCreate).toHaveBeenLastCalledWith(ROOT, "file");
-    fireEvent.click(screen.getByRole("button", { name: "New in Library" }));
+    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    expect(onCreate).toHaveBeenLastCalledWith(ROOT, "folder");
+    fireEvent.click(screen.getByRole("button", { name: "New canvas" }));
+    expect(onCreate).toHaveBeenLastCalledWith(ROOT, "canvas");
+    fireEvent.click(screen.getByRole("button", { name: "Library actions" }));
     fireEvent.click(
       screen.getByRole("menuitem", { name: "Choose Library folder…" }),
     );
@@ -823,9 +826,8 @@ describe("Sidebar", () => {
     const created = p("Untitled.md");
     const onCreate = vi.fn(async () => created);
     const { p: pr, rerender } = setup({ onCreate });
-    fireEvent.click(screen.getByRole("button", { name: "New in Library" }));
     await act(async () =>
-      fireEvent.click(screen.getByRole("menuitem", { name: "New file" })),
+      fireEvent.click(screen.getByRole("button", { name: "New file" })),
     );
     // The next listing doesn't have it...
     const t1 = makeTree();
@@ -953,16 +955,15 @@ describe("Sidebar added folders", () => {
     expect(p.onRemoveFolder).toHaveBeenCalledWith(ADDED);
   });
 
-  it("add_folder_in_plus_menu_and_empty_space_menu", () => {
+  it("add_folder_in_library_menu_and_empty_space_menu", () => {
     const { p } = setupAdded();
-    // No separate ⋯ button: Add folder… ends the + menu.
-    expect(
-      screen.queryByRole("button", { name: "Library actions" }),
-    ).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "New in Library" }));
-    const plus = menuItems();
-    expect(plus[0]).toBe("New folder");
-    expect(plus[plus.length - 1]).toBe("Add folder…");
+    // The heading's ⋯ holds what its New buttons don't: Add folder… last.
+    fireEvent.click(actions("Library"));
+    expect(menuItems()).toEqual([
+      "Show in Explorer",
+      "Choose Library folder…",
+      "Add folder…",
+    ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Add folder…" }));
     expect(p.onAddFolder).toHaveBeenCalledTimes(1);
 
