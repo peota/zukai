@@ -131,18 +131,22 @@ export default function App() {
     },
     [openTerm, showNotice],
   );
-  /** The panel's +: the active terminal's folder while it's still granted. */
-  const plusTerminal = () =>
-    openTerminal(
-      plusFolder(
-        termState.terms.find((x) => x.id === termState.activeId),
-        [
-          ...(libRoot !== null && libAvailable ? [libRoot] : []),
-          ...libAdded.filter((a) => a.available).map((a) => a.path),
-        ],
-        termFolder,
-      ),
+  /**
+   * The panel's +: the active terminal's folder while it's still granted.
+   * If that folder no longer exists, the default folder instead.
+   */
+  const plusTerminal = () => {
+    const cwd = plusFolder(
+      termState.terms.find((x) => x.id === termState.activeId),
+      [
+        ...(libRoot !== null && libAvailable ? [libRoot] : []),
+        ...libAdded.filter((a) => a.available).map((a) => a.path),
+      ],
+      termFolder,
     );
+    if (cwd === null || cwd === termFolder) return openTerminal(cwd);
+    openTerm(cwd).catch(() => openTerminal(termFolder));
+  };
   // The panel loads with the first terminal and stays mounted after that.
   const [panelLoaded, setPanelLoaded] = useState(false);
   if (!panelLoaded && termState.terms.length > 0) setPanelLoaded(true);

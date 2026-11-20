@@ -141,18 +141,21 @@ vi.mock("@tauri-apps/api/event", () => ({ emit: vi.fn() }));
 vi.mock("./terminal/api", () => ({
   terminalOpen: vi.fn(),
   terminalWrite: vi.fn(),
+  terminalAck: vi.fn(),
   terminalResize: vi.fn(),
   terminalKill: vi.fn(),
 }));
 
 // The panel itself has its own tests; here only where App puts it.
 vi.mock("./terminal/TerminalPanel", () => ({
-  TerminalPanel: (p: { position: string; size: number }) => (
+  TerminalPanel: (p: { position: string; size: number; onNew(): void }) => (
     <div
       data-testid="terminal-panel"
       data-position={p.position}
       data-size={p.size}
-    />
+    >
+      <button onClick={p.onNew}>New terminal</button>
+    </div>
   ),
 }));
 
@@ -820,6 +823,43 @@ describe("App", () => {
     const main = r.container.querySelector("main")!;
     expect(panel.parentElement).toBe(main.parentElement);
     expect(main.parentElement!.className).toContain("flex-col");
+  });
+
+  it("+ falls back to the default folder when the active terminal's is gone", async () => {
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    act(() => modB());
+    const proj = await r.findByRole("treeitem", { name: "proj" });
+    fireEvent.contextMenu(proj);
+    fireEvent.click(r.getByRole("menuitem", { name: "Open in terminal" }));
+    await waitFor(() =>
+      expect(tm.terminalOpen).toHaveBeenCalledWith(
+        `${R}\\proj`,
+        80,
+        24,
+        expect.any(Function),
+      ),
+    );
+    // The folder has since been deleted: opening there fails.
+    tm.terminalOpen.mockRejectedValueOnce({ kind: "notFound" });
+    tm.terminalOpen.mockResolvedValueOnce(2);
+    const plus = await r.findByRole("button", { name: "New terminal" });
+    fireEvent.click(plus);
+    await waitFor(() => expect(tm.terminalOpen).toHaveBeenCalledTimes(3));
+    expect(tm.terminalOpen.mock.calls.map((c) => c[0])).toEqual([
+      `${R}\\proj`,
+      `${R}\\proj`,
+      R,
+    ]);
+    expect(r.queryByText(/Can't open a terminal/)).toBeNull();
+
+    // When the default fails too, the notice shows.
+    tm.terminalOpen.mockRejectedValue({ kind: "notFound" });
+    fireEvent.click(plus);
+    await waitFor(() =>
+      expect(r.getByText(/Can't open a terminal/)).toBeTruthy(),
+    );
+    expect(tm.terminalOpen).toHaveBeenCalledTimes(4);
   });
 
   it("terminalCodeIsNotInStartupGraph", () => {
