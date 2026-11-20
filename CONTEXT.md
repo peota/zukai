@@ -80,6 +80,14 @@ Changed in the **Settings** dialog, opened by the gear at the left of the status
 - The UI writes only the values you changed into `settings.json` in the app data folder. An "Open settings.json" link opens it as a normal Tab for editing by hand or keeping in dotfiles. Edits to the file update the UI live, and invalid JSON keeps the last valid settings active.
 Common toggles (theme, word wrap, show whitespace) are also in the Command palette.
 
+**Terminal**
+A shell running in a granted Library folder, shown in the Terminal panel. It opens from a folder's **Open in terminal** (the Library root, a folder entry, an available added folder's heading), Ctrl+` (when there's none yet) or Ctrl+Shift+`, in the folder asked for or the default folder: the active File's folder when it's in a granted folder, else the Library root, else the first available added folder, never the home folder. Killing one (×, the trash button, middle-click) ends its process tree without asking; a shell that exits by itself leaves its tab, dimmed, until closed. Terminals are never restored, and quitting kills them.
+_Avoid_: console, shell tab, Tab (a Tab is the editor's).
+
+**Terminal panel**
+Where Terminals are shown, under the editor area (the default) or to its right, beside the editor and under the tab bar. Its slim header holds a tab per Terminal and New terminal, Kill terminal, Move to side/bottom and Hide panel. Ctrl+` shows or hides it; hiding never ends a Terminal, and killing the last one hides it. Its position and its height (bottom) and width (side) are Settings; whether it's shown isn't remembered, so it starts hidden.
+_Avoid_: terminal pane, console.
+
 ## Library
 
 The Library replaces "no project concept" and "no notes library" (see [ADR 0011](docs/adr/0011-library-sidebar.md)).

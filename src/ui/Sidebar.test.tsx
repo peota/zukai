@@ -85,6 +85,7 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     onAddFolder: vi.fn(),
     onLocateFolder: vi.fn(),
     onRemoveFolder: vi.fn(),
+    onOpenTerminal: vi.fn(),
     platform: "windows",
     ...over,
   };
@@ -917,6 +918,7 @@ describe("Sidebar added folders", () => {
       "New file",
       "New folder",
       "Show in Explorer",
+      "Open in terminal",
       "Remove from sidebar",
     ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "New file" }));
@@ -930,6 +932,7 @@ describe("Sidebar added folders", () => {
       "New file",
       "New folder",
       "Show in Explorer",
+      "Open in terminal",
       "Remove from sidebar",
     ]);
     fireEvent.click(
@@ -943,6 +946,48 @@ describe("Sidebar added folders", () => {
     // A click on the heading opens and closes it.
     fireEvent.click(row("Notes"));
     expect(p.onToggle).toHaveBeenCalledWith(ADDED);
+  });
+
+  it("sidebarFolderMenusOfferOpenInTerminal", () => {
+    const { p } = setupAdded();
+    const after = (name: string) => {
+      const items = menuItems();
+      return items[items.indexOf("Show in Explorer") + 1] === name;
+    };
+    const choose = () =>
+      fireEvent.click(
+        screen.getByRole("menuitem", { name: "Open in terminal" }),
+      );
+
+    // The Library root (the tree's empty part).
+    fireEvent.contextMenu(tree());
+    expect(after("Open in terminal")).toBe(true);
+    choose();
+    expect(p.onOpenTerminal).toHaveBeenLastCalledWith(ROOT);
+
+    // A folder entry.
+    fireEvent.contextMenu(row("Ideas"));
+    expect(after("Open in terminal")).toBe(true);
+    choose();
+    expect(p.onOpenTerminal).toHaveBeenLastCalledWith(IDEAS.path);
+
+    // An available added folder's heading.
+    fireEvent.contextMenu(row("Notes"));
+    expect(after("Open in terminal")).toBe(true);
+    choose();
+    expect(p.onOpenTerminal).toHaveBeenLastCalledWith(ADDED);
+
+    // A File has none.
+    fireEvent.contextMenu(row("todo.txt"));
+    expect(menuItems()).not.toContain("Open in terminal");
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(p.onOpenTerminal).toHaveBeenCalledTimes(3);
+  });
+
+  it("an unavailable heading has no Open in terminal", () => {
+    setupAdded(false);
+    fireEvent.contextMenu(row("Notes"));
+    expect(menuItems()).not.toContain("Open in terminal");
   });
 
   it("missing_heading_offers_locate_and_remove", () => {
