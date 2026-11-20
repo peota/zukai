@@ -130,4 +130,21 @@ describe("TerminalView", () => {
     rerender(<TerminalView {...p} fontSize={18} />);
     expect(h.term!.options.fontSize).toBe(18);
   });
+
+  it("reThemesWhenTheRootThemeAttributesChange", async () => {
+    const root = document.documentElement;
+    root.style.setProperty("--z-editor", "#111111");
+    render(<TerminalView {...props()} />);
+    expect((h.term!.options.theme as { background: string }).background).toBe(
+      "#111111",
+    );
+    root.style.setProperty("--z-editor", "#222222");
+    root.setAttribute("data-accent", "violet");
+    await Promise.resolve();
+    expect((h.term!.options.theme as { background: string }).background).toBe(
+      "#222222",
+    );
+    root.removeAttribute("data-accent");
+    root.style.removeProperty("--z-editor");
+  });
 });

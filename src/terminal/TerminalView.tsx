@@ -98,9 +98,23 @@ export function TerminalView(props: TerminalViewProps) {
     // The terminal lives as long as the component; props are read via `live`.
   }, []);
 
+  // The app writes data-theme/-palette/-accent on <html> in a parent effect,
+  // after this component's effects run, so the tokens are read from an
+  // observer (a microtask after the attributes change), not from [palette].
   useEffect(() => {
-    const term = termRef.current;
-    if (term) term.options.theme = xtermTheme(palette, cssVar);
+    const apply = () => {
+      const term = termRef.current;
+      if (term) {
+        term.options.theme = xtermTheme(live.current.palette, cssVar);
+      }
+    };
+    apply();
+    const mo = new MutationObserver(apply);
+    mo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "data-palette", "data-accent"],
+    });
+    return () => mo.disconnect();
   }, [palette]);
 
   useEffect(() => {
