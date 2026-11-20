@@ -25,6 +25,14 @@ export function terminalWrite(id: number, data: string): void {
   void invoke("terminal_write", { id, data }).catch(() => {});
 }
 
+/**
+ * Fire-and-forget: the view has parsed `n` UTF-16 code units (string
+ * `length`) of the terminal's output, so the backend may send more.
+ */
+export function terminalAck(id: number, n: number): void {
+  void invoke("terminal_ack", { id, n }).catch(() => {});
+}
+
 export function terminalResize(
   id: number,
   cols: number,

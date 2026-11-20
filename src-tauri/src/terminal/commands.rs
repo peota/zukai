@@ -64,6 +64,14 @@ impl Terminals {
         }
     }
 
+    /// The terminal's listener has handled `n` units of its output (UTF-16
+    /// code units: JavaScript's string length). An unknown id is ignored.
+    pub fn ack(&self, id: u32, n: usize) {
+        if let Some(session) = self.get(id) {
+            session.ack(n);
+        }
+    }
+
     /// Ends the terminal's shell and everything it started, and forgets it.
     /// Its `Exit` event still follows. An unknown id is ignored.
     pub fn kill(&self, id: u32) {
@@ -111,6 +119,12 @@ pub async fn terminal_open(
 #[tauri::command]
 pub fn terminal_write(app: AppHandle, id: u32, data: String) {
     app.state::<Terminals>().write(id, &data);
+}
+
+/// Synchronous: cheap, and it only frees the flusher to send more.
+#[tauri::command]
+pub fn terminal_ack(app: AppHandle, id: u32, n: usize) {
+    app.state::<Terminals>().ack(id, n);
 }
 
 #[tauri::command]
@@ -174,6 +188,7 @@ mod tests {
     ) -> (String, Vec<TerminalEvent>) {
         collect_with(
             |reply| t.write(id, std::str::from_utf8(reply).unwrap()),
+            |n| t.ack(id, n),
             rx,
             timeout,
         )

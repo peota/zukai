@@ -3,7 +3,9 @@
 //! Four threads serve each session. The writer owns the PTY's input and
 //! writes queued input to it in order. The reader copies PTY output into a
 //! shared buffer. The flusher sends it on in batches, holding back a split
-//! UTF-8 character until the rest arrives. The waiter reaps the shell (under
+//! UTF-8 character until the rest arrives, and waits while the listener has
+//! too much sent output left to ack; the reader then stops at high water, the
+//! PTY fills up and the shell blocks. The waiter reaps the shell (under
 //! the lock `kill` takes, so a reused pid is never signalled), closes
 //! the PTY, closes the input queue, lets the reader drain, has the flusher send what is left, then
 //! sends `Exit`, exactly once.
@@ -33,6 +35,9 @@ const HIGH_WATER: usize = 1024 * 1024;
 /// background process that keeps the terminal open would otherwise hold back
 /// `Exit` for as long as it lives.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+/// How much sent output the listener may have left to ack before the flusher
+/// waits, in UTF-16 code units (JavaScript's string length).
+const ACK_WATERMARK: usize = 256 * 1024;
 
 /// What a session tells its listener.
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
@@ -74,6 +79,17 @@ struct Pending {
     buf: Vec<u8>,
     /// Set once the reader is done (or given up on): send everything, then stop.
     closed: bool,
+    /// Sent output the listener hasn't acked yet (see [`js_len`]).
+    unacked: usize,
+    /// Set once nobody will ack (the terminal was killed): stop waiting for acks.
+    abandoned: bool,
+}
+
+impl Pending {
+    /// Whether the flusher waits for acks before sending more.
+    fn held_back(&self) -> bool {
+        self.unacked >= ACK_WATERMARK && !self.abandoned && !self.closed
+    }
 }
 
 #[derive(Default)]
@@ -93,6 +109,8 @@ pub struct Session {
     /// shell and sets `exited`: once the shell's pid is free for another
     /// process to take, `kill` sees `exited` and signals nothing.
     reaping: Arc<Mutex<()>>,
+    /// Output on its way from the reader to the flusher.
+    output: Arc<Output>,
     tree: TreeGuard,
 }
 
@@ -147,6 +165,7 @@ impl Session {
             input: Arc::new(Mutex::new(None)),
             exited: Arc::new(AtomicBool::new(false)),
             reaping: Arc::new(Mutex::new(())),
+            output: Arc::new(Output::default()),
             tree,
         };
         if let Err(err) = session.start(pair.master, child, sink) {
@@ -176,7 +195,7 @@ impl Session {
             .spawn(move || write_loop(&input_rx, writer, &writer_exited))?;
         *self.input.lock().unwrap() = Some(input_tx);
 
-        let output = Arc::new(Output::default());
+        let output = Arc::clone(&self.output);
         let (drained_tx, drained_rx) = mpsc::channel();
         let reader_out = Arc::clone(&output);
         thread::Builder::new()
@@ -240,10 +259,17 @@ impl Session {
         }
     }
 
+    /// The listener has handled `n` units of output (see [`js_len`]).
+    pub fn ack(&self, n: usize) {
+        ack(&self.output, n);
+    }
+
     /// Ends the shell and everything it started. The waiter thread then reaps
     /// the shell and sends `Exit`. Does nothing once the shell has exited:
     /// on Unix its pid may already belong to an unrelated process.
     pub fn kill(&self) {
+        // Nobody will ack the rest: the flusher mustn't wait for them.
+        abandon(&self.output);
         let _held = self.reaping.lock().unwrap();
         if self.exited.load(Ordering::SeqCst) {
             return;
@@ -379,6 +405,26 @@ fn read_loop(mut reader: Box<dyn Read + Send>, output: &Output) {
     }
 }
 
+/// The listener has handled `n` units of output (see [`js_len`]). Acking
+/// more than was sent is harmless.
+fn ack(output: &Output, n: usize) {
+    let mut pending = output.pending.lock().unwrap();
+    pending.unacked = pending.unacked.saturating_sub(n);
+    drop(pending);
+    output.wake.notify_all();
+}
+
+/// Nobody will ack any more: send without waiting for acks.
+fn abandon(output: &Output) {
+    output.pending.lock().unwrap().abandoned = true;
+    output.wake.notify_all();
+}
+
+/// A string's length in UTF-16 code units: JavaScript's `length`.
+pub fn js_len(s: &str) -> usize {
+    s.encode_utf16().count()
+}
+
 /// Tells the flusher to send what is left and stop, and the reader to stop.
 fn close(output: &Output) {
     output.pending.lock().unwrap().closed = true;
@@ -386,12 +432,14 @@ fn close(output: &Output) {
 }
 
 /// Sends waiting output in batches of at most `BATCH_BYTES` until the
-/// output is closed, then sends the rest and returns.
+/// output is closed, then sends the rest and returns. Waits while
+/// `ACK_WATERMARK` or more of what it sent is unacked, unless the output is
+/// closed or abandoned.
 fn flush_loop(output: &Output, sink: &(dyn Fn(TerminalEvent) + Send + Sync)) {
     loop {
         let mut pending = output.pending.lock().unwrap();
-        // Sleep until there is something whole to send.
-        while utf8_split(&pending.buf) == 0 && !pending.closed {
+        // Sleep until there is something whole to send and room to send it.
+        while (utf8_split(&pending.buf) == 0 || pending.held_back()) && !pending.closed {
             pending = output.wake.wait(pending).unwrap();
         }
         // Let a batch build up for a moment, unless it is already big.
@@ -410,12 +458,14 @@ fn flush_loop(output: &Output, sink: &(dyn Fn(TerminalEvent) + Send + Sync)) {
         };
         let batch: Vec<u8> = pending.buf.drain(..split).collect();
         let done = pending.closed && pending.buf.is_empty();
+        let data = (!batch.is_empty()).then(|| String::from_utf8_lossy(&batch).into_owned());
+        if let Some(data) = &data {
+            pending.unacked += js_len(data);
+        }
         drop(pending);
         output.wake.notify_all(); // room for a reader waiting at high water
-        if !batch.is_empty() {
-            sink(TerminalEvent::Data {
-                data: String::from_utf8_lossy(&batch).into_owned(),
-            });
+        if let Some(data) = data {
+            sink(TerminalEvent::Data { data });
         }
         if done {
             return;
@@ -457,13 +507,20 @@ pub(crate) mod tests {
         session: &Session,
         rx: &mpsc::Receiver<TerminalEvent>,
     ) -> (String, Vec<TerminalEvent>) {
-        collect_with(|reply| session.write(reply), rx, Duration::from_secs(10))
+        collect_with(
+            |reply| session.write(reply),
+            |n| session.ack(n),
+            rx,
+            Duration::from_secs(10),
+        )
     }
 
     /// Every event until `Exit`, or until `timeout` has passed, with the
-    /// output joined. Answers each cursor position request through `reply`.
+    /// output joined. Answers each cursor position request through `reply`
+    /// and acks each batch of output through `ack`.
     pub(crate) fn collect_with(
         reply: impl Fn(&[u8]),
+        ack: impl Fn(usize),
         rx: &mpsc::Receiver<TerminalEvent>,
         timeout: Duration,
     ) -> (String, Vec<TerminalEvent>) {
@@ -476,6 +533,7 @@ pub(crate) mod tests {
                         for _ in data.matches("\x1b[6n") {
                             reply(b"\x1b[1;1R");
                         }
+                        ack(js_len(data));
                     }
                     let done = matches!(ev, TerminalEvent::Exit { .. });
                     events.push(ev);
@@ -637,6 +695,122 @@ pub(crate) mod tests {
         }
     }
 
+    /// The total length (see [`js_len`]) of the output in `events`.
+    fn sent_len(events: &[TerminalEvent]) -> usize {
+        events
+            .iter()
+            .map(|ev| match ev {
+                TerminalEvent::Data { data } => js_len(data),
+                TerminalEvent::Exit { .. } => 0,
+            })
+            .sum()
+    }
+
+    /// Waits until `count` has stopped changing, and returns it.
+    fn settled(count: impl Fn() -> usize) -> usize {
+        let mut last = count();
+        loop {
+            thread::sleep(Duration::from_millis(300));
+            let now = count();
+            if now == last {
+                return now;
+            }
+            last = now;
+        }
+    }
+
+    #[test]
+    fn flusher_waits_for_acks_and_the_reader_for_the_flusher() {
+        let data = "zukai ".repeat(2_000_000).into_bytes();
+        let read = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let reader = Source {
+            data,
+            at: Arc::clone(&read),
+        };
+        let output = Arc::new(Output::default());
+        let sent = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sink = {
+            let sent = Arc::clone(&sent);
+            move |ev: TerminalEvent| {
+                if let TerminalEvent::Data { data } = ev {
+                    sent.fetch_add(js_len(&data), Ordering::SeqCst);
+                }
+            }
+        };
+        let reader_out = Arc::clone(&output);
+        let reading = thread::spawn(move || read_loop(Box::new(reader), &reader_out));
+        let flusher_out = Arc::clone(&output);
+        let flushing = thread::spawn(move || flush_loop(&flusher_out, &sink));
+
+        // Nothing acked: the flusher stops at the watermark, the reader at
+        // high water.
+        let first = settled(|| sent.load(Ordering::SeqCst));
+        assert!(
+            (ACK_WATERMARK..ACK_WATERMARK + BATCH_BYTES).contains(&first),
+            "sent {first} unacked"
+        );
+        let ahead = settled(|| read.load(Ordering::SeqCst)) - first;
+        assert!(
+            ahead <= HIGH_WATER + 2 * 16 * 1024,
+            "the reader got {ahead} bytes ahead"
+        );
+
+        // Acks let it go on.
+        ack(&output, first);
+        let second = settled(|| sent.load(Ordering::SeqCst));
+        assert!(second >= first + ACK_WATERMARK, "sent {second} after ack");
+
+        // Once abandoned (killed) it sends without waiting, and stops when closed.
+        abandon(&output);
+        close(&output);
+        flushing.join().unwrap();
+        reading.join().unwrap();
+    }
+
+    #[test]
+    fn kill_while_output_is_held_back_still_exits() {
+        let dir = tempfile::tempdir().unwrap();
+        let (running, rx) = start(dir.path());
+        let flood = if cfg!(windows) {
+            "while ($true) { 'zukai-flood ' * 100 }"
+        } else {
+            "yes zukai-flood"
+        };
+        running.0.write(format!("{flood}{NL}").as_bytes());
+
+        // Never acked: the output stops at the watermark.
+        let (_, events) = collect_with(
+            |reply| running.0.write(reply),
+            |_| {},
+            &rx,
+            Duration::from_secs(3),
+        );
+        let held = sent_len(&events);
+        assert!(
+            (ACK_WATERMARK..ACK_WATERMARK + BATCH_BYTES).contains(&held),
+            "{held} units sent unacked"
+        );
+
+        // Acked, it goes on.
+        running.0.ack(held);
+        let (_, events) = collect_with(|_| {}, |_| {}, &rx, Duration::from_secs(2));
+        assert!(sent_len(&events) >= ACK_WATERMARK, "nothing after the ack");
+
+        // Killed while held back, it still ends, and soon.
+        let killed = Instant::now();
+        running.0.kill();
+        let (_, events) = collect_with(|_| {}, |_| {}, &rx, Duration::from_secs(10));
+        assert!(
+            matches!(events.last(), Some(TerminalEvent::Exit { .. })),
+            "no exit"
+        );
+        assert!(
+            killed.elapsed() < DRAIN_TIMEOUT,
+            "took {:?}",
+            killed.elapsed()
+        );
+    }
+
     #[test]
     fn flood_arrives_whole_in_capped_batches_with_backpressure() {
         // Multi-byte characters land across every read and batch boundary.
@@ -649,6 +823,7 @@ pub(crate) mod tests {
         };
 
         let output = Arc::new(Output::default());
+        let acks = Arc::clone(&output);
         let batches = Arc::new(Mutex::new(Vec::<String>::new()));
         let max_ahead = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let sink = {
@@ -662,11 +837,12 @@ pub(crate) mod tests {
                     panic!("the flusher never sends Exit");
                 };
                 let mut batches = batches.lock().unwrap();
-                batches.push(data);
+                batches.push(data.clone());
                 let sent: usize = batches.iter().map(String::len).sum();
                 let ahead = read.load(Ordering::SeqCst) - sent;
                 max_ahead.fetch_max(ahead, Ordering::SeqCst);
                 drop(batches);
+                ack(&acks, js_len(&data));
                 // A slow listener: the reader must wait for it.
                 thread::sleep(Duration::from_micros(500));
             }

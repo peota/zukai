@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useReducer, useRef } from "react";
 import {
+  terminalAck,
   terminalKill,
   terminalOpen,
   terminalWrite,
@@ -17,7 +18,9 @@ const EARLY_LOG_LIMIT = 256 * 1024;
  * through `register`. Until the first input, each terminal's output (the
  * prompt, ConPTY's cursor-position query) is also logged and replayed to
  * every view that registers, so a view that mounts twice (StrictMode) or
- * after its first output still sees it all, once.
+ * after its first output still sees it all, once. Views ack the output they
+ * parse (the backend holds back output while too much is unacked); output
+ * dropped here for want of a view is acked here.
  */
 export function useTerminals() {
   const [state, dispatch] = useReducer(termReducer, initialTermState);
@@ -38,6 +41,9 @@ export function useTerminals() {
       if (l.size + size <= EARLY_LOG_LIMIT) {
         l.events.push(e);
         l.size += size;
+      } else if (!sink && e.kind === "data") {
+        // No view will ever ack it: ack it here, or the backend waits forever.
+        terminalAck(id, size);
       }
       logs.current.set(id, l);
     }
