@@ -3,6 +3,7 @@ import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 import type { AddedState, Entry } from "../library/api";
 import type { Row, TreeState } from "../library/tree";
 import { detectPlatform, type Platform } from "../app/shortcuts";
+import { formatKeys } from "../app/shortcutList";
 import {
   CollapseAllIcon,
   MoreIcon,
@@ -184,6 +185,8 @@ function SidebarPanel({
   const [editingState, setEditingState] = useState<{
     path: string;
     rows: Row[] | null;
+    /** A File just created (and opened): Enter goes on to its editor. */
+    newFile?: boolean;
   } | null>(null);
   const [pendingState, setPendingTrash] = useState<PendingTrash | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
@@ -263,7 +266,7 @@ function SidebarPanel({
     const made = await onCreate(parent, what);
     if (made) {
       setCursorState({ path: made, index: -1 });
-      setEditingState({ path: made, rows: null });
+      setEditingState({ path: made, rows: null, newFile: what !== "folder" });
     }
   };
 
@@ -498,6 +501,7 @@ function SidebarPanel({
       cursor={cursor}
       onCursor={setCursor}
       editing={editing}
+      editingNew={editing !== null && editingState?.newFile === true}
       onEditing={setEditing}
       pendingTrash={pendingTrash}
       onConfirmTrash={() => {
@@ -582,7 +586,7 @@ function SidebarPanel({
           <button
             type="button"
             aria-label="Collapse all"
-            title="Collapse all"
+            title={`Collapse all (${formatKeys(["Mod", "Shift", "C"], platform)})`}
             disabled={tree.expanded.size === 0}
             onClick={onCollapseAll}
             className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint"

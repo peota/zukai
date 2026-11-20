@@ -564,6 +564,48 @@ describe("Sidebar", () => {
     ).toBeInTheDocument();
   });
 
+  it("Enter on a new File's name goes on to its editor", async () => {
+    const created = p("Ideas", "Untitled.md");
+    const onCreate = vi.fn(async () => created);
+    const { p: pr, rerender } = setup({ onCreate });
+    const t = makeTree({
+      children: {
+        ...makeTree().children,
+        [IDEAS.path]: [NOTES, FLOW, PIC, DATA, file(created)],
+      },
+    });
+    const show = () =>
+      rerender(<Sidebar {...props({ ...pr, tree: t, rows: visibleRows(t) })} />);
+
+    fireEvent.contextMenu(row("Ideas"));
+    await act(async () =>
+      fireEvent.click(screen.getByRole("menuitem", { name: "New file" })),
+    );
+    show();
+    const input = screen.getByRole("textbox", { name: "Rename" });
+    fireEvent.change(input, { target: { value: "Plan" } });
+    await act(async () => key(input, "Enter"));
+    expect(pr.onRename).toHaveBeenCalledWith(created, "Plan.md");
+    expect(pr.onLeave).toHaveBeenCalledTimes(1);
+
+    // Escape keeps the keyboard in the tree.
+    fireEvent.contextMenu(row("Ideas"));
+    await act(async () =>
+      fireEvent.click(screen.getByRole("menuitem", { name: "New file" })),
+    );
+    show();
+    key(screen.getByRole("textbox", { name: "Rename" }), "Escape");
+    expect(pr.onLeave).toHaveBeenCalledTimes(1);
+
+    // A plain rename stays in the tree too.
+    fireEvent.contextMenu(row(NOTES.name));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    await act(async () =>
+      key(screen.getByRole("textbox", { name: "Rename" }), "Enter"),
+    );
+    expect(pr.onLeave).toHaveBeenCalledTimes(1);
+  });
+
   it("contextMenuNewItems", async () => {
     const created = p("Ideas", "Untitled.excalidraw");
     let resolve: (v: string | null) => void = () => {};

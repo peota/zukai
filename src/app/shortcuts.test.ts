@@ -142,6 +142,12 @@ describe.each(["mac", "other"] as Platform[])("matchShortcut (%s)", (p) => {
       matchShortcut(ev("KeyB", { ...m, key: "B", shiftKey: true }), p),
     ).toBeNull();
   });
+  it("Mod+Shift+C collapses the Library; Mod+C is copy", () => {
+    expect(
+      matchShortcut(ev("KeyC", { ...m, key: "C", shiftKey: true }), p),
+    ).toEqual({ type: "collapseLibrary" });
+    expect(matchShortcut(ev("KeyC", m), p)).toBeNull();
+  });
   it("Mod+Shift+N is a new Canvas Scratchpad", () =>
     expect(
       matchShortcut(ev("KeyN", { ...m, key: "N", shiftKey: true }), p),

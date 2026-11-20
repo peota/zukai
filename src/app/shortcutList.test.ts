@@ -19,6 +19,7 @@ const ALL: Record<Command["type"], true> = {
   format: true,
   toggleSidebar: true,
   focusSidebar: true,
+  collapseLibrary: true,
   newCanvas: true,
   zoom: true,
   openSettings: true,

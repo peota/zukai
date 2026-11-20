@@ -186,6 +186,12 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "View",
+    action: "Collapse all folders in Library",
+    keys: [["Mod", "Shift", "C"]],
+    command: "collapseLibrary",
+  },
+  {
+    group: "View",
     action: "Markdown preview: edit / split / preview",
     keys: [["Mod", "Shift", "V"]],
     command: "togglePreview",

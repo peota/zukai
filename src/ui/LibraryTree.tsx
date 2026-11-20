@@ -31,6 +31,8 @@ export interface LibraryTreeProps {
   cursor: string | null;
   onCursor(path: string | null): void;
   editing: string | null;
+  /** The rename is of a File just created: Enter goes on to its editor. */
+  editingNew?: boolean;
   onEditing(path: string | null): void;
   pendingTrash: PendingTrash | null;
   onConfirmTrash(): void;
@@ -64,6 +66,7 @@ export function LibraryTree({
   cursor,
   onCursor,
   editing,
+  editingNew = false,
   onEditing,
   pendingTrash,
   onConfirmTrash,
@@ -341,9 +344,10 @@ export function LibraryTree({
                 <RenameField
                   entry={e}
                   onSubmit={(name) => onRename(e.path, name)}
-                  onClose={(refocus) => {
+                  onClose={(how) => {
                     onEditing(null);
-                    if (refocus) focusTree();
+                    if (how === "enter" && editingNew) onLeave();
+                    else if (how !== "blur") focusTree();
                   }}
                 />
               ) : (
@@ -446,8 +450,8 @@ function RenameField({
 }: {
   entry: Entry;
   onSubmit(name: string): Promise<string | null>;
-  /** `refocus`: give the keyboard back to the tree. */
-  onClose(refocus: boolean): void;
+  /** How it closed: by Enter, by Escape, or by losing focus. */
+  onClose(how: "enter" | "escape" | "blur"): void;
 }) {
   const [split] = useState(() => splitName(entry.name, entry.isDir));
   const [value, setValue] = useState(split.stem);
@@ -460,10 +464,10 @@ function RenameField({
   const busy = useRef(false);
   const done = useRef(false);
 
-  const close = (refocus: boolean) => {
+  const close = (how: "enter" | "escape" | "blur") => {
     if (done.current) return;
     done.current = true;
-    onClose(refocus);
+    onClose(how);
   };
 
   /** The full new name, or null when nothing would change. */
@@ -483,12 +487,13 @@ function RenameField({
   const submit = async (fromKey: boolean) => {
     if (busy.current || done.current) return;
     const name = target();
-    if (name === null) return close(fromKey);
+    const how = fromKey ? "enter" : "blur";
+    if (name === null) return close(how);
     busy.current = true;
     const result = await onSubmit(name);
     busy.current = false;
     if (done.current) return;
-    if (!result) return close(fromKey);
+    if (!result) return close(how);
     const r = input.current?.getBoundingClientRect();
     setError({ text: result, left: r?.left ?? 0, top: (r?.bottom ?? 0) + 6 });
     if (fromKey) input.current?.focus();
@@ -501,7 +506,7 @@ function RenameField({
       void submit(true);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      close(true);
+      close("escape");
     }
   };
 
