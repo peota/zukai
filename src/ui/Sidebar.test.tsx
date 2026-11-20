@@ -575,7 +575,9 @@ describe("Sidebar", () => {
       },
     });
     const show = () =>
-      rerender(<Sidebar {...props({ ...pr, tree: t, rows: visibleRows(t) })} />);
+      rerender(
+        <Sidebar {...props({ ...pr, tree: t, rows: visibleRows(t) })} />,
+      );
 
     fireEvent.contextMenu(row("Ideas"));
     await act(async () =>
@@ -902,6 +904,134 @@ describe("Sidebar", () => {
   it("renders nothing when closed", () => {
     const { container } = setup({ open: false });
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("Sidebar multi-select", () => {
+  const selected = () =>
+    screen
+      .getAllByRole("treeitem")
+      .filter((el) => el.getAttribute("aria-selected") === "true")
+      .map((el) => el.getAttribute("aria-label"));
+
+  it("Ctrl+click toggles rows without opening them", () => {
+    const { p } = setup();
+    fireEvent.click(row("notes.md"));
+    expect(p.onOpen).toHaveBeenCalledTimes(1);
+    fireEvent.click(row("pic.png"), { ctrlKey: true });
+    expect(selected()).toEqual(["notes.md", "pic.png"]);
+    fireEvent.click(row("todo.txt"), { metaKey: true });
+    expect(selected()).toEqual(["notes.md", "pic.png", "todo.txt"]);
+    fireEvent.click(row("pic.png"), { ctrlKey: true });
+    expect(selected()).toEqual(["notes.md", "todo.txt"]);
+    expect(p.onOpen).toHaveBeenCalledTimes(1);
+
+    // A plain click clears it and opens.
+    fireEvent.click(row("data.json"));
+    expect(selected()).toEqual(["data.json"]);
+    expect(p.onOpen).toHaveBeenCalledTimes(2);
+  });
+
+  it("Shift+click selects a range, skipping disabled rows", () => {
+    setup();
+    fireEvent.click(row("Roadmap"));
+    fireEvent.click(row("todo.txt"), { shiftKey: true });
+    // "elsewhere" (a link outside) and "bad." can't be acted on.
+    expect(selected()).toEqual(["Roadmap", "todo.txt"]);
+    // The anchor stays: a second Shift+click re-ranges from it.
+    fireEvent.click(row("pic.png"), { shiftKey: true });
+    expect(selected()).toEqual(["pic.png", "data.json", "Roadmap"]);
+  });
+
+  it("Shift+arrows extend, Esc clears, Enter opens the Files", () => {
+    const { p } = setup();
+    const t = tree();
+    fireEvent.click(row("notes.md"));
+    fireEvent.keyDown(t, { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(t, { key: "ArrowDown", shiftKey: true });
+    expect(selected()).toEqual(["notes.md", "flow.excalidraw", "pic.png"]);
+    key(t, "Enter");
+    expect(p.onOpen).toHaveBeenCalledWith(FLOW);
+    expect(p.onOpen).toHaveBeenCalledWith(PIC);
+    key(t, "Escape");
+    expect(p.onLeave).not.toHaveBeenCalled();
+    expect(selected()).toEqual(["pic.png"]);
+    key(t, "ArrowDown");
+    expect(selected()).toEqual(["data.json"]);
+  });
+
+  it("Delete asks once, then trashes every selected item", () => {
+    const { p } = setup();
+    fireEvent.click(row("Ideas"));
+    fireEvent.click(row("pic.png"), { ctrlKey: true });
+    fireEvent.click(row("todo.txt"), { ctrlKey: true });
+    key(tree(), "Delete");
+    // pic.png goes with its folder.
+    expect(screen.getByText("Move 2 items to the Trash?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Move to Trash" }));
+    expect(p.onTrash).toHaveBeenCalledTimes(2);
+    expect(p.onTrash).toHaveBeenCalledWith(IDEAS.path);
+    expect(p.onTrash).toHaveBeenCalledWith(TODO.path);
+  });
+
+  it("right-click on the selection shows its own menu", () => {
+    const { p } = setup();
+    fireEvent.click(row("notes.md"));
+    fireEvent.click(row("Roadmap"), { ctrlKey: true });
+    fireEvent.contextMenu(row("Roadmap"));
+    expect(
+      screen.queryByRole("menuitem", { name: "Rename" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy paths" }));
+    expect(p.onCopyPath).toHaveBeenCalledWith(`${NOTES.path}\n${ROADMAP.path}`);
+
+    // Right-click outside the selection drops it.
+    fireEvent.contextMenu(row("todo.txt"));
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeVisible();
+    expect(selected()).toEqual(["todo.txt"]);
+  });
+
+  it("dragging a selected row moves the whole selection", () => {
+    const { p } = setup();
+    layOut();
+    fireEvent.click(row("notes.md"));
+    fireEvent.click(row("todo.txt"), { ctrlKey: true });
+    const src = row("todo.txt");
+    fireEvent.pointerDown(src, {
+      button: 0,
+      pointerId: 1,
+      clientY: yOf("todo.txt"),
+    });
+    fireEvent.pointerMove(src, {
+      pointerId: 1,
+      buttons: 1,
+      clientY: yOf("Roadmap"),
+    });
+    fireEvent.pointerUp(src, { pointerId: 1, clientY: yOf("Roadmap") });
+    expect(p.onMove).toHaveBeenCalledTimes(2);
+    expect(p.onMove).toHaveBeenCalledWith(NOTES.path, ROADMAP.path);
+    expect(p.onMove).toHaveBeenCalledWith(TODO.path, ROADMAP.path);
+  });
+
+  it("the selection can't be dropped into one of its own folders", () => {
+    const { p } = setup();
+    layOut();
+    fireEvent.click(row("Ideas"));
+    fireEvent.click(row("todo.txt"), { ctrlKey: true });
+    const src = row("todo.txt");
+    fireEvent.pointerDown(src, {
+      button: 0,
+      pointerId: 1,
+      clientY: yOf("todo.txt"),
+    });
+    fireEvent.pointerMove(src, {
+      pointerId: 1,
+      buttons: 1,
+      clientY: yOf("Ideas"),
+    });
+    expect(row("Ideas")).not.toHaveAttribute("data-drop-target");
+    fireEvent.pointerUp(src, { pointerId: 1, clientY: yOf("Ideas") });
+    expect(p.onMove).not.toHaveBeenCalled();
   });
 });
 

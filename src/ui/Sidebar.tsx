@@ -14,10 +14,16 @@ import {
 } from "./icons";
 import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
 import { Pinned, TabList, type PinnedItem } from "./Pinned";
-import { LibraryTree, type PendingTrash } from "./LibraryTree";
+import { LibraryTree, type PendingTrash, type SelectHow } from "./LibraryTree";
 import { Menu, type MenuItem } from "./Menu";
-import { entryBlocked, revealLabel } from "./libraryEntries";
-import { useFolderDrag } from "./useFolderDrag";
+import {
+  entryBlocked,
+  isUnder,
+  parentOf,
+  revealLabel,
+  sameDir,
+} from "./libraryEntries";
+import { draggedEntries, useFolderDrag } from "./useFolderDrag";
 import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -123,6 +129,20 @@ interface Cursor {
   index: number;
 }
 
+/** Rows selected together, and where a Shift range starts from. */
+interface Selection {
+  paths: ReadonlySet<string>;
+  anchor: string | null;
+}
+const NO_SELECTION: Selection = { paths: new Set(), anchor: null };
+
+/** Drops entries inside another one listed: moving or trashing it takes them. */
+function topmost(entries: Entry[]): Entry[] {
+  return entries.filter(
+    (e) => !entries.some((o) => o !== e && isUnder(e.path, o.path)),
+  );
+}
+
 /** The Library sidebar, layout A (spec 5.2). */
 export function Sidebar(props: SidebarProps) {
   if (!props.open) return null;
@@ -189,6 +209,7 @@ function SidebarPanel({
     newFile?: boolean;
   } | null>(null);
   const [pendingState, setPendingTrash] = useState<PendingTrash | null>(null);
+  const [sel, setSel] = useState<Selection>(NO_SELECTION);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const closeMenu = useCallback(() => {
@@ -208,6 +229,14 @@ function SidebarPanel({
   if (rows !== seenRows) {
     setSeenRows(rows);
     if (pendingState && indexOf(pendingState.path) < 0) setPendingTrash(null);
+    // Rows that went away (trashed, moved, hidden) leave the selection.
+    if (sel.paths.size > 0) {
+      const shown = new Set(rows.map((r) => r.entry.path));
+      const kept = [...sel.paths].filter((p) => shown.has(p));
+      if (kept.length !== sel.paths.size) {
+        setSel({ paths: new Set(kept), anchor: sel.anchor });
+      }
+    }
     if (
       editingState &&
       editingState.rows !== rows &&
@@ -238,6 +267,67 @@ function SidebarPanel({
   const pendingTrash =
     pendingState && indexOf(pendingState.path) >= 0 ? pendingState : null;
 
+  /** A row that can join a selection: not a heading, not blocked. */
+  const selectable = (r: Row | undefined): r is Row =>
+    r !== undefined &&
+    r.heading === undefined &&
+    blockedReason(r.entry) === null;
+  // In row order, and only rows still shown, even for the render above.
+  const selection = useMemo(
+    () =>
+      sel.paths.size === 0
+        ? []
+        : rows.filter((r) => sel.paths.has(r.entry.path)).map((r) => r.entry),
+    [rows, sel.paths],
+  );
+  const selectedSet = useMemo(
+    () => new Set(selection.map((e) => e.path)),
+    [selection],
+  );
+  const clearSelection = () => {
+    if (sel.paths.size > 0 || sel.anchor !== null) setSel(NO_SELECTION);
+  };
+
+  const select = (path: string, how: SelectHow) => {
+    setCursor(path);
+    if (how === "only") return setSel({ paths: new Set(), anchor: path });
+    if (how === "all") {
+      return setSel({
+        paths: new Set(rows.filter(selectable).map((r) => r.entry.path)),
+        anchor: sel.anchor ?? path,
+      });
+    }
+    if (how === "toggle") {
+      // The first Mod+click adds to the row the cursor is already on.
+      const paths = new Set(
+        selection.length > 0
+          ? selection.map((e) => e.path)
+          : cursor !== null && selectable(rows[indexOf(cursor)])
+            ? [cursor]
+            : [],
+      );
+      if (paths.has(path)) paths.delete(path);
+      else if (selectable(rows[indexOf(path)])) paths.add(path);
+      return setSel({ paths, anchor: path });
+    }
+    // A range runs from the anchor (else the cursor) to `path`.
+    const from = [sel.anchor, cursor]
+      .map((p) => (p === null ? -1 : indexOf(p)))
+      .find((i) => i >= 0);
+    const to = indexOf(path);
+    if (from === undefined || to < 0) {
+      return setSel({ paths: new Set(), anchor: path });
+    }
+    const [a, b] = from <= to ? [from, to] : [to, from];
+    const paths = new Set(
+      rows
+        .slice(a, b + 1)
+        .filter(selectable)
+        .map((r) => r.entry.path),
+    );
+    setSel({ paths, anchor: rows[from].entry.path });
+  };
+
   const openMenu = (m: OpenMenu, from: HTMLElement | null) => {
     returnFocus.current = from;
     setMenu(m);
@@ -257,10 +347,19 @@ function SidebarPanel({
     blocked: (e) => blockedReason(e) !== null,
     fixed: (e) => addedOf(e.path) !== undefined,
     onDrop: (source, dest) => {
-      if (source.kind === "entry") onMove(source.entry.path, dest);
-      else onScratchpadMove(source.id, dest);
+      if (source.kind !== "entry") return onScratchpadMove(source.id, dest);
+      for (const e of draggedEntries(source)) {
+        if (!sameDir(dest, parentOf(e.path))) onMove(e.path, dest);
+      }
+      if (source.group) clearSelection();
     },
   });
+
+  /** A selected row drags the whole selection along. */
+  const dragGroup = (entry: Entry): Entry[] | undefined =>
+    selection.length > 1 && selectedSet.has(entry.path)
+      ? topmost(selection)
+      : undefined;
 
   const create = async (parent: string, what: NewItem) => {
     const made = await onCreate(parent, what);
@@ -271,6 +370,19 @@ function SidebarPanel({
   };
 
   const requestTrash = (e: Entry) => {
+    // With several rows selected, Delete takes them all, after asking.
+    if (selection.length > 1) {
+      const items = topmost(selection);
+      const at = selectedSet.has(e.path) ? e.path : items[0].path;
+      setPendingTrash({
+        path: at,
+        name: "",
+        count: null,
+        paths: items.map((i) => i.path),
+      });
+      return;
+    }
+    if (selection.length === 1) e = selection[0];
     if (blockedReason(e)) return;
     if (!e.isDir) return onTrash(e.path);
     // Always ask for a folder: listings hide dotfiles, so one that looks
@@ -376,8 +488,41 @@ function SidebarPanel({
     ];
   };
 
+  const openSelected = () => {
+    for (const e of selection) if (!e.isDir) onOpen(e);
+  };
+
+  /** The menu of several selected rows. */
+  const selectionItems = (): MenuItem[] => {
+    const files = selection.filter((e) => !e.isDir).length;
+    return [
+      ...(files > 0
+        ? [
+            {
+              label: files === 1 ? "Open" : `Open ${files} files`,
+              onSelect: openSelected,
+            },
+          ]
+        : []),
+      {
+        label: `Delete ${selection.length} items`,
+        onSelect: () => requestTrash(selection[0]),
+      },
+      {
+        label: "Copy paths",
+        separated: true,
+        onSelect: () => onCopyPath(selection.map((e) => e.path).join("\n")),
+      },
+    ];
+  };
+
   const showTreeMenu = (entry: Entry | null, x: number, y: number) => {
     const from = treeRef.current;
+    if (entry && selection.length > 1 && selectedSet.has(entry.path)) {
+      const label = `${selection.length} items`;
+      return openMenu({ label, x, y, items: selectionItems() }, from);
+    }
+    clearSelection();
     const heading = entry ? addedOf(entry.path) : undefined;
     if (entry) {
       const items = heading ? headingItems(heading) : entryItems(entry);
@@ -500,6 +645,9 @@ function SidebarPanel({
       blocked={blockedReason}
       cursor={cursor}
       onCursor={setCursor}
+      selected={selectedSet}
+      onSelect={select}
+      onOpenSelected={openSelected}
       editing={editing}
       editingNew={editing !== null && editingState?.newFile === true}
       onEditing={setEditing}
@@ -507,7 +655,10 @@ function SidebarPanel({
       onConfirmTrash={() => {
         setPendingTrash(null);
         if (!pendingTrash) return;
-        if (pendingTrash.count === null) onTrash(pendingTrash.path);
+        if (pendingTrash.paths) {
+          clearSelection();
+          for (const p of pendingTrash.paths) onTrash(p);
+        } else if (pendingTrash.count === null) onTrash(pendingTrash.path);
         else onTrash(pendingTrash.path, pendingTrash.count);
       }}
       onCancelTrash={() => setPendingTrash(null)}
@@ -519,7 +670,9 @@ function SidebarPanel({
       onRequestTrash={requestTrash}
       onLeave={onLeave}
       onContextMenu={showTreeMenu}
-      dragHandlers={(entry) => drag.handlers({ kind: "entry", entry })}
+      dragHandlers={(entry) =>
+        drag.handlers({ kind: "entry", entry, group: dragGroup(entry) })
+      }
       swallowClick={drag.swallowClick}
     />
   );

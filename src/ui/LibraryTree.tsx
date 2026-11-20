@@ -16,7 +16,12 @@ export interface PendingTrash {
   name: string;
   /** Items listed in it, or null when it hasn't been listed. */
   count: number | null;
+  /** A delete of several selected items; the question shows under `path`. */
+  paths?: string[];
 }
+
+/** How a click or key changes the selection. */
+export type SelectHow = "only" | "toggle" | "range" | "all";
 
 export interface LibraryTreeProps {
   treeRef: RefObject<HTMLDivElement | null>;
@@ -30,6 +35,16 @@ export interface LibraryTreeProps {
   /** The keyboard cursor. */
   cursor: string | null;
   onCursor(path: string | null): void;
+  /** The rows selected together (Mod+click, Shift+click), or none. */
+  selected: ReadonlySet<string>;
+  /**
+   * Moves the cursor to `path` and changes the selection: "only" clears it,
+   * "toggle" (Mod+click) adds or removes the row, "range" (Shift) selects
+   * from the anchor to it, "all" (Mod+A) selects every row.
+   */
+  onSelect(path: string, how: SelectHow): void;
+  /** Enter on a selection: opens its Files. */
+  onOpenSelected(): void;
   editing: string | null;
   /** The rename is of a File just created: Enter goes on to its editor. */
   editingNew?: boolean;
@@ -65,6 +80,9 @@ export function LibraryTree({
   blocked: blockedOf,
   cursor,
   onCursor,
+  selected,
+  onSelect,
+  onOpenSelected,
   editing,
   editingNew = false,
   onEditing,
@@ -85,10 +103,13 @@ export function LibraryTree({
   const index = rows.findIndex((r) => r.entry.path === cursor);
   const focusTree = () => treeRef.current?.focus({ preventScroll: true });
 
-  const moveTo = (i: number) => {
+  const multi = selected.size > 0;
+
+  /** Moves the cursor; Shift extends the selection, else it's cleared. */
+  const moveTo = (i: number, extend = false) => {
     const r = rows[Math.max(0, Math.min(rows.length - 1, i))];
     if (!r) return;
-    onCursor(r.entry.path);
+    onSelect(r.entry.path, extend ? "range" : "only");
     treeRef.current
       ?.querySelector(`[data-row="${rows.indexOf(r)}"]`)
       ?.scrollIntoView?.({ block: "nearest" });
@@ -113,18 +134,25 @@ export function LibraryTree({
     const blocked = r ? rowBlocked(r) : true;
     // An added folder's heading is never renamed or trashed.
     const fixed = blocked || r?.heading !== undefined;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.altKey && e.key.toLowerCase() === "a") {
+      if (r) onSelect(r.entry.path, "all");
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     switch (e.key) {
       case "ArrowDown":
-        moveTo(index < 0 ? 0 : index + 1);
+        moveTo(index < 0 ? 0 : index + 1, e.shiftKey);
         break;
       case "ArrowUp":
-        moveTo(index < 0 ? 0 : index - 1);
+        moveTo(index < 0 ? 0 : index - 1, e.shiftKey);
         break;
       case "Home":
-        moveTo(0);
+        moveTo(0, e.shiftKey);
         break;
       case "End":
-        moveTo(rows.length - 1);
+        moveTo(rows.length - 1, e.shiftKey);
         break;
       case "ArrowRight":
         if (!r || !entry?.isDir || blocked) break;
@@ -149,22 +177,36 @@ export function LibraryTree({
         break;
       }
       case "Enter":
-        if (r) activate(r);
+        if (multi) onOpenSelected();
+        else if (r) activate(r);
         break;
       case "F2":
         if (entry && !fixed) onEditing(entry.path);
         break;
       case "Delete":
-        if (entry && !fixed) onRequestTrash(entry);
+        // With a selection, the selection goes (the cursor row aside).
+        if (multi && entry) onRequestTrash(entry);
+        else if (entry && !fixed) onRequestTrash(entry);
         break;
       case "Escape":
-        onLeave();
+        if (multi && r) onSelect(r.entry.path, "only");
+        else onLeave();
         break;
       default:
         return;
     }
     e.preventDefault();
     e.stopPropagation();
+  };
+
+  /** A click opens; Mod+click and Shift+click only change the selection. */
+  const click = (ev: ReactMouseEvent, r: Row) => {
+    if (swallowClick()) return;
+    const path = r.entry.path;
+    if (ev.shiftKey) return onSelect(path, "range");
+    if (ev.ctrlKey || ev.metaKey) return onSelect(path, "toggle");
+    onSelect(path, "only");
+    activate(r);
   };
 
   const openMenu = (e: ReactMouseEvent, entry: Entry | null) => {
@@ -188,6 +230,7 @@ export function LibraryTree({
       role="tree"
       aria-label="Library"
       tabIndex={0}
+      aria-multiselectable="true"
       data-z-library-tree=""
       aria-activedescendant={index >= 0 ? `z-lib-row-${index}` : undefined}
       onKeyDown={onKeyDown}
@@ -208,6 +251,7 @@ export function LibraryTree({
         const open = e.isDir && (searching || isOpen(e.path));
         const active = e.path === activePath;
         const isCursor = i === index;
+        const isSelected = selected.has(e.path);
         const target = dropTarget === e.path;
         const copyHint = target && dropCopy && (
           <span
@@ -232,15 +276,11 @@ export function LibraryTree({
               aria-label={e.name}
               aria-level={r.depth + 1}
               aria-expanded={missing ? false : open}
-              aria-selected={isCursor}
+              aria-selected={multi ? false : isCursor}
               aria-disabled={missing ? "true" : undefined}
               title={e.path}
               style={{ paddingLeft: 8 }}
-              onClick={() => {
-                if (swallowClick()) return;
-                onCursor(e.path);
-                activate(r);
-              }}
+              onClick={(ev) => click(ev, r)}
               onContextMenu={(ev) => openMenu(ev, e)}
               {...dragHandlers(e)}
               className={
@@ -300,16 +340,12 @@ export function LibraryTree({
               aria-label={e.name}
               aria-level={r.depth + 1}
               aria-expanded={e.isDir ? open : undefined}
-              aria-selected={isCursor}
+              aria-selected={multi ? isSelected : isCursor}
               aria-current={active ? "true" : undefined}
               aria-disabled={blocked ? "true" : undefined}
               title={blocked ?? e.path}
               style={{ paddingLeft: 8 + r.depth * 16 }}
-              onClick={() => {
-                if (swallowClick()) return;
-                onCursor(e.path);
-                activate(r);
-              }}
+              onClick={(ev) => click(ev, r)}
               onContextMenu={(ev) => openMenu(ev, e)}
               {...dragHandlers(e)}
               className={
@@ -317,9 +353,11 @@ export function LibraryTree({
                 (blocked ? "text-faint " : "text-text ") +
                 (target
                   ? "bg-row-sel shadow-[inset_0_0_0_1px_var(--z-accent)] "
-                  : active
-                    ? "bg-row-sel "
-                    : "hover:bg-row-hover ") +
+                  : isSelected
+                    ? "bg-accent-soft "
+                    : active
+                      ? "bg-row-sel "
+                      : "hover:bg-row-hover ") +
                 (isCursor
                   ? "group-focus/tree:shadow-[inset_0_0_0_1px_var(--z-accent-soft)]"
                   : "")
@@ -382,6 +420,7 @@ export function LibraryTree({
 }
 
 function trashQuestion(p: PendingTrash): string {
+  if (p.paths) return `Move ${p.paths.length} items to the Trash?`;
   if (p.count === null) {
     return `Move "${p.name}" and everything in it to the Trash?`;
   }
