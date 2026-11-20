@@ -390,8 +390,10 @@ fn read_loop(mut reader: Box<dyn Read + Send>, output: &Output) {
     let mut chunk = vec![0u8; 16 * 1024];
     loop {
         let n = match reader.read(&mut chunk) {
-            Ok(0) | Err(_) => return,
+            Ok(0) => return,
             Ok(n) => n,
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return,
         };
         let mut pending = output.pending.lock().unwrap();
         while pending.buf.len() >= HIGH_WATER && !pending.closed {
@@ -809,6 +811,37 @@ pub(crate) mod tests {
             "took {:?}",
             killed.elapsed()
         );
+    }
+
+    /// Gives each of its reads in turn, then end of file.
+    struct Reads(std::collections::VecDeque<std::io::Result<&'static [u8]>>);
+
+    impl Read for Reads {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            match self.0.pop_front() {
+                Some(Ok(data)) => {
+                    out[..data.len()].copy_from_slice(data);
+                    Ok(data.len())
+                }
+                Some(Err(err)) => Err(err),
+                None => Ok(0),
+            }
+        }
+    }
+
+    #[test]
+    fn an_interrupted_read_is_retried() {
+        let output = Output::default();
+        let reads = Reads(
+            [
+                Ok(&b"before "[..]),
+                Err(std::io::ErrorKind::Interrupted.into()),
+                Ok(&b"after"[..]),
+            ]
+            .into(),
+        );
+        read_loop(Box::new(reads), &output);
+        assert_eq!(output.pending.lock().unwrap().buf, b"before after");
     }
 
     #[test]
