@@ -35,30 +35,69 @@ export function pinnedItems(
   ];
 }
 
-export interface PinnedProps {
+/** How many Files the sidebar's Recent list shows. */
+export const RECENT_SHOWN = 8;
+
+/**
+ * The Recent list: File Tabs by `recent` (ids, newest first), open or in
+ * Recently Closed, one per File, without pinned ones (they're listed above).
+ */
+export function recentItems(
+  recent: readonly string[],
+  tabs: readonly TabState[],
+  closed: readonly ClosedEntry[],
+  keyOf: (path: string) => string,
+): PinnedItem[] {
+  const open = new Map(tabs.map((t) => [t.id, t]));
+  const shut = new Map(closed.map((e) => [e.tab.id, e.tab]));
+  const seen = new Set<string>();
+  const out: PinnedItem[] = [];
+  for (const id of recent) {
+    const t = open.get(id) ?? shut.get(id);
+    if (!t?.file || t.pinned) continue;
+    const key = keyOf(t.file.path);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id, title: t.title, icon: iconOf(t), open: open.has(id) });
+    if (out.length === RECENT_SHOWN) break;
+  }
+  return out;
+}
+
+export interface TabListProps {
+  /** Shown as the heading, in capitals, and as the list's name. */
+  label: string;
   items: PinnedItem[];
   activeId: string | null;
   onOpen(id: string): void;
   /** `from` gets the keyboard back when the menu closes. */
-  onContextMenu(id: string, x: number, y: number, from: HTMLElement): void;
+  onContextMenu?(id: string, x: number, y: number, from: HTMLElement): void;
 }
 
-/** Pinned Tabs, open or closed, at the top of the sidebar. */
-export function Pinned({
+export type PinnedProps = Omit<TabListProps, "label">;
+
+/** Pinned Tabs, open or closed, near the top of the sidebar. */
+export const Pinned = (props: PinnedProps) => (
+  <TabList label="Pinned" {...props} />
+);
+
+/** A sidebar list of Tabs, open or closed: Pinned and Recent. */
+export function TabList({
+  label,
   items,
   activeId,
   onOpen,
   onContextMenu,
-}: PinnedProps) {
+}: TabListProps) {
   if (items.length === 0) return null;
   // One stop in the Tab order: the active pin, else the first.
   const stop = items.some((i) => i.id === activeId) ? activeId : items[0].id;
   return (
     <section className="flex max-h-[35%] min-h-0 shrink-0 flex-col">
       <div className="px-2 pt-1 pb-1 text-[11px] font-semibold tracking-[0.06em] text-faint">
-        PINNED
+        {label.toUpperCase()}
       </div>
-      <ul aria-label="Pinned" className="min-h-0 overflow-y-auto pb-1">
+      <ul aria-label={label} className="min-h-0 overflow-y-auto pb-1">
         {items.map((item) => {
           const active = item.open && item.id === activeId;
           return (
@@ -85,6 +124,7 @@ export function Pinned({
               }}
               onClick={() => onOpen(item.id)}
               onContextMenu={(e) => {
+                if (!onContextMenu) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const li = e.currentTarget;

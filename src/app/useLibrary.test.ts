@@ -155,7 +155,12 @@ const sessionJson = (
     toSessionFile({ tabs, activeId: tabs[0].id, closed }, sidebar),
   );
 
-const OPEN: SidebarState = { open: true, width: 240, expanded: [PROJ] };
+const OPEN: SidebarState = {
+  open: true,
+  width: 240,
+  expanded: [PROJ],
+  recent: [],
+};
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -997,11 +1002,13 @@ describe("sidebar state", () => {
       open: true,
       width: 9999,
       expanded: [PROJ],
+      recent: [],
     });
     expect(result.current.sidebar).toEqual({
       open: true,
       width: 480,
       expanded: [PROJ],
+      recent: [],
     });
     act(() => result.current.setSidebarWidth(300));
     await settle();
@@ -1009,6 +1016,7 @@ describe("sidebar state", () => {
       open: true,
       width: 300,
       expanded: [PROJ],
+      recent: [],
     });
   });
 
@@ -1022,6 +1030,7 @@ describe("sidebar state", () => {
       open: false,
       width: 240,
       expanded: [],
+      recent: [],
     });
     expect(l.libraryUseDefault).not.toHaveBeenCalled();
     act(() => result.current.toggleSidebar());

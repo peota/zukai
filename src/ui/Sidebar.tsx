@@ -5,7 +5,7 @@ import type { Row, TreeState } from "../library/tree";
 import { detectPlatform, type Platform } from "../app/shortcuts";
 import { MoreIcon, PlusIcon, SearchIcon } from "./icons";
 import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
-import { Pinned, type PinnedItem } from "./Pinned";
+import { Pinned, TabList, type PinnedItem } from "./Pinned";
 import { LibraryTree, type PendingTrash } from "./LibraryTree";
 import { Menu, type MenuItem } from "./Menu";
 import { entryBlocked, revealLabel } from "./libraryEntries";
@@ -66,6 +66,10 @@ export interface SidebarProps {
   pinned: PinnedItem[];
   /** Activates an open pinned Tab, or reopens a closed one. */
   onPinnedOpen(id: string): void;
+  /** Files last viewed, newest first. */
+  recent: PinnedItem[];
+  /** Activates an open recent Tab, or reopens a closed one. */
+  onRecentOpen(id: string): void;
   onUnpin(id: string): void;
   /** Esc: give the keyboard back to the editor. */
   onLeave(): void;
@@ -140,6 +144,8 @@ function SidebarPanel({
   onScratchpadMove,
   pinned,
   onPinnedOpen,
+  recent,
+  onRecentOpen,
   onUnpin,
   onLeave,
   added,
@@ -519,6 +525,13 @@ function SidebarPanel({
           className="min-w-0 flex-1 bg-transparent text-text outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:hidden"
         />
       </label>
+
+      <TabList
+        label="Recent"
+        items={recent}
+        activeId={activeId}
+        onOpen={onRecentOpen}
+      />
 
       <Pinned
         items={pinned}

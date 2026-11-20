@@ -567,11 +567,21 @@ describe("session v3 migration and sidebar", () => {
       "text",
     ]);
     expect(r?.closed[0].tab.kind).toBe("canvas");
-    expect(r?.sidebar).toEqual({ open: false, width: 260, expanded: [] });
+    expect(r?.sidebar).toEqual({
+      open: false,
+      width: 260,
+      expanded: [],
+      recent: [],
+    });
   });
 
   it("v3RoundTripKeepsSidebarAndKinds", () => {
-    const sidebar = { open: true, width: 300, expanded: ["a", "b/c"] };
+    const sidebar = {
+      open: true,
+      width: 300,
+      expanded: ["a", "b/c"],
+      recent: ["k"],
+    };
     const w: WorkspaceState = {
       tabs: [newTabState("k", "canvas"), newTabState("a")],
       activeId: "k",

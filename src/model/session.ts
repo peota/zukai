@@ -30,6 +30,7 @@ export const DEFAULT_SIDEBAR: Readonly<SidebarState> = Object.freeze({
   open: false,
   width: 260,
   expanded: [],
+  recent: [],
 });
 
 /** The editor's text size in px (Mod+= / Mod+- / Mod+wheel change it). */
@@ -46,6 +47,7 @@ export function clampFontSize(px: number): number {
 export const defaultSidebar = (): SidebarState => ({
   ...DEFAULT_SIDEBAR,
   expanded: [],
+  recent: [],
 });
 
 /** A sidebar width in whole pixels within 180–480. */
@@ -167,6 +169,9 @@ function parseSidebar(v: unknown): SidebarState {
     width: isNum(v.width) ? clampSidebarWidth(v.width) : DEFAULT_SIDEBAR.width,
     expanded: Array.isArray(v.expanded)
       ? v.expanded.filter((x): x is string => typeof x === "string")
+      : [],
+    recent: Array.isArray(v.recent)
+      ? v.recent.filter((x): x is string => typeof x === "string")
       : [],
   };
 }

@@ -46,6 +46,8 @@ export interface SidebarState {
   width: number;
   /** Folder keys expanded in the Library tree. */
   expanded: string[];
+  /** File Tab ids last viewed, newest first: the sidebar's Recent list. */
+  recent: string[];
 }
 
 /** Where a Canvas Tab was looking (Excalidraw's scroll and zoom). */
