@@ -4,6 +4,7 @@ import type { AddedState, Entry } from "../library/api";
 import type { Row, TreeState } from "../library/tree";
 import { detectPlatform, type Platform } from "../app/shortcuts";
 import {
+  CollapseAllIcon,
   MoreIcon,
   NewCanvasIcon,
   NewFileIcon,
@@ -54,6 +55,8 @@ export interface SidebarProps {
   activeId: string | null;
   onOpen(entry: Entry): void;
   onToggle(dir: string): void;
+  /** Closes every expanded folder. */
+  onCollapseAll(): void;
   /** May resolve to the new item's path: its rename field then opens. */
   onCreate(parent: string, what: NewItem): void | Promise<string | null>;
   /** Resolves to an error message to show inline, or null on success. */
@@ -138,6 +141,7 @@ function SidebarPanel({
   activeId,
   onOpen,
   onToggle,
+  onCollapseAll,
   onCreate,
   onRename,
   onMove,
@@ -560,6 +564,18 @@ function SidebarPanel({
               {a.icon}
             </button>
           ))}
+        {available && (
+          <button
+            type="button"
+            aria-label="Collapse all"
+            title="Collapse all"
+            disabled={tree.expanded.size === 0}
+            onClick={onCollapseAll}
+            className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint"
+          >
+            <CollapseAllIcon />
+          </button>
+        )}
         <button
           ref={moreRef}
           type="button"

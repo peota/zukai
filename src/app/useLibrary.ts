@@ -38,6 +38,7 @@ import {
   rewritePrefix,
   rootOf,
   setChildren,
+  collapseAll as collapseAllDirs,
   toggle as toggleDir,
   visibleRows,
   type Row,
@@ -109,6 +110,8 @@ export interface LibraryApi {
   /** A folder toggles; a File opens in a Tab (or its Tab activates). */
   open(entry: Entry): Promise<void>;
   toggle(dir: string): void;
+  /** Closes every expanded folder. */
+  collapseAll(): void;
   /** Resolves to the new item's path once its folder's listing shows it. */
   create(parent: string, what: NewItem): Promise<string | null>;
   /** Resolves to an error message, or null when renamed. */
@@ -627,6 +630,11 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
 
   // --- Operations ----------------------------------------------------------
 
+  const collapseAll = useCallback(
+    () => setTree(collapseAllDirs),
+    [setTree],
+  );
+
   const toggle = useCallback(
     (dir: string) => {
       const t = treeRef.current;
@@ -1066,6 +1074,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     activePath,
     open: openEntry,
     toggle,
+    collapseAll,
     create,
     rename,
     move,

@@ -24,6 +24,7 @@ import {
   Database,
   SquareTerminal,
   MoreHorizontal,
+  ChevronsDownUp,
   NotebookPen,
   PanelLeft,
   PenTool,
@@ -227,6 +228,11 @@ export function NewCanvasIcon() {
       />
     </span>
   );
+}
+
+/** The Library heading's Collapse all. */
+export function CollapseAllIcon() {
+  return <ChevronsDownUp size={15} strokeWidth={1.8} aria-hidden="true" />;
 }
 
 /** ⋯: a heading's menu. */

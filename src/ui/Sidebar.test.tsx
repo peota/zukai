@@ -64,6 +64,7 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     activeId: "f1",
     onOpen: vi.fn(),
     onToggle: vi.fn(),
+    onCollapseAll: vi.fn(),
     onCreate: vi.fn(),
     onRename: vi.fn(async () => null),
     onMove: vi.fn(),
@@ -120,6 +121,17 @@ const yOf = (name: string) =>
   screen.getAllByRole("treeitem").findIndex((el) => el === row(name)) * 26 + 13;
 
 describe("Sidebar", () => {
+  it("collapse_all_button", () => {
+    const { p } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    expect(p.onCollapseAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("collapse_all_disabled_with_nothing_open", () => {
+    setup({ tree: makeTree({ expanded: new Set() }) });
+    expect(screen.getByRole("button", { name: "Collapse all" })).toBeDisabled();
+  });
+
   it("rendersTreeWithIconsAndScratchpads", () => {
     const { p } = setup();
     expect(screen.getByPlaceholderText("Search Library")).toBeInTheDocument();
