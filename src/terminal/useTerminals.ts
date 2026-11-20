@@ -9,26 +9,39 @@ import { initialTermState, termReducer } from "./model";
 
 type Sink = (e: TerminalEvent) => void;
 
+/** The most early output kept per terminal, in characters. */
+const EARLY_LOG_LIMIT = 256 * 1024;
+
 /**
  * The open terminals and the panel's state. A shell's output reaches its view
- * through `register`; whatever arrives before the view registers (the prompt,
- * ConPTY's cursor-position query) is kept and replayed then.
+ * through `register`. Until the first input, each terminal's output (the
+ * prompt, ConPTY's cursor-position query) is also logged and replayed to
+ * every view that registers, so a view that mounts twice (StrictMode) or
+ * after its first output still sees it all, once.
  */
 export function useTerminals() {
   const [state, dispatch] = useReducer(termReducer, initialTermState);
   const sinks = useRef(new Map<number, Sink>());
-  const pending = useRef(new Map<number, TerminalEvent[]>());
+  /** Early output by id; gone once the terminal has had input. */
+  const logs = useRef(
+    new Map<number, { events: TerminalEvent[]; size: number }>(),
+  );
 
   const deliver = useCallback((id: number, e: TerminalEvent) => {
     if (e.kind === "exit") dispatch({ type: "exited", id, code: e.code });
     const sink = sinks.current.get(id);
-    if (sink) {
-      sink(e);
-      return;
+    const log = logs.current.get(id);
+    // Logged while early, or whenever no view is there to take it.
+    if (log || !sink) {
+      const l = log ?? { events: [], size: 0 };
+      const size = e.kind === "data" ? e.data.length : 0;
+      if (l.size + size <= EARLY_LOG_LIMIT) {
+        l.events.push(e);
+        l.size += size;
+      }
+      logs.current.set(id, l);
     }
-    const queue = pending.current.get(id);
-    if (queue) queue.push(e);
-    else pending.current.set(id, [e]);
+    sink?.(e);
   }, []);
 
   const open = useCallback(
@@ -54,16 +67,18 @@ export function useTerminals() {
       .catch(() => {})
       .then(() => {
         sinks.current.delete(id);
-        pending.current.delete(id);
+        logs.current.delete(id);
         dispatch({ type: "killed", id });
       });
   }, []);
 
+  /** Replays the early output to `sink`, then sends it live; returns its undo. */
   const register = useCallback((id: number, sink: Sink) => {
     sinks.current.set(id, sink);
-    const queue = pending.current.get(id);
-    pending.current.delete(id);
-    for (const e of queue ?? []) sink(e);
+    for (const e of logs.current.get(id)?.events ?? []) sink(e);
+    return () => {
+      if (sinks.current.get(id) === sink) sinks.current.delete(id);
+    };
   }, []);
 
   const activate = useCallback(
@@ -72,10 +87,11 @@ export function useTerminals() {
   );
   const show = useCallback(() => dispatch({ type: "show" }), []);
   const hide = useCallback(() => dispatch({ type: "hide" }), []);
-  const write = useCallback(
-    (id: number, data: string) => terminalWrite(id, data),
-    [],
-  );
+  const write = useCallback((id: number, data: string) => {
+    // Input means a live view has the output: the early log is done.
+    logs.current.delete(id);
+    terminalWrite(id, data);
+  }, []);
 
   return useMemo(
     () => ({ state, open, kill, activate, show, hide, write, register }),

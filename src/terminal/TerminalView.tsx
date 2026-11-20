@@ -16,7 +16,8 @@ export interface TerminalViewProps {
   palette: Palette;
   platform: Platform;
   onData(data: string): void;
-  register(id: number, sink: (e: TerminalEvent) => void): void;
+  /** Sends the terminal's output (replayed, then live) to `sink`; returns its undo. */
+  register(id: number, sink: (e: TerminalEvent) => void): () => void;
   onClose(): void;
   onOpenUrl(url: string): void;
 }
@@ -82,14 +83,16 @@ export function TerminalView(props: TerminalViewProps) {
       // Paste is left alone: the native paste reaches xterm's textarea.
       return false;
     });
-    live.current.register(live.current.id, (ev) => {
+    term.open(root);
+    // After open: replayed output goes to an xterm that can answer it.
+    const unregister = live.current.register(live.current.id, (ev) => {
       if (ev.kind === "data") term.write(ev.data);
     });
-    term.open(root);
     const ro = new ResizeObserver(refit);
     ro.observe(root);
     refit();
     return () => {
+      unregister();
       ro.disconnect();
       term.dispose();
       termRef.current = null;
