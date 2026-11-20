@@ -22,8 +22,11 @@ use crate::terminal::tree::{self, TreeGuard};
 
 /// How long output may wait before it is sent.
 const BATCH_DELAY: Duration = Duration::from_millis(8);
-/// How much waiting output sends a batch at once.
+/// How much waiting output sends a batch at once, and the most one batch holds.
 const BATCH_BYTES: usize = 64 * 1024;
+/// How much unsent output makes the reader stop reading. The PTY then fills
+/// up and the shell blocks until the listener catches up.
+const HIGH_WATER: usize = 1024 * 1024;
 /// How long the waiter lets the reader drain after the shell exits. A
 /// background process that keeps the terminal open would otherwise hold back
 /// `Exit` for as long as it lives.
@@ -190,8 +193,7 @@ impl Session {
                 take(&master);
                 take(&writer);
                 let _ = drained_rx.recv_timeout(DRAIN_TIMEOUT);
-                output.pending.lock().unwrap().closed = true;
-                output.wake.notify_all();
+                close(&output);
                 // The flusher sends the rest before it returns, so `Exit` comes last.
                 let _ = flusher.join();
                 sink(TerminalEvent::Exit { code });
@@ -248,16 +250,25 @@ fn read_loop(mut reader: Box<dyn Read + Send>, output: &Output) {
             Ok(n) => n,
         };
         let mut pending = output.pending.lock().unwrap();
+        while pending.buf.len() >= HIGH_WATER && !pending.closed {
+            pending = output.wake.wait(pending).unwrap();
+        }
         if pending.closed {
-            return; // `Exit` has been sent; nobody wants this any more
+            return; // `Exit` is on its way; nobody wants this any more
         }
         pending.buf.extend_from_slice(&chunk[..n]);
         output.wake.notify_all();
     }
 }
 
-/// Sends waiting output in batches until the output is closed, then sends
-/// the rest.
+/// Tells the flusher to send what is left and stop, and the reader to stop.
+fn close(output: &Output) {
+    output.pending.lock().unwrap().closed = true;
+    output.wake.notify_all();
+}
+
+/// Sends waiting output in batches of at most `BATCH_BYTES` until the
+/// output is closed, then sends the rest and returns.
 fn flush_loop(output: &Output, sink: &(dyn Fn(TerminalEvent) + Send + Sync)) {
     loop {
         let mut pending = output.pending.lock().unwrap();
@@ -273,20 +284,22 @@ fn flush_loop(output: &Output, sink: &(dyn Fn(TerminalEvent) + Send + Sync)) {
             };
             pending = output.wake.wait_timeout(pending, left).unwrap().0;
         }
-        let closed = pending.closed;
-        let split = if closed {
-            pending.buf.len()
+        let len = pending.buf.len();
+        let split = if pending.closed && len <= BATCH_BYTES {
+            len // the very end: an unfinished character will never finish
         } else {
-            utf8_split(&pending.buf)
+            utf8_split(&pending.buf[..len.min(BATCH_BYTES)])
         };
         let batch: Vec<u8> = pending.buf.drain(..split).collect();
+        let done = pending.closed && pending.buf.is_empty();
         drop(pending);
+        output.wake.notify_all(); // room for a reader waiting at high water
         if !batch.is_empty() {
             sink(TerminalEvent::Data {
                 data: String::from_utf8_lossy(&batch).into_owned(),
             });
         }
-        if closed {
+        if done {
             return;
         }
     }
@@ -415,15 +428,82 @@ mod tests {
             .count();
         assert_eq!(exits, 1, "events: {events:?}");
         assert!(matches!(events.last(), Some(TerminalEvent::Exit { .. })));
-        running
-            .0
-            .write(
-                b"echo late
-",
-            )
-            .unwrap();
+        running.0.write(b"echo late\r").unwrap();
         running.0.resize(100, 40).unwrap();
         // Nothing follows `Exit`.
         assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
+    }
+
+    /// Hands out `data` in reads of up to 16 KB, counting what it gave.
+    struct Source {
+        data: Vec<u8>,
+        at: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl Read for Source {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            let at = self.at.load(Ordering::SeqCst);
+            let n = out.len().min(16 * 1024).min(self.data.len() - at);
+            out[..n].copy_from_slice(&self.data[at..at + n]);
+            self.at.store(at + n, Ordering::SeqCst);
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn flood_arrives_whole_in_capped_batches_with_backpressure() {
+        // Multi-byte characters land across every read and batch boundary.
+        let data = "zukai é € 😀 ".repeat(300_000).into_bytes();
+        assert!(data.len() > 5_000_000);
+        let read = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let reader = Source {
+            data: data.clone(),
+            at: Arc::clone(&read),
+        };
+
+        let output = Arc::new(Output::default());
+        let batches = Arc::new(Mutex::new(Vec::<String>::new()));
+        let max_ahead = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sink = {
+            let (batches, read, max_ahead) = (
+                Arc::clone(&batches),
+                Arc::clone(&read),
+                Arc::clone(&max_ahead),
+            );
+            move |ev: TerminalEvent| {
+                let TerminalEvent::Data { data } = ev else {
+                    panic!("the flusher never sends Exit");
+                };
+                let mut batches = batches.lock().unwrap();
+                batches.push(data);
+                let sent: usize = batches.iter().map(String::len).sum();
+                let ahead = read.load(Ordering::SeqCst) - sent;
+                max_ahead.fetch_max(ahead, Ordering::SeqCst);
+                drop(batches);
+                // A slow listener: the reader must wait for it.
+                thread::sleep(Duration::from_micros(500));
+            }
+        };
+
+        let reader_out = Arc::clone(&output);
+        let reading = thread::spawn(move || read_loop(Box::new(reader), &reader_out));
+        let flusher_out = Arc::clone(&output);
+        let flushing = thread::spawn(move || flush_loop(&flusher_out, &sink));
+        reading.join().unwrap();
+        close(&output);
+        flushing.join().unwrap();
+
+        let batches = batches.lock().unwrap();
+        let joined: String = batches.concat();
+        assert!(joined.as_bytes() == data, "output differs from input");
+        let biggest = batches.iter().map(String::len).max().unwrap();
+        assert!(biggest <= BATCH_BYTES, "a batch of {biggest} bytes");
+        let ahead = max_ahead.load(Ordering::SeqCst);
+        // Beyond the high-water mark: one read may top the buffer up past it,
+        // one more is in the reader's hands, and one batch is on its way.
+        assert!(
+            ahead <= HIGH_WATER + 2 * 16 * 1024 + BATCH_BYTES,
+            "the reader got {ahead} bytes ahead of the listener"
+        );
     }
 }
