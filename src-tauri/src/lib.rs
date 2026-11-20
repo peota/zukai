@@ -37,7 +37,14 @@ pub const BEFORE_EXIT_EVENT: &str = "zukai://before-exit";
 #[tauri::command]
 fn app_exit_after_flush(app: AppHandle) {
     FLUSHED.store(true, Ordering::SeqCst);
+    kill_terminals(&app);
     app.exit(0);
+}
+
+/// Ends every embedded terminal's shell and what it started, so none outlive
+/// the app.
+fn kill_terminals(app: &AppHandle) {
+    app.state::<terminal::commands::Terminals>().kill_all();
 }
 
 /// The first flush failed and the app stays open: cancel the pending watchdog
@@ -77,6 +84,7 @@ fn request_exit(app: &AppHandle) {
                 return;
             }
             FLUSHED.store(true, Ordering::SeqCst);
+            kill_terminals(&app);
             app.exit(0);
         });
     }
@@ -182,6 +190,7 @@ pub fn run() {
         .manage(library::watch::LibraryWatcher::default())
         .manage(library::watch::AddedWatchers::default())
         .manage(library::commands::DropTarget::default())
+        .manage(terminal::commands::Terminals::default())
         .on_window_event(|window, event| {
             // Rust needs the drop (it grants the paths), so the webview's own
             // drag and drop stays disabled by Tauri while this is enabled.
@@ -257,6 +266,10 @@ pub fn run() {
             library::commands::library_add_folder,
             library::commands::library_locate_folder,
             library::commands::library_remove_folder,
+            terminal::commands::terminal_open,
+            terminal::commands::terminal_write,
+            terminal::commands::terminal_resize,
+            terminal::commands::terminal_kill,
             app_exit_after_flush,
             exit_flush_failed,
             app_startup_mark,
@@ -271,6 +284,9 @@ pub fn run() {
                     .filter_map(|u| u.to_file_path().ok())
                     .collect::<Vec<_>>();
                 files::open_paths::opened(app, paths);
+            }
+            if let RunEvent::Exit = event {
+                kill_terminals(app);
             }
             if let RunEvent::ExitRequested { api, code, .. } = event
                 && code.is_none()

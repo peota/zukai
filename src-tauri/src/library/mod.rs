@@ -53,7 +53,7 @@ pub(crate) mod tests {
     }
 
     /// A link to the folder `target`: a symlink on Unix, a junction on Windows.
-    fn dir_link(link: &Path, target: &Path) {
+    pub fn dir_link(link: &Path, target: &Path) {
         #[cfg(unix)]
         std::os::unix::fs::symlink(target, link).unwrap();
         #[cfg(windows)]
