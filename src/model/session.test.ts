@@ -125,6 +125,22 @@ describe("session file", () => {
     expect(r.tabs.map((t) => t.preview)).toEqual(["split", "only", undefined]);
   });
 
+  it("keeps a Tab's hidden ranges, and forgets malformed ones", () => {
+    const tabs = [
+      { ...newTabState("a"), hidden: [[2, 9]] },
+      { ...newTabState("b"), hidden: [[5, 3]] },
+      { ...newTabState("c"), hidden: "all" },
+    ];
+    const r = parseSessionFile(
+      JSON.stringify({ ...toSessionFile(ws), tabs, activeId: "a" }),
+    )!;
+    expect(r.tabs.map((t) => t.hidden)).toEqual([
+      [[2, 9]],
+      undefined,
+      undefined,
+    ]);
+  });
+
   it("keeps a Tab's markdown mode, and forgets a malformed one", () => {
     const tabs = [
       { ...newTabState("a"), markdownMode: "rich" },

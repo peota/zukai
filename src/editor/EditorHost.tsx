@@ -70,6 +70,17 @@ import {
   initialFindState,
   type FindState,
 } from "../find/FindBar";
+import {
+  canToggleHidden,
+  hiddenField,
+  hiddenRanges,
+  hiddenTextExtension,
+  loadHidden,
+  selectionHidden,
+  toggleHidden,
+} from "./hiddenText";
+import { Menu, type MenuItem } from "../ui/Menu";
+import { detectPlatform } from "../app/shortcuts";
 
 export interface EditorHostProps {
   tabs: TabState[];
@@ -167,6 +178,16 @@ interface OpenBar {
   initial: FindState;
   seq: number;
 }
+
+/** The editor's right-click menu, open on a Tab's view. */
+interface TextMenu {
+  view: EditorView;
+  items: MenuItem[];
+  x: number;
+  y: number;
+}
+
+const MOD = detectPlatform() === "mac" ? "⌘" : "Ctrl+";
 
 /** Selection and scroll are reported back this long after they settle. */
 const PATCH_DELAY = 300;
@@ -460,6 +481,7 @@ export function EditorHost(props: EditorHostProps) {
   const findStates = useRef(new Map<string, FindState>());
   const barSeq = useRef(0);
   const [bar, setBar] = useState<OpenBar | null>(null);
+  const [textMenu, setTextMenu] = useState<TextMenu | null>(null);
   const views = useRef(new Map<string, Entry>());
   const creating = useRef(new Set<string>());
   /** The active Tab at the last showShown, to notice a switch. */
@@ -677,6 +699,12 @@ export function EditorHost(props: EditorHostProps) {
       }
       reportFormat(id, u);
       maybeGuess(id, e, u);
+      if (u.startState.field(hiddenField) !== u.state.field(hiddenField)) {
+        const hidden = hiddenRanges(u.state).map(([a, b]) => [a, b]);
+        queuePatch(id, e, {
+          hidden: hidden as [number, number][],
+        });
+      }
       if (u.selectionSet || u.docChanged) {
         const { anchor, head } = u.state.selection.main;
         queuePatch(id, e, { selection: { anchor, head } });
@@ -697,10 +725,34 @@ export function EditorHost(props: EditorHostProps) {
           entry.fontSize.of(fontSizeExt(entry.current.fontSize)),
           formatExtension(tab.file?.format ?? null),
           findExtension((mode) => openBar(id, mode)),
+          hiddenTextExtension,
           listener,
         ],
       }),
       parent: wrapper,
+    });
+    if (tab.hidden?.length) {
+      e.view.dispatch({
+        effects: loadHidden(tab.hidden),
+        annotations: Transaction.addToHistory.of(false),
+      });
+    }
+    e.view.dom.addEventListener("contextmenu", (ev) => {
+      // Right-click outside the selection moves the cursor there first, as
+      // in a native text field.
+      const pos = e.view.posAtCoords({ x: ev.clientX, y: ev.clientY });
+      const inSel =
+        pos !== null &&
+        e.view.state.selection.ranges.some((r) => pos >= r.from && pos <= r.to);
+      if (pos !== null && !inSel)
+        e.view.dispatch({ selection: { anchor: pos } });
+      ev.preventDefault();
+      setTextMenu({
+        view: e.view,
+        items: textMenuItems(e.view),
+        x: ev.clientX,
+        y: ev.clientY,
+      });
     });
     e.view.scrollDOM.addEventListener("scroll", () => {
       if (wrapper.style.display === "none") return;
@@ -1079,6 +1131,18 @@ export function EditorHost(props: EditorHostProps) {
       }}
     />
   );
+  const menu = textMenu && (
+    <Menu
+      label="Text"
+      x={textMenu.x}
+      y={textMenu.y}
+      items={textMenu.items}
+      onDismiss={(chose) => {
+        setTextMenu(null);
+        if (!chose) textMenu.view.focus();
+      }}
+    />
+  );
   return (
     <div ref={outer} className="relative size-full">
       <div ref={container} className="size-full" />
@@ -1086,6 +1150,66 @@ export function EditorHost(props: EditorHostProps) {
         {barSlot ? null : findBar}
       </div>
       {barSlot && findBar && createPortal(findBar, barSlot)}
+      {menu && createPortal(menu, document.body)}
     </div>
   );
+}
+
+/** Cut, Copy, Paste, Select all, and Hide/Unhide for the selection. */
+function textMenuItems(view: EditorView): MenuItem[] {
+  const { state } = view;
+  const empty = state.selection.ranges.every((r) => r.empty);
+  const readOnly = state.readOnly;
+  // The menu took focus; the clipboard commands act on the focused editor.
+  const run = (f: () => void) => () => {
+    view.focus();
+    f();
+  };
+  return [
+    {
+      label: "Cut",
+      hint: `${MOD}X`,
+      disabled: empty || readOnly,
+      onSelect: run(() => document.execCommand("cut")),
+    },
+    {
+      label: "Copy",
+      hint: `${MOD}C`,
+      disabled: empty,
+      onSelect: run(() => document.execCommand("copy")),
+    },
+    {
+      label: "Paste",
+      hint: `${MOD}V`,
+      disabled: readOnly,
+      onSelect: run(() => {
+        navigator.clipboard.readText().then(
+          (text) => {
+            if (!text || view.state.readOnly) return;
+            view.dispatch(view.state.replaceSelection(text), {
+              userEvent: "input.paste",
+              scrollIntoView: true,
+            });
+          },
+          (err: unknown) => console.error("paste failed", err),
+        );
+      }),
+    },
+    {
+      label: "Select all",
+      hint: `${MOD}A`,
+      onSelect: run(() =>
+        view.dispatch({
+          selection: { anchor: 0, head: view.state.doc.length },
+        }),
+      ),
+    },
+    {
+      label: selectionHidden(state) ? "Unhide" : "Hide",
+      separated: true,
+      disabled: !canToggleHidden(state),
+      reason: "Select text to hide",
+      onSelect: run(() => toggleHidden(view)),
+    },
+  ];
 }

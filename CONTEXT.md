@@ -41,6 +41,10 @@ The Kind for pictures: a read-only viewer that fits the window, with zoom (Mod+=
 **View**
 A way of displaying a Document that doesn't change what it is. A Table has two Views: the **grid** and the **raw text**. Switching View keeps the same Document and the same saving rule.
 
+**Hidden text**
+Text in a Text Tab drawn as dots, like a password field, so a pasted password or token isn't shown on screen. Select it, right-click and choose **Hide**; right-click inside it (or select across it) and choose **Unhide**. Only the display changes: the text, copying, find and saving are untouched. The ranges follow edits, are stored on the Tab in the Session (`hidden`, as offsets, never the text), and undoing the deletion of hidden text hides it again. The plain editor's right-click menu is Zukai's own (Cut, Copy, Paste, Select all, Hide/Unhide).
+_Limits_: the Rich editor and the Markdown preview show hidden text as it is, and a File changed outside Zukai while closed can shift its ranges.
+
 **Language**
 The syntax a Text Document is highlighted as (JSON, SQL, Markdown and so on). A File gets it from its extension, and a Scratchpad from a guess based on its content. The user can always override it in the status bar.
 

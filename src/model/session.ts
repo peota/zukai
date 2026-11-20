@@ -254,6 +254,26 @@ function withMarkdownMode(t: unknown): unknown {
   return rest;
 }
 
+/** So are malformed hidden ranges. */
+function withHidden(t: unknown): unknown {
+  if (!isObject(t) || t.hidden === undefined) return t;
+  const ok =
+    Array.isArray(t.hidden) &&
+    t.hidden.every(
+      (r: unknown) =>
+        Array.isArray(r) &&
+        r.length === 2 &&
+        isNum(r[0]) &&
+        isNum(r[1]) &&
+        r[0] >= 0 &&
+        r[1] > r[0],
+    );
+  if (ok) return t;
+  const { hidden: _bad, ...rest } = t;
+  void _bad;
+  return rest;
+}
+
 /** Before v3 a Tab had no Kind: a File's comes from its path. */
 function withKind(t: unknown): unknown {
   if (!isObject(t) || t.kind !== undefined) return t;
@@ -287,8 +307,10 @@ export function parseSessionFile(json: string | null): SessionFile | null {
   }
   // A malformed entry is dropped alone; the rest of the session survives.
   const fix = (t: unknown) =>
-    withMarkdownMode(
-      withPreview(withPin(withViewport(migrate ? withKind(t) : t))),
+    withHidden(
+      withMarkdownMode(
+        withPreview(withPin(withViewport(migrate ? withKind(t) : t))),
+      ),
     );
   const tabs: unknown[] = data.tabs.map(fix);
   const closed: unknown[] = data.closed.map((e: unknown) =>
