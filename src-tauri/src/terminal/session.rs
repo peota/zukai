@@ -1,9 +1,10 @@
 //! A shell running in a pseudo-terminal, with its output batched into events.
 //!
-//! Three threads serve each session. The reader copies PTY output into a
+//! Four threads serve each session. The writer owns the PTY's input and
+//! writes queued input to it in order. The reader copies PTY output into a
 //! shared buffer. The flusher sends it on in batches, holding back a split
 //! UTF-8 character until the rest arrives. The waiter reaps the shell, closes
-//! the PTY, lets the reader drain, has the flusher send what is left, then
+//! the PTY, closes the input queue, lets the reader drain, has the flusher send what is left, then
 //! sends `Exit`, exactly once.
 
 use std::io::{Read, Write};
@@ -84,8 +85,8 @@ struct Output {
 pub struct Session {
     /// `None` once the shell has exited.
     master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
-    /// `None` once the shell has exited.
-    writer: Arc<Mutex<Option<Box<dyn Write + Send>>>>,
+    /// Input for the writer thread, in order. `None` once the shell has exited.
+    input: Arc<Mutex<Option<mpsc::Sender<Vec<u8>>>>>,
     exited: Arc<AtomicBool>,
     tree: TreeGuard,
 }
@@ -138,7 +139,7 @@ impl Session {
 
         let session = Session {
             master: Arc::new(Mutex::new(None)),
-            writer: Arc::new(Mutex::new(None)),
+            input: Arc::new(Mutex::new(None)),
             exited: Arc::new(AtomicBool::new(false)),
             tree,
         };
@@ -157,8 +158,17 @@ impl Session {
         sink: Sink,
     ) -> std::io::Result<()> {
         let reader = master.try_clone_reader().map_err(pty_error)?;
-        *self.writer.lock().unwrap() = Some(master.take_writer().map_err(pty_error)?);
+        let writer = master.take_writer().map_err(pty_error)?;
         *self.master.lock().unwrap() = Some(master);
+
+        // One thread owns the writer, so input reaches the shell in the order
+        // it was sent, and a big paste never blocks the caller.
+        let (input_tx, input_rx) = mpsc::channel();
+        let writer_exited = Arc::clone(&self.exited);
+        thread::Builder::new()
+            .name("terminal-writer".into())
+            .spawn(move || write_loop(&input_rx, writer, &writer_exited))?;
+        *self.input.lock().unwrap() = Some(input_tx);
 
         let output = Arc::new(Output::default());
         let (drained_tx, drained_rx) = mpsc::channel();
@@ -177,7 +187,7 @@ impl Session {
             .spawn(move || flush_loop(&flusher_out, &*flusher_sink))?;
 
         let master = Arc::clone(&self.master);
-        let writer = Arc::clone(&self.writer);
+        let input = Arc::clone(&self.input);
         let exited = Arc::clone(&self.exited);
         thread::Builder::new()
             .name("terminal-waiter".into())
@@ -191,7 +201,8 @@ impl Session {
                 // pseudoconsole only flushes its last output and closes its
                 // pipe when it is closed, so the reader would wait forever.
                 take(&master);
-                take(&writer);
+                // Ends the writer thread once it has drained its queue.
+                take(&input);
                 let _ = drained_rx.recv_timeout(DRAIN_TIMEOUT);
                 close(&output);
                 // The flusher sends the rest before it returns, so `Exit` comes last.
@@ -201,15 +212,13 @@ impl Session {
         Ok(())
     }
 
-    /// Sends `data` to the shell's input. Does nothing once the shell has exited.
-    pub fn write(&self, data: &[u8]) -> std::io::Result<()> {
-        let mut writer = self.writer.lock().unwrap();
-        let Some(writer) = writer.as_mut() else {
-            return Ok(());
-        };
-        match writer.write_all(data).and_then(|()| writer.flush()) {
-            Err(_) if self.exited.load(Ordering::SeqCst) => Ok(()),
-            result => result,
+    /// Queues `data` for the shell's input without waiting for it to be
+    /// written. Input arrives in the order it was queued. Does nothing once
+    /// the shell has exited.
+    pub fn write(&self, data: &[u8]) {
+        if let Some(input) = self.input.lock().unwrap().as_ref() {
+            // The writer thread only goes away after a failed write.
+            let _ = input.send(data.to_vec());
         }
     }
 
@@ -239,6 +248,27 @@ impl Session {
 fn take<T>(slot: &Mutex<Option<T>>) {
     let held = slot.lock().unwrap().take();
     drop(held);
+}
+
+/// Writes queued input to the shell, in order, until the queue closes or a
+/// write fails. Input still queued once the shell has exited is dropped.
+fn write_loop(
+    input: &mpsc::Receiver<Vec<u8>>,
+    mut writer: Box<dyn Write + Send>,
+    exited: &AtomicBool,
+) {
+    for data in input {
+        if exited.load(Ordering::SeqCst) {
+            continue;
+        }
+        if writer
+            .write_all(&data)
+            .and_then(|()| writer.flush())
+            .is_err()
+        {
+            return;
+        }
+    }
 }
 
 /// Copies terminal output into `output` until the terminal closes.
@@ -339,11 +369,7 @@ pub(crate) mod tests {
         session: &Session,
         rx: &mpsc::Receiver<TerminalEvent>,
     ) -> (String, Vec<TerminalEvent>) {
-        collect_with(
-            |reply| session.write(reply).unwrap(),
-            rx,
-            Duration::from_secs(10),
-        )
+        collect_with(|reply| session.write(reply), rx, Duration::from_secs(10))
     }
 
     /// Every event until `Exit`, or until `timeout` has passed, with the
@@ -397,11 +423,8 @@ pub(crate) mod tests {
     fn echo_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let (running, rx) = start(dir.path());
-        running
-            .0
-            .write(format!("echo zukai-hi{NL}").as_bytes())
-            .unwrap();
-        running.0.write(format!("exit{NL}").as_bytes()).unwrap();
+        running.0.write(format!("echo zukai-hi{NL}").as_bytes());
+        running.0.write(format!("exit{NL}").as_bytes());
         let (text, events) = collect(&running.0, &rx);
         assert!(text.contains("zukai-hi"), "output: {text:?}");
         assert!(
@@ -421,10 +444,7 @@ pub(crate) mod tests {
         } else {
             "pwd"
         };
-        running
-            .0
-            .write(format!("{ask}{NL}exit{NL}").as_bytes())
-            .unwrap();
+        running.0.write(format!("{ask}{NL}exit{NL}").as_bytes());
         let (text, _) = collect(&running.0, &rx);
         let want = canonical.to_string_lossy();
         assert!(text.contains(want.as_ref()), "want {want:?} in {text:?}");
@@ -442,10 +462,59 @@ pub(crate) mod tests {
             .count();
         assert_eq!(exits, 1, "events: {events:?}");
         assert!(matches!(events.last(), Some(TerminalEvent::Exit { .. })));
-        running.0.write(b"echo late\r").unwrap();
+        running.0.write(b"echo late\r");
         running.0.resize(100, 40).unwrap();
         // Nothing follows `Exit`.
         assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
+    }
+
+    /// Records what is written, slowly, so queued input piles up behind it.
+    struct Recorder(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Recorder {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            thread::sleep(Duration::from_micros(50));
+            let n = data.len().min(4096);
+            self.0.lock().unwrap().extend_from_slice(&data[..n]);
+            Ok(n)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn queued_input_is_written_in_order() {
+        let written = Arc::new(Mutex::new(Vec::new()));
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        let exited = Arc::new(AtomicBool::new(false));
+        let writer = Box::new(Recorder(Arc::clone(&written)));
+        let writer_exited = Arc::clone(&exited);
+        let writing = thread::spawn(move || write_loop(&rx, writer, &writer_exited));
+
+        // A big paste, then keystrokes queued from many threads in turn.
+        let mut want = "paste ".repeat(50_000).into_bytes();
+        tx.send(want.clone()).unwrap();
+        for i in 0..500 {
+            let key = format!("<{i}>").into_bytes();
+            want.extend_from_slice(&key);
+            let tx = tx.clone();
+            thread::spawn(move || tx.send(key).unwrap()).join().unwrap();
+        }
+        drop(tx);
+        writing.join().unwrap();
+        assert!(*written.lock().unwrap() == want, "input reordered or lost");
+    }
+
+    #[test]
+    fn input_queued_after_exit_is_dropped() {
+        let written = Arc::new(Mutex::new(Vec::new()));
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        let exited = AtomicBool::new(true);
+        tx.send(b"late".to_vec()).unwrap();
+        drop(tx);
+        write_loop(&rx, Box::new(Recorder(Arc::clone(&written))), &exited);
+        assert!(written.lock().unwrap().is_empty());
     }
 
     /// Hands out `data` in reads of up to 16 KB, counting what it gave.
