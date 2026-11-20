@@ -21,7 +21,7 @@ use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system}
 use serde::Serialize;
 
 use crate::files::FileError;
-use crate::terminal::shell::{ShellSpec, extra_env};
+use crate::terminal::shell::{ShellSpec, current_locale_env, extra_env};
 use crate::terminal::tree::{self, TreeGuard};
 
 /// How long output may wait before it is sent.
@@ -139,7 +139,7 @@ impl Session {
         let mut cmd = CommandBuilder::new(&shell.program);
         cmd.args(&shell.args);
         cmd.cwd(cwd);
-        for (key, value) in extra_env() {
+        for (key, value) in extra_env().into_iter().chain(current_locale_env()) {
             cmd.env(key, value);
         }
 
