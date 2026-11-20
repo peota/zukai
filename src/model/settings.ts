@@ -42,6 +42,32 @@ export interface Settings {
   previewSplit: number;
   /** How a Markdown file (or a picked-Markdown Scratchpad) opens. */
   markdownDefault: MarkdownMode;
+  /** Where the terminal panel docks: under the editor or beside it. */
+  terminalPosition: TerminalPosition;
+  /** The terminal panel's height when docked at the bottom, in px. */
+  terminalHeight: number;
+  /** The terminal panel's width when docked at the side, in px. */
+  terminalWidth: number;
+}
+
+export type TerminalPosition = "bottom" | "side";
+export const TERMINAL_POSITIONS: readonly TerminalPosition[] = [
+  "bottom",
+  "side",
+];
+
+export const TERMINAL_MIN_HEIGHT = 120;
+export const TERMINAL_MIN_WIDTH = 240;
+
+/** A terminal size in whole pixels, at least `min` and at most 70% of `available`. */
+export function clampTerminalSize(
+  px: number,
+  min: number,
+  available: number,
+): number {
+  const max = 0.7 * available;
+  if (max < min) return min;
+  return Math.min(max, Math.max(min, Math.round(px)));
 }
 
 export const DEFAULT_UI_FONT_SIZE = 14;
@@ -72,6 +98,9 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   autosaveFiles: false,
   previewSplit: 0.5,
   markdownDefault: "rich",
+  terminalPosition: "bottom",
+  terminalHeight: 280,
+  terminalWidth: 480,
 });
 
 const THEMES: readonly string[] = ["system", "light", "dark"];
@@ -82,6 +111,12 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 function oneOf<T extends string>(v: unknown, all: readonly T[], d: T): T {
   return typeof v === "string" && (all as readonly string[]).includes(v)
     ? (v as T)
+    : d;
+}
+
+function storedSize(v: unknown, min: number, d: number): number {
+  return typeof v === "number" && Number.isFinite(v) && v >= min
+    ? Math.round(v)
     : d;
 }
 
@@ -115,5 +150,20 @@ export function parseSettings(v: unknown): Settings {
       v.markdownDefault === "rich" || v.markdownDefault === "markdown"
         ? v.markdownDefault
         : d.markdownDefault,
+    terminalPosition: oneOf(
+      v.terminalPosition,
+      TERMINAL_POSITIONS,
+      d.terminalPosition,
+    ),
+    terminalHeight: storedSize(
+      v.terminalHeight,
+      TERMINAL_MIN_HEIGHT,
+      d.terminalHeight,
+    ),
+    terminalWidth: storedSize(
+      v.terminalWidth,
+      TERMINAL_MIN_WIDTH,
+      d.terminalWidth,
+    ),
   };
 }

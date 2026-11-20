@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, parseSettings } from "./settings";
+import { clampTerminalSize, DEFAULT_SETTINGS, parseSettings } from "./settings";
 
 describe("parseSettings", () => {
   it("keeps valid values", () => {
@@ -27,6 +27,9 @@ describe("parseSettings", () => {
       autosaveFiles: true,
       previewSplit: 0.35,
       markdownDefault: "markdown",
+      terminalPosition: "bottom",
+      terminalHeight: 280,
+      terminalWidth: 480,
     });
   });
 
@@ -53,6 +56,9 @@ describe("parseSettings", () => {
       autosaveFiles: false,
       previewSplit: 0.5,
       markdownDefault: "rich",
+      terminalPosition: "bottom",
+      terminalHeight: 280,
+      terminalWidth: 480,
     });
   });
 });
@@ -97,5 +103,43 @@ describe("uiFontSize", () => {
     expect(parseSettings({ uiFontSize: 40 }).uiFontSize).toBe(18);
     expect(parseSettings({ uiFontSize: 2 }).uiFontSize).toBe(11);
     expect(parseSettings({ uiFontSize: "big" }).uiFontSize).toBe(14);
+  });
+});
+
+describe("terminal settings", () => {
+  it("parseSettingsDefaultsTerminalFields", () => {
+    const s = parseSettings({});
+    expect(s.terminalPosition).toBe("bottom");
+    expect(s.terminalHeight).toBe(280);
+    expect(s.terminalWidth).toBe(480);
+  });
+
+  it("parseSettingsRejectsBadTerminalPosition", () => {
+    expect(parseSettings({ terminalPosition: "left" }).terminalPosition).toBe(
+      "bottom",
+    );
+    expect(parseSettings({ terminalPosition: "side" }).terminalPosition).toBe(
+      "side",
+    );
+  });
+
+  it("parseSettingsKeepsStoredSizes", () => {
+    expect(parseSettings({ terminalHeight: 333 }).terminalHeight).toBe(333);
+    expect(parseSettings({ terminalWidth: 5000 }).terminalWidth).toBe(5000);
+  });
+
+  it("parseSettingsRejectsBadSizes", () => {
+    expect(parseSettings({ terminalHeight: 119 }).terminalHeight).toBe(280);
+    expect(parseSettings({ terminalWidth: 239 }).terminalWidth).toBe(480);
+    expect(parseSettings({ terminalHeight: NaN }).terminalHeight).toBe(280);
+    expect(parseSettings({ terminalWidth: Infinity }).terminalWidth).toBe(480);
+    expect(parseSettings({ terminalHeight: "300" }).terminalHeight).toBe(280);
+  });
+
+  it("clampTerminalSizeCapsAtSeventyPercent", () => {
+    expect(clampTerminalSize(900, 120, 1000)).toBe(700);
+    expect(clampTerminalSize(50, 120, 1000)).toBe(120);
+    expect(clampTerminalSize(300.6, 120, 1000)).toBe(301);
+    expect(clampTerminalSize(500, 120, 100)).toBe(120);
   });
 });

@@ -72,6 +72,9 @@ describe("session file", () => {
       autosaveFiles: true,
       previewSplit: 0.3,
       markdownDefault: "markdown" as const,
+      terminalPosition: "bottom" as const,
+      terminalHeight: 280,
+      terminalWidth: 480,
     };
     const json = JSON.stringify(
       toSessionFile(ws, DEFAULT_SIDEBAR, 13, settings),
