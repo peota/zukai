@@ -196,6 +196,14 @@ function list(dir: string) {
   return out;
 }
 
+/** `name` + `ext` in `dir`, numbered like Rust's when it's taken. */
+function freeName(dir: string, name: string, ext: string): string {
+  const taken = (p: string) => dirs.has(p) || p in files;
+  let path = join(dir, name + ext);
+  for (let n = 2; taken(path); n++) path = join(dir, `${name} ${n}${ext}`);
+  return path;
+}
+
 type Args = Record<string, unknown>;
 
 const handlers: Record<string, (a: Args) => unknown> = {
@@ -250,6 +258,17 @@ const handlers: Record<string, (a: Args) => unknown> = {
     return { hits, ready: true };
   },
   library_resolve: (a) => a.path,
+  library_create_folder: (a) => {
+    const path = freeName(a.parent as string, a.name as string, "");
+    dirs.add(path);
+    return path;
+  },
+  library_create_file: (a) => {
+    const ext = a.ext ? `.${a.ext as string}` : "";
+    const path = freeName(a.parent as string, a.stem as string, ext);
+    files[path] = "";
+    return path;
+  },
   file_read: (a) => {
     const text = files[a.path as string] ?? "";
     return { text, format: fmt, readable: true, fingerprint: fp(text) };

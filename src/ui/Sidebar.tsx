@@ -1,9 +1,15 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, PointerEvent } from "react";
+import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 import type { AddedState, Entry } from "../library/api";
 import type { Row, TreeState } from "../library/tree";
 import { detectPlatform, type Platform } from "../app/shortcuts";
-import { PlusIcon, SearchIcon } from "./icons";
+import {
+  MoreIcon,
+  NewCanvasIcon,
+  NewFileIcon,
+  NewFolderIcon,
+  SearchIcon,
+} from "./icons";
 import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
 import { Pinned, TabList, type PinnedItem } from "./Pinned";
 import { LibraryTree, type PendingTrash } from "./LibraryTree";
@@ -164,7 +170,7 @@ function SidebarPanel({
   const windows = platform === "windows";
   const blockedReason = (e: Entry) => entryBlocked(e, windows);
   const treeRef = useRef<HTMLDivElement>(null);
-  const plusRef = useRef<HTMLButtonElement>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const [cursorState, setCursorState] = useState<Cursor | null>(null);
   // `rows` is the listing the edit started on (null: a created item, waiting
   // for the next listing); an item not in it gets one more listing to show.
@@ -364,7 +370,7 @@ function SidebarPanel({
     }
   };
 
-  /** The Library's own menu (+ and the tree's empty part): Add folder… last. */
+  /** The Library's own menu (the tree's empty part): Add folder… last. */
   const libraryItems = (): MenuItem[] => [
     ...(root !== null && available
       ? rootItems(root)
@@ -372,21 +378,35 @@ function SidebarPanel({
     { ...addFolderItem, separated: true },
   ];
 
-  const togglePlusMenu = () => {
+  /** The heading's ⋯: the Library's menu less what its buttons do. */
+  const toggleMoreMenu = () => {
     if (menu?.ignore) return setMenu(null);
-    const b = plusRef.current?.getBoundingClientRect();
-    const items = libraryItems();
+    const b = moreRef.current?.getBoundingClientRect();
+    const library = root !== null && available;
+    const items: MenuItem[] = [
+      ...(library
+        ? [{ label: revealLabel(platform), onSelect: () => onReveal(root) }]
+        : []),
+      { label: "Choose Library folder…", onSelect: onChooseRoot },
+      { ...addFolderItem, separated: true },
+    ];
     openMenu(
       {
         label: "Library",
         x: b?.left ?? 0,
         y: (b?.bottom ?? 0) + 4,
         items,
-        ignore: "[data-z-library-plus]",
+        ignore: "[data-z-library-more]",
       },
-      plusRef.current,
+      moreRef.current,
     );
   };
+
+  const quickActions: { what: NewItem; label: string; icon: ReactNode }[] = [
+    { what: "file", label: "New file", icon: <NewFileIcon /> },
+    { what: "folder", label: "New folder", icon: <NewFolderIcon /> },
+    { what: "canvas", label: "New canvas", icon: <NewCanvasIcon /> },
+  ];
 
   const showScratchpadMenu = (
     id: string,
@@ -526,16 +546,30 @@ function SidebarPanel({
 
       <div className="flex shrink-0 items-center px-2 pt-3 pb-1 text-[11px] font-semibold tracking-[0.06em] text-faint">
         <span className="flex-1">LIBRARY</span>
+        {root !== null &&
+          available &&
+          quickActions.map((a) => (
+            <button
+              key={a.what}
+              type="button"
+              aria-label={a.label}
+              title={a.label}
+              onClick={() => void create(root, a.what)}
+              className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
+            >
+              {a.icon}
+            </button>
+          ))}
         <button
-          ref={plusRef}
+          ref={moreRef}
           type="button"
-          aria-label="New in Library"
-          title="New in Library"
-          data-z-library-plus=""
-          onClick={togglePlusMenu}
+          aria-label="Library actions"
+          title="Library actions"
+          data-z-library-more=""
+          onClick={toggleMoreMenu}
           className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
         >
-          <PlusIcon />
+          <MoreIcon />
         </button>
       </div>
 

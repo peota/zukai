@@ -5,9 +5,11 @@ import {
   Code,
   File,
   FileCode,
+  FilePlus,
   FileText,
   Folder,
   FolderOpen,
+  FolderPlus,
   Heading1,
   Heading2,
   Heading3,
@@ -199,6 +201,29 @@ export function Chevron({ open }: { open: boolean }) {
 
 export function PlusIcon() {
   return <Plus size={15} strokeWidth={1.8} aria-hidden="true" />;
+}
+
+/** The Library heading's quick actions: New file, New folder, New canvas. */
+export function NewFileIcon() {
+  return <FilePlus size={15} strokeWidth={1.8} aria-hidden="true" />;
+}
+
+export function NewFolderIcon() {
+  return <FolderPlus size={15} strokeWidth={1.8} aria-hidden="true" />;
+}
+
+/** A Canvas's pen with a small + at its lower right, like the two above. */
+export function NewCanvasIcon() {
+  return (
+    <span aria-hidden="true" className="relative inline-flex size-[15px]">
+      <PenTool size={13} strokeWidth={1.8} />
+      <Plus
+        size={9}
+        strokeWidth={2.6}
+        className="absolute -right-0.5 -bottom-0.5"
+      />
+    </span>
+  );
 }
 
 /** ⋯: a heading's menu. */
