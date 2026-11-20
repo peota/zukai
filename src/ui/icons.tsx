@@ -25,6 +25,7 @@ import {
   SquareTerminal,
   MoreHorizontal,
   NotebookPen,
+  PanelLeft,
   PenTool,
   Pilcrow,
   Pin,
@@ -63,6 +64,7 @@ export type IconName =
   | "more"
   | "search"
   | "settings"
+  | "sidebar"
   // The rich editor's toolbar.
   | "paragraph"
   | "h1"
@@ -143,6 +145,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   more: MoreHorizontal,
   search: Search,
   settings: Settings,
+  sidebar: PanelLeft,
   paragraph: Pilcrow,
   h1: Heading1,
   h2: Heading2,
