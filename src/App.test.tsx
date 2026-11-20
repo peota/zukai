@@ -336,6 +336,26 @@ describe("App", () => {
     expect(r.getByRole("dialog", { name: "Settings" })).toBeTruthy();
   });
 
+  it("appIgnoresShellKeysInsideTerminal", async () => {
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    const host = document.createElement("div");
+    host.setAttribute("data-z-terminal", "");
+    const ta = document.createElement("textarea");
+    host.append(ta);
+    document.body.append(host);
+    ta.focus();
+    act(() => {
+      fireEvent.keyDown(ta, { key: "p", code: "KeyP", ctrlKey: true });
+    });
+    expect(r.queryByRole("dialog", { name: "Quick open" })).toBeNull();
+    act(() => {
+      fireEvent.keyDown(ta, { key: ",", code: "Comma", ctrlKey: true });
+    });
+    expect(r.getByRole("dialog", { name: "Settings" })).toBeTruthy();
+    host.remove();
+  });
+
   it("Close all tabs closes every unpinned Tab and leaves one fresh Tab", async () => {
     s.listScratchpads.mockResolvedValue([
       { id: "a", ext: "txt" },

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspace } from "./app/useWorkspace";
+import { isTerminalTarget, routeKey } from "./terminal/keys";
 import { detectPlatform, matchShortcut, type Command } from "./app/shortcuts";
 import {
   allowsContextMenu,
@@ -90,7 +91,10 @@ export default function App() {
     async (cmd: Command) => {
       if (cmd.type === "openSettings") setSettingsOpen(true);
       else if (cmd.type === "quickOpen") setQuickOpen(true);
-      else await workspaceRun(cmd);
+      // Wired to the terminal panel later.
+      else if (cmd.type === "toggleTerminal" || cmd.type === "newTerminal") {
+        return;
+      } else await workspaceRun(cmd);
       // The other editor takes the keyboard.
       if (cmd.type === "toggleRichMarkdown") refocus();
     },
@@ -115,6 +119,14 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // In a terminal the shell owns most keys: no app Command for those.
+      if (
+        isTerminalTarget(e.target) &&
+        routeKey(e, platform, false) !== "app"
+      ) {
+        if (blocksBrowserKey(e, platform, false)) e.preventDefault();
+        return;
+      }
       const cmd = matchShortcut(e, platform);
       // A key the rich editor used (Mod+B is bold there) is its own.
       if (cmd && !richHandled(e)) {

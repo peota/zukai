@@ -295,3 +295,29 @@ describe("keyboard layouts", () => {
       matchShortcut(ev("Digit1", { key: "&", ctrlKey: true }), "other"),
     ).toEqual({ type: "goToTab", n: 1 }));
 });
+
+describe("terminal shortcuts", () => {
+  it.each(["windows", "mac", "other"] as Platform[])(
+    "ctrlBackquoteTogglesOnEveryPlatform (%s)",
+    (p) => {
+      expect(
+        matchShortcut(ev("Backquote", { key: "`", ctrlKey: true }), p),
+      ).toEqual({ type: "toggleTerminal" });
+    },
+  );
+  it("Cmd+` does not match", () => {
+    expect(
+      matchShortcut(ev("Backquote", { key: "`", metaKey: true }), "mac"),
+    ).toBeNull();
+  });
+  it("ctrlShiftBackquoteOpensNew", () => {
+    for (const p of ["windows", "mac", "other"] as Platform[]) {
+      expect(
+        matchShortcut(
+          ev("Backquote", { key: "~", ctrlKey: true, shiftKey: true }),
+          p,
+        ),
+      ).toEqual({ type: "newTerminal" });
+    }
+  });
+});
