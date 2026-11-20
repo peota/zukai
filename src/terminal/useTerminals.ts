@@ -29,8 +29,11 @@ export function useTerminals() {
   const logs = useRef(
     new Map<number, { events: TerminalEvent[]; size: number }>(),
   );
+  /** Killed terminals: whatever they still send is ignored. */
+  const killed = useRef(new Set<number>());
 
   const deliver = useCallback((id: number, e: TerminalEvent) => {
+    if (killed.current.has(id)) return;
     if (e.kind === "exit") dispatch({ type: "exited", id, code: e.code });
     const sink = sinks.current.get(id);
     const log = logs.current.get(id);
@@ -68,14 +71,14 @@ export function useTerminals() {
   );
 
   const kill = useCallback((id: number) => {
+    // Gone at once: its Exit (and a dimmed "Process exited" line) may come
+    // before the kill returns, and must not show.
+    killed.current.add(id);
+    sinks.current.delete(id);
+    logs.current.delete(id);
+    dispatch({ type: "killed", id });
     // Exited sessions stay in Rust's map until killed, so always kill.
-    void terminalKill(id)
-      .catch(() => {})
-      .then(() => {
-        sinks.current.delete(id);
-        logs.current.delete(id);
-        dispatch({ type: "killed", id });
-      });
+    void terminalKill(id).catch(() => {});
   }, []);
 
   /** Replays the early output to `sink`, then sends it live; returns its undo. */

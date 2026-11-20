@@ -119,6 +119,32 @@ describe("useTerminals", () => {
     expect(sink.mock.calls.map((c) => c[0].data)).toEqual(["early ", "prompt"]);
   });
 
+  it("a killed terminal goes at once, without showing its exit", async () => {
+    const { result } = renderHook(() => useTerminals());
+    await act(() => result.current.open("C:\\L"));
+    const sink = vi.fn();
+    act(() => result.current.register(3, sink));
+    sink.mockClear();
+    let finish = () => {};
+    a.terminalKill.mockReturnValueOnce(
+      new Promise<void>((resolve) => (finish = resolve)),
+    );
+    act(() => result.current.kill(3));
+    expect(a.terminalKill).toHaveBeenCalledWith(3);
+    // Gone before the backend is done killing it.
+    expect(result.current.state.terms).toEqual([]);
+    // Its last output and its Exit arrive while it is being killed: ignored.
+    act(() => h.emit!({ kind: "data", data: "bye" }));
+    act(() => h.emit!({ kind: "exit", code: 1 }));
+    expect(sink).not.toHaveBeenCalled();
+    expect(result.current.state.terms).toEqual([]);
+    await act(async () => finish());
+    // Nothing was kept for it: a view registering now gets nothing.
+    const late = vi.fn();
+    act(() => result.current.register(3, late));
+    expect(late).not.toHaveBeenCalled();
+  });
+
   it("kill ends the session, then forgets the terminal", async () => {
     const { result } = renderHook(() => useTerminals());
     await act(() => result.current.open("C:\\L"));
