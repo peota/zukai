@@ -62,6 +62,22 @@ describe("recentItems", () => {
     ]);
   });
 
+  it("leaves out deleted Files: Missing open Tabs and gone closed ones", () => {
+    const missing = file("m", "C:/L/m.md");
+    missing.file!.held = "missing";
+    const tabs = [missing, file("a", "C:/L/a.md")];
+    const closed = [
+      { tab: file("c", "C:/L/c.md"), index: 0, closedAt: 2 },
+      { tab: file("d", "C:/L/d.md"), index: 0, closedAt: 1 },
+    ];
+    expect(
+      recentItems(["m", "c", "d", "a"], tabs, closed, key, new Set(["c"])),
+    ).toEqual([
+      { id: "d", title: "d.md", icon: "markdown", open: false },
+      { id: "a", title: "a.md", icon: "markdown", open: true },
+    ]);
+  });
+
   it("shows at most RECENT_SHOWN", () => {
     const tabs = Array.from({ length: 12 }, (_, i) =>
       file(`t${i}`, `C:/L/${i}.md`),

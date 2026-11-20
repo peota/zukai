@@ -49,6 +49,7 @@ import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
 import { SidebarToggle } from "./ui/SidebarToggle";
 import { pinnedItems, recentItems } from "./ui/Pinned";
+import { useGoneClosed } from "./app/useGoneClosed";
 import { useColorScheme } from "./ui/useColorScheme";
 import { SaveChangesDialog } from "./ui/SaveChangesDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
@@ -521,6 +522,9 @@ export default function App() {
     />
   );
 
+  /** Closed Recent entries whose File was deleted (hidden from Recent). */
+  const goneClosed = useGoneClosed(w.sidebar.recent, w.state.closed);
+
   /** Activates an open Tab, or reopens a closed one (a pin stays pinned). */
   const openTabOrClosed = (id: string) => {
     if (w.state.tabs.some((t) => t.id === id)) {
@@ -553,7 +557,7 @@ export default function App() {
         onCreate={lib.create}
         onRename={lib.rename}
         onMove={(path, dest) => void lib.move(path, dest)}
-        onTrash={(path) => void lib.trash(path)}
+        onTrash={(path) => void lib.trash(path).then(goneClosed.recheck)}
         onReveal={lib.reveal}
         onCopyPath={lib.copyPath}
         onChooseRoot={() => void lib.chooseRoot()}
@@ -571,6 +575,7 @@ export default function App() {
           w.state.tabs,
           w.state.closed,
           keyOf,
+          goneClosed.gone,
         )}
         onRecentOpen={openTabOrClosed}
         onLeave={refocus}

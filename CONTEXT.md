@@ -120,7 +120,7 @@ The Sidebar's list of open, unpinned Scratchpads, by Title, headed SCRATCHPADS. 
 _Avoid_: Inbox (its earlier name), Drafts.
 
 **Recent**
-The Sidebar's list of the Files last viewed, newest first, headed RECENT, at its top: a File goes to the front each time its Tab becomes active. It shows up to 8 Files, open or in Recently Closed (dimmed), one entry per File, without pinned ones (they're in the Pinned list). A click goes to the open Tab or reopens the closed one. Scratchpads never appear. Stored in the Session as Tab ids (`sidebar.recent`), so a rename or move keeps its place.
+The Sidebar's list of the Files last viewed, newest first, headed RECENT, at its top: a File goes to the front each time its Tab becomes active. It shows up to 8 Files, open or in Recently Closed (dimmed), one entry per File, without pinned ones (they're in the Pinned list) or deleted ones (a Missing Tab, or a closed File no longer on disk, checked on focus and after a Library delete). A click goes to the open Tab or reopens the closed one. Scratchpads never appear. Stored in the Session as Tab ids (`sidebar.recent`), so a rename or move keeps its place.
 
 **Pinned**
 A Tab marked to stay at hand: it sits at the start of the tab bar, with a pin in place of its close button, and in the Sidebar's Pinned list. Closing it keeps it in the Pinned list, dimmed, and in Recently Closed, where it never expires; reopening it keeps the pin. Stored on the Tab in the Session (`pinned`).
