@@ -965,6 +965,12 @@ describe("Sidebar added folders", () => {
     choose();
     expect(p.onOpenTerminal).toHaveBeenLastCalledWith(ROOT);
 
+    // The Library heading's ⋯.
+    fireEvent.click(actions("Library"));
+    expect(after("Open in terminal")).toBe(true);
+    choose();
+    expect(p.onOpenTerminal).toHaveBeenLastCalledWith(ROOT);
+
     // A folder entry.
     fireEvent.contextMenu(row("Ideas"));
     expect(after("Open in terminal")).toBe(true);
@@ -981,7 +987,7 @@ describe("Sidebar added folders", () => {
     fireEvent.contextMenu(row("todo.txt"));
     expect(menuItems()).not.toContain("Open in terminal");
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
-    expect(p.onOpenTerminal).toHaveBeenCalledTimes(3);
+    expect(p.onOpenTerminal).toHaveBeenCalledTimes(4);
   });
 
   it("an unavailable heading has no Open in terminal", () => {
@@ -1018,6 +1024,7 @@ describe("Sidebar added folders", () => {
     fireEvent.click(actions("Library"));
     expect(menuItems()).toEqual([
       "Show in Explorer",
+      "Open in terminal",
       "Choose Library folder…",
       "Add folder…",
     ]);
