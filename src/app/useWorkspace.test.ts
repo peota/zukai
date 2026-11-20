@@ -427,6 +427,9 @@ describe("useWorkspace settings", () => {
       autosaveFiles: false,
       previewSplit: 0.5,
       markdownDefault: "rich",
+      terminalPosition: "bottom",
+      terminalHeight: 280,
+      terminalWidth: 480,
     });
     act(() =>
       result.current.setSettings({
