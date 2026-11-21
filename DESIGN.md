@@ -152,7 +152,7 @@ spacing:
   lg: "16px"
   row: "30px"
   tabbar: "40px"
-  statusbar: "28px"
+  statusbar: "32px"
   sidebar: "260px"
   column: "720px"
 components:
@@ -309,7 +309,7 @@ Palette character: Paper is cool zinc; Solar Light is warm parchment (`#fbf8f2` 
 
 ## Layout
 
-A fixed desktop shell, not a responsive page. Left to right: the Library sidebar (260px default, resizable from 180px to 480px by a 6px handle on its right edge, 16px per arrow-key step), then the main column. Top to bottom in the main column: a 40px tab bar, an optional file bar (8px by 16px), the rich toolbar (at least 36px, wrapping its hairline-separated groups in a narrow Split, its first tool inset 50px to align with the text), the editor, and a 28px status bar.
+A fixed desktop shell, not a responsive page. Left to right: the Library sidebar (260px default, resizable from 180px to 480px by a 6px handle on its right edge, 16px per arrow-key step), then the main column. Top to bottom in the main column: a 40px tab bar, an optional file bar (8px by 16px), the rich toolbar (at least 36px, wrapping its hairline-separated groups in a narrow Split, its first tool inset 50px to align with the text), the editor, and a 32px status bar with 16px sides.
 
 The tab bar holds tabs 34px tall, 120px to 220px wide (380px for a joined Split tab), 2px apart, rising from 6px top padding so the active tab meets the editor. The sidebar stacks a 32px search field, Pinned (up to 35% of the height), the Library tree, and Scratchpads (up to 40%), with 8px side padding and rows 30px tall. Note content gets 56px side padding, 32px top and 64px bottom; the text editor's lines get 14px left and 32px right padding inside a 14px vertical content inset.
 

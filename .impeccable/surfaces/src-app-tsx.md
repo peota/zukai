@@ -24,7 +24,7 @@ OWN-WORLD: Neutral tinted grounds per theme with three surface steps (sidebar/ta
 
 STORY: Open, see the note at a comfortable size, find anything in the Library tree, switch tabs, read tables and checklists at a glance, change theme and accent in Settings.
 
-FIRST VIEWPORT: Left 260px sidebar (search, Library tree, Pinned, Scratchpads); 40px tab bar with rounded-top tabs, active tab joined to the editor; quiet 36px rich toolbar; editor column max 720px at 15px/1.65; 28px status bar.
+FIRST VIEWPORT: Left 260px sidebar (search, Library tree, Pinned, Scratchpads); 40px tab bar with rounded-top tabs, active tab joined to the editor; quiet 36px rich toolbar; editor column max 720px at 15px/1.65; 32px status bar.
 
 FORM: canon (category standard), seed: seed:ac6dbf0a9ee861c5.
 
