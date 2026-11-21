@@ -90,8 +90,9 @@ describe("DOM targets", () => {
   });
   it("a key the rich editor used is its own", () => {
     const root = make(
-      '<div data-rich-editor><div class="ProseMirror" id="r"></div></div>' +
-        '<div id="o"></div>',
+      '<div data-rich-editor><div id="pad">' +
+        '<div class="ProseMirror" contenteditable="true" id="r"></div>' +
+        '</div></div><div id="o"></div>',
     );
     const at = (id: string, defaultPrevented: boolean) => ({
       target: root.querySelector(id),
@@ -101,6 +102,8 @@ describe("DOM targets", () => {
     expect(richHandled(at("#r", false))).toBe(false);
     expect(richHandled(at("#o", true))).toBe(false);
     expect(allowsContextMenu(root.querySelector("#r"))).toBe(true);
+    // The page around the text gets no Back/Refresh/Inspect menu.
+    expect(allowsContextMenu(root.querySelector("#pad"))).toBe(false);
     root.remove();
   });
 });

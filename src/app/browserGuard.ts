@@ -24,11 +24,17 @@ export function blocksBrowserKey(
   return letter === "r" || letter === "p";
 }
 
-/** The native context menu stays only where text is edited. */
+/**
+ * The native context menu stays only where text is edited. In the rich
+ * editor that is its editable text, not the page around it, where the
+ * webview would offer Back, Refresh, Print and Inspect.
+ */
 export function allowsContextMenu(t: EventTarget | null): boolean {
   return (
     t instanceof Element &&
-    t.closest("input, textarea, .cm-editor, [data-rich-editor]") !== null
+    t.closest(
+      "input, textarea, .cm-editor, [data-rich-editor] [contenteditable=true]",
+    ) !== null
   );
 }
 
