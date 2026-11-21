@@ -298,7 +298,7 @@ Palette character: Paper is cool zinc; Solar Light is warm parchment (`#fbf8f2` 
 - **Body** (400, 15px, 1.65): Markdown preview and rich editor, prose capped at 70ch inside a 720px column; strong is 650.
 - **UI** (400, 13px, 1.4): tabs, menus, dialog, toolbar fields, notices. The sidebar tree reads at 14px.
 - **Caption** (400 or 500, 12px): status bar, menu hints and details, file-bar buttons, kbd keys.
-- **Label** (600, 11px, 0.06em, uppercase): sidebar section headings (Pinned, Library, Scratchpads) and the shortcut table's group headings, in faint ink. Menu headings use the same size at 0.04em without uppercase.
+- **Label** (600, 11px, 0.06em, uppercase): sidebar section headings (Recent, Pinned, Library, Scratchpads; each 28px tall, 8px below what precedes it) and the shortcut table's group headings, in faint ink. Menu headings use the same size at 0.04em without uppercase.
 - **Code** (400, 14px default, 1.65): the text editor, adjustable in Settings; 0.87em for inline code and code blocks in notes.
 
 ### Named Rules
@@ -368,9 +368,9 @@ Small and unobtrusive; never oversized.
 
 ### Navigation
 
-- **Tab bar:** tabs sit on the chrome in muted ink with a 15px faint icon; hover takes the row-hover fill; the active tab takes the editor ground, text ink and an accent icon, with 8px top corners so it joins the page. A Split shows as one tab with a hairline between its two titles. Dragging lifts the tab with the float shadow.
-- **Library tree:** 30px rows, 6px corners, 14px chevrons that rotate 90 degrees in 150ms, 16px Lucide icons; the active file gets the row-selected fill and an accent icon; folders read in muted ink, files in text ink. Drop targets get a row-selected fill and a 1px inset accent ring.
-- **Pinned and Scratchpads:** the same row grammar; open items read muted, closed ones faint.
+- **Tab bar:** tabs sit on the chrome in muted ink with a 15px faint icon; hover takes the row-hover fill; the active tab takes the editor ground, text ink and an accent icon, with 8px top corners and an 8px concave flare at each bottom corner in the editor ground, so it joins the page as one shape (the flares drop while the tab is dragged). A Split shows as one tab with a hairline between its two titles. Dragging lifts the tab with the float shadow.
+- **Library tree:** 30px rows, 6px corners, 14px chevrons that rotate 90 degrees in 150ms, 16px Lucide icons; the active file gets the row-selected fill and an accent icon; folders read in muted ink, files in text ink. Drop targets get a row-selected fill and a 1px inset accent ring. Nested rows carry 1px hairline indent guides under each ancestor's chevron. The heading's New file, New folder, New canvas, Collapse all and ⋯ buttons fade in (150ms) while the sidebar is hovered or holds focus, and stay up while the Library is empty or unavailable.
+- **Recent, Pinned and Scratchpads:** the same row grammar; open items read muted, closed ones faint. The row-selected fill marks the active Tab only at its home (its tree row, or its Scratchpads row); in Recent and Pinned the active item takes text ink and an accent icon without a fill, so one Tab never shows two selected rows. Scratchpads dock at the sidebar's foot under a full-width hairline.
 - **Settings tabs:** text tabs with a 2px accent underline when selected.
 
 ### Menus and pickers

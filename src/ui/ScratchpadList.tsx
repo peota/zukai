@@ -1,5 +1,6 @@
 import type { Kind } from "../model/kinds";
 import { Icon } from "./icons";
+import { SectionHeading } from "./SectionHeading";
 import type { PointerHandlers } from "./useFolderDrag";
 
 export interface ScratchpadItem {
@@ -34,10 +35,10 @@ export function ScratchpadList({
   // One stop in the Tab order: the active Scratchpad, else the first.
   const stop = items.some((i) => i.id === activeId) ? activeId : items[0].id;
   return (
-    <section className="flex max-h-[40%] min-h-0 shrink-0 flex-col">
-      <div className="px-2 pt-2.5 pb-1 text-ui-xs font-semibold tracking-[0.06em] text-faint">
-        SCRATCHPADS
-      </div>
+    // Docked at the sidebar's foot under a full-width hairline: these live
+    // outside the Library, and the tree scrolls behind the edge.
+    <section className="-mx-2 flex max-h-[40%] min-h-0 shrink-0 flex-col border-t border-hairline px-2">
+      <SectionHeading label="SCRATCHPADS" />
       <ul aria-label="Scratchpads" className="min-h-0 overflow-y-auto pb-2">
         {items.map((item) => {
           const active = item.id === activeId;
@@ -89,7 +90,7 @@ export function ScratchpadList({
               <span className="w-3.5 shrink-0" />
               <Icon
                 name={item.kind === "canvas" ? "canvas" : "scratchpad"}
-                className="text-muted"
+                className={active ? "text-accent" : "text-muted"}
               />
               <span className="min-w-0 flex-1 truncate">{item.title}</span>
             </li>

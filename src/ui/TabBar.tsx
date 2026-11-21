@@ -367,7 +367,8 @@ export function TabBar({
               (joined ? "max-w-[380px] " : "max-w-[220px] ") +
               (lifted ? "relative z-10 shadow-float " : "") +
               (active
-                ? "bg-editor text-text"
+                ? (lifted ? "" : "z-tab-flare relative z-[1] ") +
+                  "bg-editor text-text"
                 : "text-muted hover:bg-row-hover hover:text-text")
             }
           >
