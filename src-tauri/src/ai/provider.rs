@@ -1,7 +1,7 @@
 //! Provider request building and stream-event parsing (pure, no I/O).
 
 use super::AiError;
-use super::config::{AiConfig, Provider};
+use super::config::{AiConfig, Provider, effective_model};
 use super::sse::SseEvent;
 use serde::{Deserialize, Serialize};
 
@@ -51,7 +51,7 @@ pub fn build_request(
                 ("anthropic-version".into(), "2023-06-01".into()),
             ],
             body: serde_json::json!({
-                "model": c.model,
+                "model": effective_model(c),
                 "max_tokens": 4096,
                 "stream": true,
                 "system": system,
@@ -78,7 +78,7 @@ pub fn build_request(
                 url,
                 headers,
                 body: serde_json::json!({
-                    "model": c.model,
+                    "model": effective_model(c),
                     "stream": true,
                     "messages": all,
                 }),
@@ -223,6 +223,14 @@ mod tests {
             r.body["messages"][0],
             json!({"role":"user","content":"hello"})
         );
+    }
+
+    #[test]
+    fn anthropic_request_defaults_an_empty_model() {
+        let mut c = cfg(Provider::Anthropic, None);
+        c.model = String::new();
+        let r = build_request(&c, "k", "sys", &msgs()).unwrap();
+        assert_eq!(r.body["model"], "claude-sonnet-5-5");
     }
 
     #[test]

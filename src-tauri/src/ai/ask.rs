@@ -35,6 +35,9 @@ const ERROR_BODY_CAP: u64 = 64 * 1024;
 fn network(req: HttpRequest, label: &str, read_timeout: Duration, tx: mpsc::Sender<Net>) {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
+        // A redirect is answered as an error, so a request (and its key)
+        // never goes anywhere but the URL that was set.
+        .max_redirects(0)
         .timeout_connect(Some(CONNECT_TIMEOUT))
         .timeout_per_read(Some(read_timeout))
         .build()
@@ -103,6 +106,10 @@ fn stream_answer_with(
     cancel: &AtomicBool,
     sink: &mut dyn FnMut(AskEvent),
 ) {
+    // A cancel that came before the request started: nothing is sent.
+    if cancel.load(Ordering::SeqCst) {
+        return;
+    }
     let (tx, rx) = mpsc::channel();
     let owned = label.to_owned();
     std::thread::spawn(move || network(req, &owned, read_timeout, tx));
@@ -147,6 +154,12 @@ fn stream_answer_with(
                         None => {}
                     }
                 }
+                if parser.too_large() {
+                    sink(AskEvent::Error {
+                        message: format!("{label}: the response was too large to read"),
+                    });
+                    return;
+                }
             }
             Net::Http(status, body) => {
                 sink(AskEvent::Error {
@@ -190,6 +203,10 @@ impl Asks {
         for f in self.0.lock().unwrap().values() {
             f.store(true, Ordering::SeqCst);
         }
+    }
+    #[cfg(test)]
+    pub fn running(&self, id: u32) -> bool {
+        self.0.lock().unwrap().contains_key(&id)
     }
     /// Forgets the answer that owns `flag`; a newer answer with the same id
     /// stays registered.
@@ -415,6 +432,81 @@ mod tests {
         assert!(
             matches!(out.as_slice(), [AskEvent::Error { .. }]),
             "{out:?}"
+        );
+    }
+
+    #[test]
+    fn cancelled_before_start_connects_nowhere() {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        l.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/x", l.local_addr().unwrap());
+        let mut out = Vec::new();
+        stream_answer(
+            req(url),
+            Provider::Openai,
+            "OpenAI",
+            &AtomicBool::new(true),
+            &mut |e| out.push(e),
+        );
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(l.accept().is_err(), "a connection was made");
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn redirect_is_not_followed() {
+        let url = serve(
+            "HTTP/1.1 302 Found
+location: http://127.0.0.1:1/elsewhere
+content-length: 0
+connection: close
+
+",
+            "",
+            Duration::ZERO,
+        );
+        assert_eq!(
+            run(url, Provider::Openai, "OpenAI"),
+            vec![AskEvent::Error {
+                message: "OpenAI: HTTP 302".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn endless_line_is_one_error() {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/x", l.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (mut s, _) = l.accept().unwrap();
+            let mut r = BufReader::new(s.try_clone().unwrap());
+            let mut len = 0usize;
+            loop {
+                let mut line = String::new();
+                r.read_line(&mut line).unwrap();
+                if line.trim().is_empty() {
+                    break;
+                }
+                if let Some(v) = line.to_lowercase().strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap();
+                }
+            }
+            let mut b = vec![0; len];
+            r.read_exact(&mut b).unwrap();
+            let _ = s.write_all(SSE.as_bytes());
+            let junk = vec![b'x'; 64 * 1024];
+            // Stops once the client hangs up.
+            for _ in 0..64 {
+                if s.write_all(&junk).is_err() {
+                    break;
+                }
+            }
+        });
+        assert_eq!(
+            run(url, Provider::Openai, "OpenAI"),
+            vec![AskEvent::Error {
+                message: "OpenAI: the response was too large to read".into()
+            }]
         );
     }
 
