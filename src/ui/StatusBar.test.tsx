@@ -237,3 +237,28 @@ describe("StatusBar", () => {
     expect(onChange).toHaveBeenCalledWith("markdown");
   });
 });
+
+describe("StatusBar Ask button", () => {
+  it("is absent until Ask is ready", () => {
+    setup();
+    expect(screen.queryByRole("button", { name: "Ask" })).toBeNull();
+  });
+
+  it("toggles the Ask panel and shows whether it's open", () => {
+    const onToggle = vi.fn();
+    setup({ ask: { open: false, onToggle, hint: "Ctrl+J" } });
+    const button = screen.getByRole("button", { name: "Ask" });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveAttribute("title", "Ask (Ctrl+J)");
+    fireEvent.click(button);
+    expect(onToggle).toHaveBeenCalled();
+  });
+
+  it("stays on a Canvas Tab", () => {
+    setup({ kindLabel: "Canvas", ask: { open: true, onToggle: vi.fn() } });
+    expect(screen.getByRole("button", { name: "Ask" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+});
