@@ -21,6 +21,7 @@ import type {
 } from "../model/settings";
 import type { AiStatus } from "../ask/api";
 import { AiSettings } from "./AiSettings";
+import { BUTTON, Row } from "./settingsRows";
 import { CloseIcon, Icon } from "./icons";
 import type { MarkdownMode } from "../model/types";
 
@@ -49,9 +50,6 @@ const MARKDOWN_MODES: { id: MarkdownMode; label: string }[] = [
   { id: "rich", label: "Rich editor" },
   { id: "markdown", label: "Markdown" },
 ];
-
-export const BUTTON =
-  "rounded-[5px] px-2 py-[3px] text-muted hover:bg-row-hover hover:text-text disabled:pointer-events-none disabled:opacity-40";
 
 /** Settings and the keyboard shortcut list (Mod+, or the status bar gear). */
 export function SettingsDialog({
@@ -320,21 +318,6 @@ function Swatches<T extends string>({
           {o.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-export function Row({
-  label,
-  children,
-}: {
-  label: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex min-h-11 items-center gap-4">
-      <div className="flex-1 text-text">{label}</div>
-      <div className="flex shrink-0 items-center gap-1">{children}</div>
     </div>
   );
 }

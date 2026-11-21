@@ -127,6 +127,12 @@ vi.mock("./library/api", () => ({
   onDragDrop: vi.fn(),
 }));
 
+vi.mock("./ask/api", () => ({
+  aiStatus: vi.fn(() =>
+    Promise.resolve({ config: null, hasKey: false, ready: false }),
+  ),
+}));
+
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     show: () => Promise.resolve(),
