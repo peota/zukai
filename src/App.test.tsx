@@ -833,6 +833,39 @@ describe("App", () => {
     );
   });
 
+  for (const how of ["Mod+J", "the close button"]) {
+    it(`hiding the Ask panel with ${how} stops a running answer`, async () => {
+      vi.mocked(ask.aiStatus).mockResolvedValueOnce({
+        config: { provider: "anthropic", model: "claude-sonnet-5-5" },
+        hasKey: true,
+        ready: true,
+      });
+      // The answer never ends on its own.
+      vi.mocked(ask.aiAsk).mockReturnValue(new Promise(() => {}));
+      vi.mocked(ask.aiCancel).mockResolvedValue(undefined);
+      h.texts.a = "alpha";
+      const r = render(<App />);
+      await waitFor(() => r.getByTestId("editor"));
+      await act(async () => {});
+      act(() => modJ());
+      const question = await r.findByLabelText("Question");
+      fireEvent.change(question, { target: { value: "What is this?" } });
+      fireEvent.keyDown(question, { key: "Enter" });
+      await waitFor(() => expect(ask.aiAsk).toHaveBeenCalled());
+      const id = vi.mocked(ask.aiAsk).mock.calls[0][0];
+      expect(ask.aiCancel).not.toHaveBeenCalled();
+      if (how === "Mod+J") act(() => modJ());
+      else fireEvent.click(r.getByRole("button", { name: "Close Ask panel" }));
+      await waitFor(() =>
+        expect(r.queryByRole("region", { name: "Ask" })).toBeNull(),
+      );
+      expect(ask.aiCancel).toHaveBeenCalledWith(id);
+      // The question stays in the conversation when the panel comes back.
+      act(() => modJ());
+      expect(await r.findByText("What is this?")).toBeInTheDocument();
+    });
+  }
+
   it("removing the key closes the Ask panel, and a new key doesn't reopen it", async () => {
     const ready = {
       config: { provider: "anthropic" as const, model: "claude-sonnet-5-5" },

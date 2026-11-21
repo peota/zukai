@@ -279,6 +279,12 @@ export default function App() {
       : null,
   });
   const clearAsk = ask.clear;
+  const stopAsk = ask.stop;
+  // Hiding the panel (Mod+J or its ×) stops a running answer; what came so
+  // far stays in the conversation.
+  useEffect(() => {
+    if (!askShown) stopAsk();
+  }, [askShown, stopAsk]);
   // No provider any more (its key was removed): the panel closes and the
   // conversation goes, so setting a key later doesn't bring either back.
   const wasReady = useRef(aiReady);
