@@ -126,7 +126,13 @@ pub async fn ai_ask(
             Some(c) if status.ready => c,
             _ => return Err(AiError::NotReady),
         };
-        let key = store.get(&key_account(&config))?.unwrap_or_default();
+        let key = store.get(&key_account(&config))?;
+        // Compatible servers may run without a key; the others need one.
+        let key = match (key, config.provider) {
+            (Some(k), _) => k,
+            (None, Provider::Compatible) => String::new(),
+            (None, _) => return Err(AiError::NotReady),
+        };
         let req = build_request(&config, &key, &system, &messages)?;
         Ok((req, config))
     })
@@ -137,7 +143,7 @@ pub async fn ai_ask(
         stream_answer(req, config.provider, &label, &cancel, &mut |e| {
             let _ = on_event.send(e);
         });
-        app.state::<Asks>().finish(id);
+        app.state::<Asks>().finish(id, &cancel);
     });
     Ok(())
 }
