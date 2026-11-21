@@ -19,6 +19,8 @@ import type {
   Settings,
   ThemePref,
 } from "../model/settings";
+import type { AiStatus } from "../ask/api";
+import { AiSettings } from "./AiSettings";
 import { CloseIcon, Icon } from "./icons";
 import type { MarkdownMode } from "../model/types";
 
@@ -31,9 +33,11 @@ export interface SettingsDialogProps {
   onSettings(patch: Partial<Settings>): void;
   onFontSize(px: number): void;
   onClose(): void;
+  aiStatus: AiStatus;
+  onAiStatus(s: AiStatus): void;
 }
 
-type Section = "general" | "shortcuts";
+type Section = "general" | "ai" | "shortcuts";
 
 const THEMES: { id: ThemePref; label: string }[] = [
   { id: "system", label: "System" },
@@ -46,7 +50,7 @@ const MARKDOWN_MODES: { id: MarkdownMode; label: string }[] = [
   { id: "markdown", label: "Markdown" },
 ];
 
-const BUTTON =
+export const BUTTON =
   "rounded-[5px] px-2 py-[3px] text-muted hover:bg-row-hover hover:text-text disabled:pointer-events-none disabled:opacity-40";
 
 /** Settings and the keyboard shortcut list (Mod+, or the status bar gear). */
@@ -57,6 +61,8 @@ export function SettingsDialog({
   onSettings,
   onFontSize,
   onClose,
+  aiStatus,
+  onAiStatus,
 }: SettingsDialogProps) {
   const [section, setSection] = useState<Section>("general");
 
@@ -102,6 +108,12 @@ export function SettingsDialog({
               General
             </SectionTab>
             <SectionTab
+              selected={section === "ai"}
+              onSelect={() => setSection("ai")}
+            >
+              AI
+            </SectionTab>
+            <SectionTab
               selected={section === "shortcuts"}
               onSelect={() => setSection("shortcuts")}
             >
@@ -126,6 +138,8 @@ export function SettingsDialog({
               onSettings={onSettings}
               onFontSize={onFontSize}
             />
+          ) : section === "ai" ? (
+            <AiSettings status={aiStatus} onStatus={onAiStatus} />
           ) : (
             <Shortcuts platform={platform} />
           )}
@@ -310,7 +324,13 @@ function Swatches<T extends string>({
   );
 }
 
-function Row({ label, children }: { label: ReactNode; children: ReactNode }) {
+export function Row({
+  label,
+  children,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div className="flex min-h-11 items-center gap-4">
       <div className="flex-1 text-text">{label}</div>

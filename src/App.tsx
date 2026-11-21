@@ -53,6 +53,7 @@ import { useGoneClosed } from "./app/useGoneClosed";
 import { useColorScheme } from "./ui/useColorScheme";
 import { SaveChangesDialog } from "./ui/SaveChangesDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
+import { aiStatus, type AiStatus } from "./ask/api";
 import { QuickOpen, type QuickTab } from "./ui/QuickOpen";
 import { fileIcon } from "./ui/icons";
 import { libraryQuickOpen } from "./library/api";
@@ -90,6 +91,14 @@ export default function App() {
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [picking, setPicking] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [ai, setAi] = useState<AiStatus>({
+    config: null,
+    hasKey: false,
+    ready: false,
+  });
+  useEffect(() => {
+    aiStatus().then(setAi, () => {});
+  }, []);
   const [quickOpen, setQuickOpen] = useState(false);
   /** Edits reach a Markdown preview without re-rendering the App. */
   const [feed] = useState(createTextFeed);
@@ -786,6 +795,8 @@ export default function App() {
           platform={platform}
           onSettings={w.setSettings}
           onFontSize={w.setFontSize}
+          aiStatus={ai}
+          onAiStatus={setAi}
           onClose={() => {
             setSettingsOpen(false);
             refocus();

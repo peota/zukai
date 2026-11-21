@@ -75,6 +75,7 @@ describe("session file", () => {
       terminalPosition: "bottom" as const,
       terminalHeight: 280,
       terminalWidth: 480,
+      askWidth: 400,
     };
     const json = JSON.stringify(
       toSessionFile(ws, DEFAULT_SIDEBAR, 13, settings),
