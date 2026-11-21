@@ -3,6 +3,11 @@
 pub mod commands;
 pub mod config;
 pub mod keychain;
+// Consumed by the streaming command in the next task.
+#[allow(dead_code)]
+pub mod provider;
+#[allow(dead_code)]
+pub mod sse;
 
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
