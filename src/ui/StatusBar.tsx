@@ -90,7 +90,7 @@ export const LANGUAGE_LABELS: Record<LanguageId, string> = {
 };
 
 const CHIP =
-  "rounded-[5px] px-2 py-[3px] hover:bg-row-hover hover:text-text aria-expanded:bg-row-sel aria-expanded:text-text";
+  "rounded-[5px] px-2.5 py-1 hover:bg-row-hover hover:text-text aria-expanded:bg-row-sel aria-expanded:text-text";
 
 export function StatusBar({
   line,
@@ -125,7 +125,7 @@ export function StatusBar({
   const scratchEnding = platformLineEnding === "crlf" ? "CRLF" : "LF";
 
   return (
-    <div className="flex h-7 shrink-0 select-none items-center gap-3 border-t border-hairline bg-chrome px-3 text-ui-sm text-muted">
+    <div className="flex h-8 shrink-0 select-none items-center gap-4 border-t border-hairline bg-chrome px-4 text-ui-sm text-muted">
       {onSettings && (
         <button
           type="button"
@@ -133,7 +133,7 @@ export function StatusBar({
           aria-label="Settings"
           title={settingsHint ? `Settings (${settingsHint})` : "Settings"}
           onClick={onSettings}
-          className="-ml-1.5 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
+          className="-ml-1 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
         >
           <Icon name="settings" size={14} />
         </button>
@@ -154,21 +154,21 @@ export function StatusBar({
         </span>
       )}
       {kindLabel !== undefined && image ? (
-        <div className="ml-auto flex items-center gap-3 px-1.5 py-0.5">
+        <div className="ml-auto flex items-center gap-4 px-2.5 py-1">
           <span>{`${image.width} × ${image.height}`}</span>
           <span>{image.format}</span>
           <span>{fileSize(image.bytes)}</span>
         </div>
       ) : kindLabel !== undefined ? (
-        <span className="ml-auto px-1.5 py-0.5">{kindLabel}</span>
+        <span className="ml-auto px-2.5 py-1">{kindLabel}</span>
       ) : (
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-2">
           {markdownMode && <ModeSwitch {...markdownMode} />}
           {preview && !rich && <PreviewSwitch {...preview} />}
           {(markdownMode || preview) && (
             <span
               aria-hidden="true"
-              className="mx-1.5 h-3.5 w-px bg-hairline-strong"
+              className="mx-1 h-4 w-px bg-hairline-strong"
             />
           )}
           {showFormat && (
@@ -211,8 +211,8 @@ export function StatusBar({
             </>
           ) : (
             <>
-              <span className="px-1.5 py-0.5">UTF-8</span>
-              <span className="px-1.5 py-0.5">{scratchEnding}</span>
+              <span className="px-2.5 py-1">UTF-8</span>
+              <span className="px-2.5 py-1">{scratchEnding}</span>
             </>
           )}
         </div>
@@ -221,7 +221,7 @@ export function StatusBar({
         <>
           <span
             aria-hidden="true"
-            className="h-3.5 w-px shrink-0 bg-hairline-strong"
+            className="h-4 w-px shrink-0 bg-hairline-strong"
           />
           <button
             type="button"
@@ -230,7 +230,7 @@ export function StatusBar({
             title={ask.hint ? `Ask (${ask.hint})` : "Ask"}
             onClick={ask.onToggle}
             className={
-              "-mr-1.5 flex shrink-0 items-center gap-1.5 rounded-[5px] px-2 py-[3px] " +
+              "-mr-1 flex shrink-0 items-center gap-1.5 rounded-[5px] px-2.5 py-1 " +
               (ask.open
                 ? "bg-row-sel text-text"
                 : "hover:bg-row-hover hover:text-text")
@@ -354,7 +354,7 @@ function Radios<T extends string>({
           aria-checked={value === m.id}
           onClick={() => onChange(m.id)}
           className={
-            "rounded-[5px] px-2 py-px " +
+            "rounded-[5px] px-2.5 py-0.5 " +
             (value === m.id
               ? "bg-surface text-text shadow-tab"
               : "hover:text-text")
