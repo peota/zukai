@@ -190,6 +190,8 @@ Prioritize the first version in this order:
 6. Split view and workflow polish.
 7. Quick-capture window and global shortcut.
 
+> **2026-11-21:** AI is no longer deferred: Ask is decided in [ADR 0013](adr/0013-ask-with-the-users-own-key.md).
+
 Defer cloud synchronization, user accounts, collaboration, AI features, plugins, and advanced spreadsheet calculations until the core experience is reliable.
 
 ## 7. Definition of Success
