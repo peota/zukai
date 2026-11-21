@@ -1,3 +1,4 @@
+mod ai;
 pub mod commands;
 mod files;
 pub mod library;
@@ -273,6 +274,10 @@ pub fn run() {
             terminal::commands::terminal_ack,
             terminal::commands::terminal_resize,
             terminal::commands::terminal_kill,
+            ai::commands::ai_status,
+            ai::commands::ai_config_set,
+            ai::commands::ai_key_set,
+            ai::commands::ai_key_remove,
             app_exit_after_flush,
             exit_flush_failed,
             app_startup_mark,
