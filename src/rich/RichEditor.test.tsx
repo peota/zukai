@@ -36,6 +36,7 @@ function fakeBridge(texts: Record<string, string>) {
       return () => set.delete(cb);
     },
     clearHistory: vi.fn(),
+    hidden: () => [],
     readOnly: () => false,
     ready: async () => {},
     /** A reload, or anything else not written by the rich editor. */

@@ -157,6 +157,8 @@ export interface TextBridge {
   /** Forget the view's undo history. */
   clearHistory(id: string): void;
   readOnly(id: string): boolean;
+  /** The Tab's hidden ranges (UTF-16 offsets); empty until its view loads. */
+  hidden(id: string): [number, number][];
   /**
    * Resolves once the Tab's view exists with its text loaded (views are only
    * created for shown Tabs). Rejects if the Tab closes, its text fails to
@@ -1008,6 +1010,10 @@ export function EditorHost(props: EditorHostProps) {
     };
     return {
       text: (id) => views.current.get(id)?.view.state.doc.toString() ?? null,
+      hidden: (id) => {
+        const e = views.current.get(id);
+        return e ? hiddenRanges(e.view.state).map(([a, b]) => [a, b]) : [];
+      },
       replace: (id, text) => {
         const e = views.current.get(id);
         if (!e || readOnly(id)) return;

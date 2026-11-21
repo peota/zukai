@@ -1,3 +1,4 @@
+import { loadHidden } from "./hiddenText";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -1080,6 +1081,15 @@ describe("EditorHost text bridge", () => {
     act(() => bridge().replace("a", "nope"));
     expect(v.state.doc.toString()).toBe("text of a");
     expect(props.onChange).not.toHaveBeenCalled();
+  });
+
+  it("bridge_hidden_reads_the_views_hidden_ranges", async () => {
+    const { container, bridge } = withBridge();
+    const v = await activeView(container, "text of a");
+    expect(bridge().hidden("a")).toEqual([]);
+    expect(bridge().hidden("nope")).toEqual([]);
+    act(() => v.dispatch({ effects: loadHidden([[0, 4]]) }));
+    expect(bridge().hidden("a")).toEqual([[0, 4]]);
   });
 
   it("bridge_clear_history", async () => {
