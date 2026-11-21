@@ -511,7 +511,7 @@ body {
   border-top: 1px solid var(--z-hairline);
 }
 
-/* Tables: rows, not boxes. A tinted header, hairline rows, no cell grid. */
+/* Tables: a tinted header, hairline rows and hairline column dividers. */
 .z-md table {
   border-collapse: separate;
   border-spacing: 0;
@@ -533,6 +533,10 @@ body {
 }
 .z-md tr:last-child > td {
   border-bottom: 0;
+}
+.z-md th + th,
+.z-md td + td {
+  border-left: 1px solid var(--z-hairline);
 }
 .z-md th {
   background: var(--z-sunken);
