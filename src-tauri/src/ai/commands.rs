@@ -2,12 +2,15 @@
 //! No command ever returns the key.
 
 use super::AiError;
+use super::ask::{AskEvent, Asks, stream_answer};
 use super::config::{self, AiConfig, Provider, key_account};
 use super::keychain::{KeyringStore, SecretStore};
+use super::provider::{Message, build_request, provider_label};
 use crate::storage;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use tauri::AppHandle;
+use tauri::ipc::Channel;
+use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +108,43 @@ pub async fn ai_key_set(app: AppHandle, key: String) -> Result<AiStatus, AiError
 #[tauri::command]
 pub async fn ai_key_remove(app: AppHandle) -> Result<AiStatus, AiError> {
     blocking(app, |d, s| key_remove_in(&d, s)).await
+}
+
+/// Starts an answer and returns once the request is built; the answer's
+/// events arrive on `on_event`. The key is read here and never leaves Rust.
+#[tauri::command]
+pub async fn ai_ask(
+    app: AppHandle,
+    id: u32,
+    system: String,
+    messages: Vec<Message>,
+    on_event: Channel<AskEvent>,
+) -> Result<(), AiError> {
+    let (req, config) = blocking(app.clone(), move |dir, store| {
+        let status = status_in(&dir, store)?;
+        let config = match status.config {
+            Some(c) if status.ready => c,
+            _ => return Err(AiError::NotReady),
+        };
+        let key = store.get(&key_account(&config))?.unwrap_or_default();
+        let req = build_request(&config, &key, &system, &messages)?;
+        Ok((req, config))
+    })
+    .await?;
+    let cancel = app.state::<Asks>().start(id);
+    tauri::async_runtime::spawn_blocking(move || {
+        let label = provider_label(&config);
+        stream_answer(req, config.provider, &label, &cancel, &mut |e| {
+            let _ = on_event.send(e);
+        });
+        app.state::<Asks>().finish(id);
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn ai_cancel(app: AppHandle, id: u32) {
+    app.state::<Asks>().cancel(id);
 }
 
 #[cfg(test)]

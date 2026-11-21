@@ -1,12 +1,10 @@
 //! The Ask feature's backend: provider config and the API key store.
 
+pub mod ask;
 pub mod commands;
 pub mod config;
 pub mod keychain;
-// Consumed by the streaming command in the next task.
-#[allow(dead_code)]
 pub mod provider;
-#[allow(dead_code)]
 pub mod sse;
 
 use serde::{Serialize, Serializer, ser::SerializeStruct};
@@ -20,6 +18,8 @@ pub enum AiError {
     Keychain(String),
     #[error("{0}")]
     Invalid(String),
+    #[error("Ask isn't set up yet")]
+    NotReady,
 }
 
 impl Serialize for AiError {
@@ -28,6 +28,7 @@ impl Serialize for AiError {
             AiError::Io(_) => "io",
             AiError::Keychain(_) => "keychain",
             AiError::Invalid(_) => "invalid",
+            AiError::NotReady => "not_ready",
         };
         let mut st = s.serialize_struct("AiError", 2)?;
         st.serialize_field("kind", kind)?;
