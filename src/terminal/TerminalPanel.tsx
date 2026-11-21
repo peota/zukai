@@ -223,12 +223,14 @@ export function TerminalPanel({
     >
       <ResizeEdge bottom={bottom} size={size} onSize={onSize} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex h-8 shrink-0 select-none items-center gap-2 border-b border-hairline bg-chrome pr-1.5 pl-1.5 text-ui-sm">
+        <div className="flex h-9 shrink-0 select-none items-stretch gap-2 bg-chrome pr-1.5 text-ui-sm">
           <div
             ref={tabsRef}
             role="tablist"
             aria-label="Terminals"
-            className="z-no-scrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+            // The top bar's look: tabs rise from the bottom edge, and the
+            // active one flares into the terminal below.
+            className="z-no-scrollbar flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto overflow-y-hidden px-2 pt-1.5"
           >
             {terms.map((x, i) => {
               const active = x.id === activeId;
@@ -253,9 +255,9 @@ export function TerminalPanel({
                     if (e.button === 1) kill(x.id);
                   }}
                   className={
-                    "group flex h-6 max-w-[200px] shrink-0 cursor-default items-center gap-1.5 rounded-[5px] pr-0.5 pl-2 focus-visible:shadow-[inset_0_0_0_1px_var(--z-focus)] " +
+                    "group flex h-[30px] max-w-[200px] shrink-0 cursor-default items-center gap-1.5 rounded-t-[8px] pr-1 pl-2.5 focus-visible:shadow-[inset_0_0_0_1px_var(--z-focus)] " +
                     (active
-                      ? "bg-editor text-text"
+                      ? "z-tab-flare relative z-[1] bg-editor text-text"
                       : "text-muted hover:bg-row-hover hover:text-text") +
                     (exited ? " opacity-60" : "")
                   }
@@ -291,7 +293,7 @@ export function TerminalPanel({
               );
             })}
           </div>
-          <div className="flex shrink-0 items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-0.5 pt-1">
             <HeaderButton label="New terminal" icon="plus" onClick={onNew} />
             <HeaderButton
               label="Kill terminal"
