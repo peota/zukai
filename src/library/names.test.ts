@@ -41,6 +41,7 @@ describe("names", () => {
       json: ".json",
       sql: ".sql",
       python: ".py",
+      csharp: ".cs",
       yaml: ".yaml",
       javascript: ".js",
       typescript: ".ts",

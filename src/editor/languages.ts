@@ -14,6 +14,7 @@ const ORDER: LanguageId[] = [
   "css",
   "sql",
   "python",
+  "csharp",
   "yaml",
   "shell",
 ];
@@ -38,6 +39,13 @@ const loaders: Record<LanguageId, () => Promise<Extension>> = {
   css: async () => (await import("@codemirror/lang-css")).css(),
   sql: async () => (await import("@codemirror/lang-sql")).sql(),
   python: async () => (await import("@codemirror/lang-python")).python(),
+  csharp: async () => {
+    const [{ csharp }, { withRawStrings }] = await Promise.all([
+      import("@codemirror/legacy-modes/mode/clike"),
+      import("./csharp"),
+    ]);
+    return StreamLanguage.define(withRawStrings(csharp));
+  },
   yaml: async () => (await import("@codemirror/lang-yaml")).yaml(),
   shell: async () =>
     StreamLanguage.define(

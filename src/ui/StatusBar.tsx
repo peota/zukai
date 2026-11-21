@@ -79,6 +79,7 @@ export const LANGUAGE_LABELS: Record<LanguageId, string> = {
   css: "CSS",
   sql: "SQL",
   python: "Python",
+  csharp: "C#",
   yaml: "YAML",
   shell: "Shell",
 };

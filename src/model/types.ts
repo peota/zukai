@@ -11,6 +11,7 @@ export type LanguageId =
   | "css"
   | "sql"
   | "python"
+  | "csharp"
   | "yaml"
   | "shell";
 

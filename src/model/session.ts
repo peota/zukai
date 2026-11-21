@@ -81,6 +81,7 @@ const LANGUAGES: readonly LanguageId[] = [
   "css",
   "sql",
   "python",
+  "csharp",
   "yaml",
   "shell",
 ];

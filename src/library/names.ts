@@ -67,6 +67,7 @@ const LANGUAGE_EXT: Record<LanguageId, string> = {
   css: ".css",
   sql: ".sql",
   python: ".py",
+  csharp: ".cs",
   yaml: ".yaml",
   shell: ".sh",
 };

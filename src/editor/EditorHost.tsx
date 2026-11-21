@@ -299,7 +299,8 @@ function offsetOf(s: string, line: number, col: number): number {
  * purpose: their indentation is their meaning, so re-indenting could change
  * what the file says; Markdown likewise (lists, code blocks). SQL's only rule
  * indents every continuation line one step, which undoes the usual aligned
- * style. Shell and plain text have no indentation rules.
+ * style. Shell and plain text have no indentation rules. C#'s (a legacy
+ * stream mode) leave block comments and verbatim strings as they are.
  */
 const REINDENT_LANGUAGES: ReadonlySet<LanguageId> = new Set([
   "javascript",
@@ -307,6 +308,7 @@ const REINDENT_LANGUAGES: ReadonlySet<LanguageId> = new Set([
   "html",
   "xml",
   "css",
+  "csharp",
 ]);
 
 type Tree = ReturnType<typeof syntaxTree>;

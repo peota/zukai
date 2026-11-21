@@ -13,12 +13,13 @@ const ALL_IDS: LanguageId[] = [
   "css",
   "sql",
   "python",
+  "csharp",
   "yaml",
   "shell",
 ];
 
 describe("LANGUAGES", () => {
-  it("lists exactly the 12 LanguageIds, in menu order", () => {
+  it("lists exactly the 13 LanguageIds, in menu order", () => {
     expect(LANGUAGES.map((l) => l.id)).toEqual(ALL_IDS);
     expect(LANGUAGES.map((l) => l.label)).toEqual([
       "Plain Text",
@@ -31,6 +32,7 @@ describe("LANGUAGES", () => {
       "CSS",
       "SQL",
       "Python",
+      "C#",
       "YAML",
       "Shell",
     ]);

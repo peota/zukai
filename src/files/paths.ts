@@ -33,6 +33,8 @@ const BY_EXTENSION: Record<string, LanguageId> = {
   css: "css",
   sql: "sql",
   py: "python",
+  cs: "csharp",
+  csx: "csharp",
   yaml: "yaml",
   yml: "yaml",
   sh: "shell",
@@ -55,6 +57,7 @@ const EXTENSION_FOR: Partial<Record<LanguageId, string>> = {
   css: "css",
   sql: "sql",
   python: "py",
+  csharp: "cs",
   yaml: "yaml",
   shell: "sh",
 };

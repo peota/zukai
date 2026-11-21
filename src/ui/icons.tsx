@@ -110,6 +110,7 @@ const CODE_EXTS = [
   ".rs",
   ".go",
   ".java",
+  ".cs",
   ".c",
   ".cpp",
   ".h",
