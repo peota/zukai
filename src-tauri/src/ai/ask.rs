@@ -32,11 +32,11 @@ const READ_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(50);
 const ERROR_BODY_CAP: u64 = 64 * 1024;
 
-fn network(req: HttpRequest, label: &str, tx: mpsc::Sender<Net>) {
+fn network(req: HttpRequest, label: &str, read_timeout: Duration, tx: mpsc::Sender<Net>) {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .timeout_connect(Some(CONNECT_TIMEOUT))
-        .timeout_recv_body(Some(READ_TIMEOUT))
+        .timeout_per_read(Some(read_timeout))
         .build()
         .into();
     let mut r = agent.post(&req.url);
@@ -90,15 +90,33 @@ pub fn stream_answer(
     cancel: &AtomicBool,
     sink: &mut dyn FnMut(AskEvent),
 ) {
+    stream_answer_with(req, provider, label, READ_TIMEOUT, cancel, sink)
+}
+
+/// `read_timeout` limits each wait on the server (headers or a body read),
+/// not the whole answer.
+fn stream_answer_with(
+    req: HttpRequest,
+    provider: Provider,
+    label: &str,
+    read_timeout: Duration,
+    cancel: &AtomicBool,
+    sink: &mut dyn FnMut(AskEvent),
+) {
     let (tx, rx) = mpsc::channel();
     let owned = label.to_owned();
-    std::thread::spawn(move || network(req, &owned, tx));
+    std::thread::spawn(move || network(req, &owned, read_timeout, tx));
     let mut parser = SseParser::default();
     loop {
         if cancel.load(Ordering::SeqCst) {
             return;
         }
-        let msg = match rx.recv_timeout(POLL) {
+        let received = rx.recv_timeout(POLL);
+        // A cancel that landed while we waited must not be followed by an event.
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
+        let msg = match received {
             Ok(m) => m,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -154,9 +172,13 @@ pub fn stream_answer(
 pub struct Asks(Mutex<HashMap<u32, Arc<AtomicBool>>>);
 
 impl Asks {
+    /// Registers an answer. An older answer with the same id is cancelled
+    /// rather than left running unreachable.
     pub fn start(&self, id: u32) -> Arc<AtomicBool> {
         let flag = Arc::new(AtomicBool::new(false));
-        self.0.lock().unwrap().insert(id, flag.clone());
+        if let Some(old) = self.0.lock().unwrap().insert(id, flag.clone()) {
+            old.store(true, Ordering::SeqCst);
+        }
         flag
     }
     pub fn cancel(&self, id: u32) {
@@ -169,8 +191,13 @@ impl Asks {
             f.store(true, Ordering::SeqCst);
         }
     }
-    pub fn finish(&self, id: u32) {
-        self.0.lock().unwrap().remove(&id);
+    /// Forgets the answer that owns `flag`; a newer answer with the same id
+    /// stays registered.
+    pub fn finish(&self, id: u32, flag: &Arc<AtomicBool>) {
+        let mut m = self.0.lock().unwrap();
+        if m.get(&id).is_some_and(|f| Arc::ptr_eq(f, flag)) {
+            m.remove(&id);
+        }
     }
 }
 
@@ -315,6 +342,83 @@ mod tests {
     }
 
     #[test]
+    fn late_events_after_cancel_are_dropped() {
+        // The server closes cleanly (which would be a Done) after the cancel.
+        let url = serve(SSE, CHUNK_A, Duration::from_millis(600));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let c2 = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            c2.store(true, Ordering::SeqCst);
+        });
+        let mut out = Vec::new();
+        stream_answer(req(url), Provider::Openai, "OpenAI", &cancel, &mut |e| {
+            out.push(e)
+        });
+        assert_eq!(out, vec![text("a")]);
+    }
+
+    #[test]
+    fn long_answer_survives_per_read_timeout() {
+        // Three chunks 300 ms apart (900 ms total) with a 600 ms per-read limit.
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/x", l.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (mut s, _) = l.accept().unwrap();
+            let mut r = BufReader::new(s.try_clone().unwrap());
+            let mut len = 0usize;
+            loop {
+                let mut line = String::new();
+                r.read_line(&mut line).unwrap();
+                if line.trim().is_empty() {
+                    break;
+                }
+                if let Some(v) = line.to_lowercase().strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap();
+                }
+            }
+            let mut b = vec![0; len];
+            r.read_exact(&mut b).unwrap();
+            let _ = s.write_all(SSE.as_bytes());
+            for part in [CHUNK_A, CHUNK_A, "data: [DONE]\n\n"] {
+                std::thread::sleep(Duration::from_millis(300));
+                let _ = s.write_all(part.as_bytes());
+                let _ = s.flush();
+            }
+        });
+        let mut out = Vec::new();
+        stream_answer_with(
+            req(url),
+            Provider::Openai,
+            "OpenAI",
+            Duration::from_millis(600),
+            &AtomicBool::new(false),
+            &mut |e| out.push(e),
+        );
+        assert_eq!(out, vec![text("a"), text("a"), AskEvent::Done]);
+    }
+
+    #[test]
+    fn silent_server_times_out() {
+        let url = serve("", "", Duration::from_secs(3));
+        let mut out = Vec::new();
+        let start = Instant::now();
+        stream_answer_with(
+            req(url),
+            Provider::Openai,
+            "OpenAI",
+            Duration::from_millis(300),
+            &AtomicBool::new(false),
+            &mut |e| out.push(e),
+        );
+        assert!(start.elapsed() < Duration::from_secs(2));
+        assert!(
+            matches!(out.as_slice(), [AskEvent::Error { .. }]),
+            "{out:?}"
+        );
+    }
+
+    #[test]
     fn asks_cancel_flags() {
         let asks = Asks::default();
         let a = asks.start(1);
@@ -323,7 +427,21 @@ mod tests {
         assert!(a.load(Ordering::SeqCst) && !b.load(Ordering::SeqCst));
         asks.cancel_all();
         assert!(b.load(Ordering::SeqCst));
-        asks.finish(1);
-        asks.cancel(1);
+    }
+
+    #[test]
+    fn reused_id_cancels_old_and_old_finish_keeps_new() {
+        let asks = Asks::default();
+        let old = asks.start(7);
+        let new = asks.start(7);
+        assert!(old.load(Ordering::SeqCst));
+        assert!(!new.load(Ordering::SeqCst));
+        asks.finish(7, &old);
+        asks.cancel(7);
+        assert!(new.load(Ordering::SeqCst), "new entry must survive");
+        asks.finish(7, &new);
+        let fresh = asks.start(7);
+        asks.cancel_all();
+        assert!(fresh.load(Ordering::SeqCst));
     }
 }
