@@ -30,6 +30,7 @@ describe("parseSettings", () => {
       terminalPosition: "bottom",
       terminalHeight: 280,
       terminalWidth: 480,
+      askWidth: 400,
     });
   });
 
@@ -59,6 +60,7 @@ describe("parseSettings", () => {
       terminalPosition: "bottom",
       terminalHeight: 280,
       terminalWidth: 480,
+      askWidth: 400,
     });
   });
 });
@@ -141,5 +143,13 @@ describe("terminal settings", () => {
     expect(clampTerminalSize(50, 120, 1000)).toBe(120);
     expect(clampTerminalSize(300.6, 120, 1000)).toBe(301);
     expect(clampTerminalSize(500, 120, 100)).toBe(120);
+  });
+});
+
+describe("askWidth", () => {
+  it("defaults to 400 and ignores widths below the minimum", () => {
+    expect(parseSettings({}).askWidth).toBe(400);
+    expect(parseSettings({ askWidth: 100 }).askWidth).toBe(400);
+    expect(parseSettings({ askWidth: 320 }).askWidth).toBe(320);
   });
 });

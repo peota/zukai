@@ -11,6 +11,8 @@ function setup(over: Partial<SettingsDialogProps> = {}) {
     onSettings: vi.fn(),
     onFontSize: vi.fn(),
     onClose: vi.fn(),
+    aiStatus: { config: null, hasKey: false, ready: false },
+    onAiStatus: vi.fn(),
     ...over,
   };
   const r = render(<SettingsDialog {...props} />);
@@ -34,6 +36,7 @@ describe("SettingsDialog", () => {
         terminalPosition: "bottom",
         terminalHeight: 280,
         terminalWidth: 480,
+        askWidth: 400,
       },
       fontSize: 18,
     });

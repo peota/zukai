@@ -430,6 +430,7 @@ describe("useWorkspace settings", () => {
       terminalPosition: "bottom",
       terminalHeight: 280,
       terminalWidth: 480,
+      askWidth: 400,
     });
     act(() =>
       result.current.setSettings({
