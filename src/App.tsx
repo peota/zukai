@@ -71,6 +71,7 @@ const BEAUTIFY_HINT = platform === "mac" ? "⇧⌥F" : "Shift+Alt+F";
 const SETTINGS_HINT = platform === "mac" ? "⌘," : "Ctrl+,";
 const PREVIEW_HINT = platform === "mac" ? "⇧⌘V" : "Ctrl+Shift+V";
 const RICH_HINT = platform === "mac" ? "⇧⌘M" : "Ctrl+Shift+M";
+const ASK_HINT = platform === "mac" ? "⌘J" : "Ctrl+J";
 const NO_TERMINAL_FOLDER = "Choose a Library folder to open a terminal";
 
 // xterm loads with the first terminal, never at startup.
@@ -836,6 +837,15 @@ export default function App() {
           notice={w.notice ?? undefined}
           onSettings={() => setSettingsOpen(true)}
           settingsHint={SETTINGS_HINT}
+          ask={
+            aiReady
+              ? {
+                  open: askShown,
+                  hint: ASK_HINT,
+                  onToggle: () => void run({ type: "toggleAsk" }),
+                }
+              : undefined
+          }
           markdownMode={
             active && activeMode
               ? {

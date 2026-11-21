@@ -66,6 +66,11 @@ export interface StatusBarProps {
   /** The gear at the far left; its tooltip shows `settingsHint`. */
   onSettings?(): void;
   settingsHint?: string;
+  /**
+   * The Ask button at the far right, under where the Ask panel docks.
+   * Absent until Ask is ready (an AI provider and key are set).
+   */
+  ask?: { open: boolean; onToggle(): void; hint?: string };
 }
 
 export const LANGUAGE_LABELS: Record<LanguageId, string> = {
@@ -109,6 +114,7 @@ export function StatusBar({
   settingsHint,
   preview,
   markdownMode,
+  ask,
 }: StatusBarProps) {
   const rich = markdownMode?.mode === "rich";
   const [formatAt, setFormatAt] = useState<DOMRect | null>(null);
@@ -210,6 +216,34 @@ export function StatusBar({
             </>
           )}
         </div>
+      )}
+      {ask && (
+        <>
+          <span
+            aria-hidden="true"
+            className="h-3.5 w-px shrink-0 bg-hairline-strong"
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-pressed={ask.open}
+            title={ask.hint ? `Ask (${ask.hint})` : "Ask"}
+            onClick={ask.onToggle}
+            className={
+              "-mr-1.5 flex shrink-0 items-center gap-1.5 rounded-[5px] px-2 py-[3px] " +
+              (ask.open
+                ? "bg-row-sel text-text"
+                : "hover:bg-row-hover hover:text-text")
+            }
+          >
+            <Icon
+              name="ask"
+              size={14}
+              className={ask.open ? "text-accent" : "text-faint"}
+            />
+            Ask
+          </button>
+        </>
       )}
       {formatAt && kindLabel === undefined && (
         <Menu
