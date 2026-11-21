@@ -279,9 +279,15 @@ export default function App() {
       : null,
   });
   const clearAsk = ask.clear;
-  // No provider any more (its key was removed): the conversation goes too.
+  // No provider any more (its key was removed): the panel closes and the
+  // conversation goes, so setting a key later doesn't bring either back.
+  const wasReady = useRef(aiReady);
   useEffect(() => {
-    if (!aiReady) clearAsk();
+    if (wasReady.current && !aiReady) {
+      setAskOpen(false);
+      clearAsk();
+    }
+    wasReady.current = aiReady;
   }, [aiReady, clearAsk]);
   const theme = useColorScheme(w.settings.theme);
   // The CSS palette follows <html data-theme> (light or dark), refined by
