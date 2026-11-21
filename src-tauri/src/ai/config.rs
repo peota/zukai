@@ -24,6 +24,20 @@ pub struct AiConfig {
     pub model: String,
 }
 
+/// The model Anthropic uses when the field is left empty.
+pub const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-5-5";
+
+/// The model a request names: the one set, or for Anthropic the default
+/// when none is. Empty means none (OpenAI and compatible have no default).
+pub fn effective_model(c: &AiConfig) -> &str {
+    let m = c.model.trim();
+    if m.is_empty() && c.provider == Provider::Anthropic {
+        ANTHROPIC_DEFAULT_MODEL
+    } else {
+        m
+    }
+}
+
 /// The keychain account a config's key lives under. A key belongs to one
 /// provider (and, for compatible endpoints, one URL).
 pub fn key_account(c: &AiConfig) -> String {
@@ -71,6 +85,17 @@ mod tests {
             )),
             "compatible:http://localhost:11434/v1"
         );
+    }
+
+    #[test]
+    fn anthropic_defaults_an_empty_model() {
+        let mut c = cfg(Provider::Anthropic, None);
+        c.model = "  ".into();
+        assert_eq!(effective_model(&c), "claude-sonnet-5-5");
+        c.provider = Provider::Openai;
+        assert_eq!(effective_model(&c), "");
+        c.model = " gpt-x ".into();
+        assert_eq!(effective_model(&c), "gpt-x");
     }
 
     #[test]
