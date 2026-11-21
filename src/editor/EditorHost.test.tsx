@@ -613,6 +613,51 @@ describe("EditorHost re-indent (Shift+Alt+F on code)", () => {
     expect(out).toContain("\n     kept\n-->");
     expect(out).toContain("\n    kept\n]]>");
   });
+
+  it("reindents_csharp_braces", async () => {
+    const src = "class A {\nvoid F() {\nif (x) {\nG();\n}\n        }\n}\n";
+    const { container, rerender } = setup({
+      tabs: [code("a", "csharp")],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    await parsed(v);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    expect(v.state.doc.toString()).toBe(
+      "class A {\n  void F() {\n    if (x) {\n      G();\n    }\n  }\n}\n",
+    );
+  });
+
+  it("csharp_keeps_comment_and_string_text", async () => {
+    const src = [
+      "class A {",
+      "/*",
+      "      kept comment",
+      "*/",
+      'string s = @"',
+      "     kept verbatim",
+      '";',
+      'string r = """',
+      "       kept raw {",
+      '    """;',
+      "int y;",
+      "}",
+    ].join("\n");
+    const { container, rerender } = setup({
+      tabs: [code("a", "csharp")],
+      loadContent: () => Promise.resolve(src),
+    });
+    const v = await activeView(container, src);
+    await parsed(v);
+    rerender({ formatRequest: { seq: 1, kind: "beautify" } });
+    const out = v.state.doc.toString();
+    expect(out).toContain('\n  string s = @"');
+    expect(out).toContain("\n      kept comment\n");
+    expect(out).toContain("\n     kept verbatim\n");
+    expect(out).toContain('\n       kept raw {\n    """;');
+    // A brace inside the raw string doesn't throw off what follows.
+    expect(out.endsWith("\n  int y;\n}")).toBe(true);
+  });
 });
 
 describe("reindent", () => {
