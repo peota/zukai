@@ -1,0 +1,43 @@
+/*
+ * The Ask panel's conversation: loaded with the panel. Answers use the
+ * notes' reading style (.z-md), set tighter for a narrow docked column.
+ */
+.z-ask-question {
+  margin: 0 0 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: var(--z-sunken);
+  color: var(--z-text);
+  font-size: var(--z-ui-font);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.z-ask-answer {
+  margin: 0 0 1rem;
+}
+.z-ask-answer .z-md {
+  padding-inline: 0;
+  font-size: var(--z-ui-font);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.z-ask-answer .z-md > * {
+  max-width: none;
+}
+.z-ask-answer .z-md > :last-child {
+  margin-bottom: 0;
+}
+.z-ask-answer .z-md h1 {
+  font-size: 1.3em;
+}
+.z-ask-answer .z-md h2 {
+  font-size: 1.15em;
+}
+.z-ask-answer .z-md h3 {
+  font-size: 1.05em;
+}
+.z-ask-answer .z-md pre {
+  overflow-x: auto;
+}

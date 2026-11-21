@@ -54,6 +54,8 @@ import { useColorScheme } from "./ui/useColorScheme";
 import { SaveChangesDialog } from "./ui/SaveChangesDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
 import { aiStatus, type AiStatus } from "./ask/api";
+import { useAsk } from "./ask/useAsk";
+import { providerLabel } from "./ask/providerLabel";
 import { QuickOpen, type QuickTab } from "./ui/QuickOpen";
 import { fileIcon } from "./ui/icons";
 import { libraryQuickOpen } from "./library/api";
@@ -78,6 +80,11 @@ const TerminalPanel = lazy(() =>
   })),
 );
 
+// The Ask panel (and its Markdown renderer) loads when it's first opened.
+const AskPanel = lazy(() =>
+  import("./ask/AskPanel").then((m) => ({ default: m.AskPanel })),
+);
+
 interface Cursor {
   id: string;
   line: number;
@@ -99,6 +106,10 @@ export default function App() {
   useEffect(() => {
     aiStatus().then(setAi, () => {});
   }, []);
+  /** Not stored: the Ask panel starts closed, like the terminal panel. */
+  const [askOpen, setAskOpen] = useState(false);
+  const aiReady = ai.ready;
+  const askShown = aiReady && askOpen;
   const [quickOpen, setQuickOpen] = useState(false);
   /** Edits reach a Markdown preview without re-rendering the App. */
   const [feed] = useState(createTextFeed);
@@ -179,6 +190,12 @@ export default function App() {
       } else if (cmd.type === "newTerminal") {
         openTerminal(termFolder);
         return;
+      } else if (cmd.type === "toggleAsk") {
+        if (!aiReady) return;
+        // Hiding gives the keyboard back; showing, the panel takes it.
+        if (askShown) refocus();
+        setAskOpen(!askShown);
+        return;
       } else await workspaceRun(cmd);
       // The other editor takes the keyboard.
       if (cmd.type === "toggleRichMarkdown") refocus();
@@ -191,6 +208,8 @@ export default function App() {
       showTerm,
       openTerminal,
       termFolder,
+      aiReady,
+      askShown,
     ],
   );
   /** The side a dragged Tab would split the editor area on, while shown. */
@@ -248,6 +267,22 @@ export default function App() {
   const activeMode = active ? effectiveMode(active, w.settings) : null;
   /** A Markdown Tab's preview; any other Tab is just edited. */
   const previewMode = (isMarkdown && active?.preview) || "edit";
+  const ask = useAsk({
+    bridge: w.bridge,
+    activeTab: active
+      ? {
+          id: active.id,
+          title: active.title,
+          language: active.language,
+          kind: active.kind,
+        }
+      : null,
+  });
+  const clearAsk = ask.clear;
+  // No provider any more (its key was removed): the conversation goes too.
+  useEffect(() => {
+    if (!aiReady) clearAsk();
+  }, [aiReady, clearAsk]);
   const theme = useColorScheme(w.settings.theme);
   // The CSS palette follows <html data-theme> (light or dark), refined by
   // data-palette (which light or dark theme) and data-accent.
@@ -645,82 +680,108 @@ export default function App() {
           />
           <WindowControls platform={platform} />
         </div>
-        {/* The editor area and the terminal panel: under it at the bottom,
-            right of it at the side (the tab bar keeps its full width). */}
-        <div
-          className={`flex min-h-0 flex-1 ${
-            w.settings.terminalPosition === "side" ? "flex-row" : "flex-col"
-          }`}
-        >
-          <main
-            ref={mainRef}
-            className="relative min-h-0 min-w-0 flex-1 bg-editor"
+        {/* The editor area and the terminal panel (under it at the bottom,
+            right of it at the side), then the Ask panel on the right of both.
+            The tab bar keeps its full width. */}
+        <div className="flex min-h-0 flex-1 flex-row">
+          <div
+            className={`flex min-h-0 min-w-0 flex-1 ${
+              w.settings.terminalPosition === "side" ? "flex-row" : "flex-col"
+            }`}
           >
-            {dropZone && <SplitDropZone side={dropZone} />}
-            {w.ready && (
-              <div className="hidden">
-                <EditorHost
-                  tabs={editorTabs}
-                  activeId={active?.kind === "text" ? activeId : ""}
-                  shown={visible
-                    .filter((t) => t.kind === "text")
-                    .map((t) => t.id)}
-                  slots={slots}
-                  loadContent={w.loadContent}
-                  onChange={onEditorChange}
-                  onTabPatch={updateTab}
-                  onCursor={onCursor}
-                  isClosing={w.isClosing}
-                  focusSignal={focusSignal}
-                  findRequest={w.findRequest}
-                  formatRequest={w.formatRequest}
-                  convertRequest={w.convertRequest}
-                  replaceRequests={w.replaceRequests}
-                  shadowUnreadable={w.shadowUnreadable}
-                  onFormatResult={onFormatResult}
-                  fontSize={w.fontSize}
-                  onZoom={w.zoomEditor}
-                  lineNumbers={w.settings.lineNumbers}
-                  bridgeRef={w.bridgeRef}
-                />
-              </div>
-            )}
-            {w.ready &&
-              (split && visible.length === 2 ? (
-                <SplitView
-                  orientation={split.orientation}
-                  ratio={split.ratio}
-                  onRatio={(r) => w.setSplitRatio(split.a, r)}
-                  focus={split.focus}
-                  first={pane(visible[0])}
-                  second={pane(visible[1])}
-                />
-              ) : (
-                visible[0] && pane(visible[0])
-              ))}
-          </main>
-          {panelLoaded && (
-            <Suspense fallback={null}>
-              <TerminalPanel
-                t={terms}
-                position={w.settings.terminalPosition}
-                size={
-                  w.settings.terminalPosition === "side"
-                    ? w.settings.terminalWidth
-                    : w.settings.terminalHeight
-                }
-                onSize={(px) =>
-                  w.setSettings(
+            <main
+              ref={mainRef}
+              className="relative min-h-0 min-w-0 flex-1 bg-editor"
+            >
+              {dropZone && <SplitDropZone side={dropZone} />}
+              {w.ready && (
+                <div className="hidden">
+                  <EditorHost
+                    tabs={editorTabs}
+                    activeId={active?.kind === "text" ? activeId : ""}
+                    shown={visible
+                      .filter((t) => t.kind === "text")
+                      .map((t) => t.id)}
+                    slots={slots}
+                    loadContent={w.loadContent}
+                    onChange={onEditorChange}
+                    onTabPatch={updateTab}
+                    onCursor={onCursor}
+                    isClosing={w.isClosing}
+                    focusSignal={focusSignal}
+                    findRequest={w.findRequest}
+                    formatRequest={w.formatRequest}
+                    convertRequest={w.convertRequest}
+                    replaceRequests={w.replaceRequests}
+                    shadowUnreadable={w.shadowUnreadable}
+                    onFormatResult={onFormatResult}
+                    fontSize={w.fontSize}
+                    onZoom={w.zoomEditor}
+                    lineNumbers={w.settings.lineNumbers}
+                    bridgeRef={w.bridgeRef}
+                  />
+                </div>
+              )}
+              {w.ready &&
+                (split && visible.length === 2 ? (
+                  <SplitView
+                    orientation={split.orientation}
+                    ratio={split.ratio}
+                    onRatio={(r) => w.setSplitRatio(split.a, r)}
+                    focus={split.focus}
+                    first={pane(visible[0])}
+                    second={pane(visible[1])}
+                  />
+                ) : (
+                  visible[0] && pane(visible[0])
+                ))}
+            </main>
+            {panelLoaded && (
+              <Suspense fallback={null}>
+                <TerminalPanel
+                  t={terms}
+                  position={w.settings.terminalPosition}
+                  size={
                     w.settings.terminalPosition === "side"
-                      ? { terminalWidth: px }
-                      : { terminalHeight: px },
-                  )
+                      ? w.settings.terminalWidth
+                      : w.settings.terminalHeight
+                  }
+                  onSize={(px) =>
+                    w.setSettings(
+                      w.settings.terminalPosition === "side"
+                        ? { terminalWidth: px }
+                        : { terminalHeight: px },
+                    )
+                  }
+                  onPosition={(p) => w.setSettings({ terminalPosition: p })}
+                  onNew={plusTerminal}
+                  fontSize={w.fontSize}
+                  palette={palette}
+                  platform={platform}
+                  onOpenUrl={(url) =>
+                    void openUrl(url).catch(() =>
+                      showNotice(`Can't open ${url}`),
+                    )
+                  }
+                  onFocusEditor={refocus}
+                />
+              </Suspense>
+            )}
+          </div>
+          {askShown && (
+            <Suspense fallback={null}>
+              <AskPanel
+                ask={ask}
+                scopeLabel={
+                  active?.kind === "text" ? `This note · ${active.title}` : null
                 }
-                onPosition={(p) => w.setSettings({ terminalPosition: p })}
-                onNew={plusTerminal}
-                fontSize={w.fontSize}
-                palette={palette}
-                platform={platform}
+                providerLabel={providerLabel(ai.config)}
+                width={w.settings.askWidth}
+                onWidth={(px) => w.setSettings({ askWidth: px })}
+                onClose={() => {
+                  setAskOpen(false);
+                  refocus();
+                }}
                 onOpenUrl={(url) =>
                   void openUrl(url).catch(() => showNotice(`Can't open ${url}`))
                 }

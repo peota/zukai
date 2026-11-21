@@ -210,6 +210,12 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "View",
+    action: "Toggle Ask panel",
+    keys: [["Mod", "J"]],
+    command: "toggleAsk",
+  },
+  {
+    group: "View",
     action: "Settings",
     keys: [["Mod", ","]],
     command: "openSettings",
