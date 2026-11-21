@@ -4,6 +4,9 @@ import { AskPanel } from "./AskPanel";
 import type { Conversation } from "./conversation";
 import type { UseAsk } from "./useAsk";
 
+/** The screen-reader-only announcer repeats what's on screen; skip it. */
+const SR = ".sr-only, script, style";
+
 function fakeAsk(
   conversation: Conversation = { turns: [], streaming: null },
   result: ReturnType<UseAsk["send"]> = "sent",
@@ -108,7 +111,7 @@ describe("AskPanel", () => {
     });
     setup(ask);
     expect(
-      screen.getByText("Asking Anthropic · claude-sonnet-5-5…"),
+      screen.getByText("Asking Anthropic · claude-sonnet-5-5…", { ignore: SR }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     expect(ask.stop).toHaveBeenCalled();
@@ -133,6 +136,37 @@ describe("AskPanel", () => {
     expect(container.querySelector("script")).toBeNull();
   });
 
+  it("renders a partial streamed answer", () => {
+    const { container } = setup(
+      fakeAsk({
+        turns: [
+          { role: "user", text: "q", noteTitle: "a.md" },
+          { role: "assistant", text: "so **half bold\n\n```ts\nconst x =" },
+        ],
+        streaming: 4,
+      }),
+    );
+    expect(container.textContent).toContain("half bold");
+    expect(container.textContent).toContain("const x =");
+  });
+
+  it("announces only the status line and finished answers", () => {
+    const { container } = setup(
+      fakeAsk({
+        turns: [
+          { role: "user", text: "q1", noteTitle: "a.md" },
+          { role: "assistant", text: "first" },
+          { role: "user", text: "q2", noteTitle: "a.md" },
+          { role: "assistant", text: "partial" },
+        ],
+        streaming: 5,
+      }),
+    );
+    const live = [...container.querySelectorAll("[aria-live]")];
+    expect(live.some((el) => el.textContent?.includes("partial"))).toBe(false);
+    expect(live.some((el) => el.textContent?.includes("Asking "))).toBe(true);
+  });
+
   it("a web link opens outside the app", () => {
     const { props } = setup(
       fakeAsk(answered("see [docs](https://example.com/x)")),
@@ -154,7 +188,9 @@ describe("AskPanel", () => {
         streaming: null,
       }),
     );
-    expect(screen.getByText("The key was refused")).toBeTruthy();
+    expect(
+      screen.getByText("The key was refused", { ignore: SR }),
+    ).toBeTruthy();
   });
 
   it("New conversation clears; × closes", () => {

@@ -42,12 +42,13 @@ function ResizeEdge({
   const press = useRef<{ pointerId: number; at: number; width: number } | null>(
     null,
   );
+  // 70% of the row the panel sits in: the same base as its CSS maxWidth.
   const clamp = (el: HTMLElement, px: number) =>
     clampTerminalSize(
       px,
       ASK_MIN_WIDTH,
-      el.closest<HTMLElement>("[data-z-workspace]")?.clientWidth ||
-        window.innerWidth,
+      el.closest<HTMLElement>("[data-z-ask-panel]")?.parentElement
+        ?.clientWidth || window.innerWidth,
     );
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
@@ -168,6 +169,16 @@ export function AskPanel({
     if (el) el.scrollTop = el.scrollHeight;
   }, [conversation.turns.length, last?.text, last?.error]);
 
+  /**
+   * What a screen reader hears: the status while asking, then the finished
+   * answer once, never each streamed chunk.
+   */
+  const announce = streaming
+    ? `Asking ${providerLabel}…`
+    : last?.role === "assistant"
+      ? (last.error ?? last.text)
+      : "";
+
   const submit = () => {
     const q = text.trim();
     if (!q) return;
@@ -198,6 +209,9 @@ export function AskPanel({
       style={{ width, minWidth: ASK_MIN_WIDTH, maxWidth: "70%" }}
     >
       <ResizeEdge width={width} onWidth={onWidth} />
+      <div className="sr-only" aria-live="polite">
+        {announce}
+      </div>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex h-9 shrink-0 select-none items-center gap-2 border-b border-hairline bg-chrome pr-1.5 pl-3 text-ui-sm">
           <span className="shrink-0 font-semibold text-text">Ask</span>
@@ -235,7 +249,6 @@ export function AskPanel({
         <div
           ref={turnsRef}
           className="min-h-0 flex-1 overflow-y-auto px-3 py-3"
-          aria-live="polite"
         >
           {conversation.turns.map((t, i) =>
             t.role === "user" ? (

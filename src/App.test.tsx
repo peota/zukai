@@ -135,6 +135,8 @@ vi.mock("./ask/api", () => ({
   ),
   aiAsk: vi.fn(),
   aiCancel: vi.fn(),
+  aiKeyRemove: vi.fn(),
+  aiKeySet: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -809,7 +811,7 @@ describe("App", () => {
   });
 
   it("Mod+J shows and hides the Ask panel, right of the editor and terminal", async () => {
-    vi.mocked(ask.aiStatus).mockResolvedValue({
+    vi.mocked(ask.aiStatus).mockResolvedValueOnce({
       config: { provider: "anthropic", model: "claude-sonnet-5-5" },
       hasKey: true,
       ready: true,
@@ -829,6 +831,37 @@ describe("App", () => {
     await waitFor(() =>
       expect(r.queryByRole("region", { name: "Ask" })).toBeNull(),
     );
+  });
+
+  it("removing the key closes the Ask panel, and a new key doesn't reopen it", async () => {
+    const ready = {
+      config: { provider: "anthropic" as const, model: "claude-sonnet-5-5" },
+      hasKey: true,
+      ready: true,
+    };
+    vi.mocked(ask.aiStatus).mockResolvedValueOnce(ready);
+    vi.mocked(ask.aiKeyRemove).mockResolvedValueOnce({
+      ...ready,
+      hasKey: false,
+      ready: false,
+    });
+    vi.mocked(ask.aiKeySet).mockResolvedValueOnce(ready);
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    await act(async () => {});
+    act(() => modJ());
+    await r.findByRole("region", { name: "Ask" });
+    fireEvent.keyDown(window, { key: ",", code: "Comma", ctrlKey: true });
+    fireEvent.click(await r.findByRole("tab", { name: "AI" }));
+    fireEvent.click(r.getByRole("button", { name: "Remove" }));
+    await waitFor(() =>
+      expect(r.queryByRole("region", { name: "Ask" })).toBeNull(),
+    );
+    fireEvent.change(r.getByLabelText("Key"), { target: { value: "sk-test" } });
+    fireEvent.click(r.getByRole("button", { name: "Save key" }));
+    await waitFor(() => expect(ask.aiKeySet).toHaveBeenCalled());
+    await act(async () => {});
+    expect(r.queryByRole("region", { name: "Ask" })).toBeNull();
   });
 
   it("toggleTerminalWithNoFolderShowsNotice", async () => {

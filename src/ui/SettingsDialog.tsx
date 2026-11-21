@@ -139,7 +139,7 @@ export function SettingsDialog({
           ) : section === "ai" ? (
             <AiSettings status={aiStatus} onStatus={onAiStatus} />
           ) : (
-            <Shortcuts platform={platform} />
+            <Shortcuts platform={platform} askReady={aiStatus.ready} />
           )}
         </div>
       </div>
@@ -546,15 +546,24 @@ function General({
   );
 }
 
-function Shortcuts({ platform }: { platform: Platform }) {
+function Shortcuts({
+  platform,
+  askReady,
+}: {
+  platform: Platform;
+  /** The Ask panel's shortcut exists only once an AI provider is ready. */
+  askReady: boolean;
+}) {
   const [query, setQuery] = useState("");
   const all = useMemo(
     () =>
-      shortcutsFor(platform).map((s) => ({
-        ...s,
-        shown: s.keys.map((k) => formatKeys(k, platform)),
-      })),
-    [platform],
+      shortcutsFor(platform)
+        .filter((s) => askReady || s.command !== "toggleAsk")
+        .map((s) => ({
+          ...s,
+          shown: s.keys.map((k) => formatKeys(k, platform)),
+        })),
+    [platform, askReady],
   );
   const q = query.trim().toLowerCase();
   const rows = all.filter(
