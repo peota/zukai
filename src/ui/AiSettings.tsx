@@ -57,9 +57,15 @@ export function AiSettings({
   };
 
   // The fields follow the stored config when it changes.
-  const [seen, setSeen] = useState(config);
-  if (seen !== config) {
-    setSeen(config);
+  const stored = JSON.stringify([
+    config?.provider,
+    config?.baseUrl ?? "",
+    config?.model,
+  ]);
+  const [seen, setSeen] = useState(stored);
+  if (seen !== stored) {
+    setSeen(stored);
+    setPending(null);
     showStored();
   }
 
@@ -75,11 +81,12 @@ export function AiSettings({
   };
 
   /** Saves the config with `next` laid over what's shown, if it changed. */
-  const save = async (next: {
-    provider?: Provider;
-    baseUrl?: string;
-    model?: string;
-  }) => {
+  const save = async (
+    next: { provider?: Provider; baseUrl?: string; model?: string },
+    confirmed = false,
+  ) => {
+    // Nothing that forgets the key goes out while its confirm is open.
+    if (pending && !confirmed) return;
     const p = next.provider ?? provider;
     const url = (next.baseUrl ?? baseUrl).trim();
     const m = (next.model ?? model).trim();
@@ -101,7 +108,7 @@ export function AiSettings({
     setProvider(p);
     setBaseUrl("");
     setModel("");
-    await save({ provider: p, baseUrl: "", model: "" });
+    await save({ provider: p, baseUrl: "", model: "" }, true);
   };
 
   const pickProvider = (p: Provider) => {
@@ -122,7 +129,7 @@ export function AiSettings({
     const p = pending;
     setPending(null);
     if (p?.kind === "provider") await applyProvider(p.provider);
-    else if (p) await save({});
+    else if (p) await save({}, true);
   };
 
   const cancel = () => {

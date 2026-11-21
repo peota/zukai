@@ -179,4 +179,52 @@ describe("AiSettings", () => {
     expect(screen.getByLabelText("Provider")).toHaveValue("openai");
     expect(screen.getByLabelText("Model")).toHaveValue("gpt-x");
   });
+
+  it("does not send an unconfirmed URL when the Model field is left", () => {
+    render(
+      <AiSettings
+        status={{
+          config: {
+            provider: "compatible",
+            baseUrl: "http://localhost:11434/v1",
+            model: "llama",
+          },
+          hasKey: true,
+          ready: true,
+        }}
+        onStatus={vi.fn()}
+      />,
+    );
+    const url = screen.getByLabelText("URL");
+    fireEvent.change(url, { target: { value: "http://other/v1" } });
+    fireEvent.blur(url);
+    const model = screen.getByLabelText("Model");
+    fireEvent.focus(model);
+    fireEvent.blur(model);
+    fireEvent.keyDown(model, { key: "Enter" });
+    expect(aiConfigSet).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Changing the URL forgets the saved key."),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps typed text when an equal status arrives", () => {
+    const cfg = { provider: "anthropic" as const, model: "claude-sonnet-5-5" };
+    const { rerender } = render(
+      <AiSettings
+        status={{ config: cfg, hasKey: false, ready: false }}
+        onStatus={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Model"), {
+      target: { value: "half-typed" },
+    });
+    rerender(
+      <AiSettings
+        status={{ config: { ...cfg }, hasKey: true, ready: true }}
+        onStatus={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Model")).toHaveValue("half-typed");
+  });
 });
