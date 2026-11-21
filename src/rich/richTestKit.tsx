@@ -19,6 +19,7 @@ export function fakeBridge(texts: Record<string, string>) {
     }),
     onOutsideChange: () => () => {},
     clearHistory: vi.fn(),
+    hidden: () => [],
     readOnly: () => false,
     ready: async () => {},
   } satisfies TextBridge;

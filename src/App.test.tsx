@@ -47,6 +47,7 @@ vi.mock("./editor/EditorHost", async () => {
         },
         onOutsideChange: () => () => {},
         clearHistory: (id: string) => void h.clearHistory.push(id),
+        hidden: () => [],
         readOnly: () => false,
         ready: async () => {},
       }));

@@ -610,6 +610,7 @@ describe("useWorkspace Rich / Markdown editor", () => {
       replace: vi.fn(),
       onOutsideChange: () => () => {},
       clearHistory: vi.fn(),
+      hidden: () => [],
       readOnly: () => false,
       ready: async () => {},
     };
