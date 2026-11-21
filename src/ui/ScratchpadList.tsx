@@ -15,6 +15,8 @@ export interface ScratchpadListProps {
   /** `from` gets the keyboard back when the menu closes. */
   onContextMenu(id: string, x: number, y: number, from: HTMLElement): void;
   dragHandlers(id: string): PointerHandlers;
+  /** The item a drag in progress carries: it dims, lifted out. */
+  draggedId?: string | null;
   swallowClick(): boolean;
 }
 
@@ -25,6 +27,7 @@ export function ScratchpadList({
   onActivate,
   onContextMenu,
   dragHandlers,
+  draggedId = null,
   swallowClick,
 }: ScratchpadListProps) {
   if (items.length === 0) return null;
@@ -79,7 +82,8 @@ export function ScratchpadList({
               {...dragHandlers(item.id)}
               className={
                 "flex h-[30px] cursor-default items-center gap-2 rounded-[6px] px-2 whitespace-nowrap text-muted outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] " +
-                (active ? "bg-row-sel text-text" : "hover:bg-row-hover")
+                (active ? "bg-row-sel text-text " : "hover:bg-row-hover ") +
+                (item.id === draggedId ? "opacity-40" : "")
               }
             >
               <span className="w-3.5 shrink-0" />

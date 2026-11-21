@@ -56,6 +56,10 @@ export interface LibraryTreeProps {
   dropTarget: string | null;
   /** The drop would copy into another tree: the target shows "Copy". */
   dropCopy: boolean;
+  /** A drag is on: rows ease their drop highlight in. */
+  dragging?: boolean;
+  /** The rows a drag in progress carries: they dim, lifted out. */
+  dragged?: ReadonlySet<string>;
   onOpen(entry: Entry): void;
   onToggle(dir: string): void;
   onRename(path: string, name: string): Promise<string | null>;
@@ -91,6 +95,8 @@ export function LibraryTree({
   onCancelTrash,
   dropTarget,
   dropCopy,
+  dragging = false,
+  dragged,
   onOpen,
   onToggle,
   onRename,
@@ -253,6 +259,10 @@ export function LibraryTree({
         const isCursor = i === index;
         const isSelected = selected.has(e.path);
         const target = dropTarget === e.path;
+        const motion =
+          (dragging
+            ? "transition-[background-color,box-shadow,opacity] duration-150 ease-out motion-reduce:transition-none "
+            : "") + (dragged?.has(e.path) ? "opacity-40 " : "");
         const copyHint = target && dropCopy && (
           <span
             data-copy-hint=""
@@ -285,6 +295,7 @@ export function LibraryTree({
               {...dragHandlers(e)}
               className={
                 "mt-2 flex h-[30px] cursor-default items-center gap-2 rounded-[6px] pr-1 whitespace-nowrap " +
+                motion +
                 (missing ? "text-faint " : "text-muted ") +
                 (target
                   ? "bg-row-sel shadow-[inset_0_0_0_1px_var(--z-accent)] "
@@ -350,6 +361,7 @@ export function LibraryTree({
               {...dragHandlers(e)}
               className={
                 "flex h-[30px] cursor-default items-center gap-2 rounded-[6px] pr-2 whitespace-nowrap " +
+                motion +
                 (blocked ? "text-faint " : "text-text ") +
                 (target
                   ? "bg-row-sel shadow-[inset_0_0_0_1px_var(--z-accent)] "

@@ -12,6 +12,8 @@ import {
   NewFolderIcon,
   SearchIcon,
 } from "./icons";
+import { DragGhost } from "./DragGhost";
+import { fileIcon } from "./icons";
 import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
 import { Pinned, TabList, type PinnedItem } from "./Pinned";
 import { LibraryTree, type PendingTrash, type SelectHow } from "./LibraryTree";
@@ -355,6 +357,41 @@ function SidebarPanel({
     },
   });
 
+  /** The paths a drag in progress carries: their rows dim under it. */
+  const dragSource = drag.source;
+  const dragged = useMemo(
+    () =>
+      new Set(
+        dragSource?.kind === "entry"
+          ? draggedEntries(dragSource).map((e) => e.path)
+          : [],
+      ),
+    [dragSource],
+  );
+
+  /** The ghost's face: the grabbed row's icon and name, and a count. */
+  const ghostFace = (() => {
+    const s = drag.ghost?.source;
+    if (!s) return null;
+    if (s.kind === "scratchpad") {
+      const item = scratchpads.find((i) => i.id === s.id);
+      return {
+        name: item?.title ?? "",
+        icon:
+          item?.kind === "canvas"
+            ? ("canvas" as const)
+            : ("scratchpad" as const),
+        count: 1,
+      };
+    }
+    const e = s.entry;
+    return {
+      name: e.name,
+      icon: e.isDir ? ("folder" as const) : fileIcon(e.name),
+      count: draggedEntries(s).length,
+    };
+  })();
+
   /** A selected row drags the whole selection along. */
   const dragGroup = (entry: Entry): Entry[] | undefined =>
     selection.length > 1 && selectedSet.has(entry.path)
@@ -664,6 +701,8 @@ function SidebarPanel({
       onCancelTrash={() => setPendingTrash(null)}
       dropTarget={drag.dropTarget}
       dropCopy={drag.dropCopy}
+      dragging={drag.dragging}
+      dragged={dragged}
       onOpen={onOpen}
       onToggle={onToggle}
       onRename={onRename}
@@ -808,10 +847,20 @@ function SidebarPanel({
         onActivate={onScratchpadActivate}
         onContextMenu={showScratchpadMenu}
         dragHandlers={(id) => drag.handlers({ kind: "scratchpad", id })}
+        draggedId={dragSource?.kind === "scratchpad" ? dragSource.id : null}
         swallowClick={drag.swallowClick}
       />
 
       <WidthHandle width={width} onWidth={onWidth} />
+
+      {drag.ghost && ghostFace && (
+        <DragGhost
+          ghost={drag.ghost}
+          ghostRef={drag.ghostRef}
+          onDone={drag.ghostDone}
+          {...ghostFace}
+        />
+      )}
 
       {menu && (
         <Menu
