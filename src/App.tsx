@@ -784,9 +784,7 @@ export default function App() {
             <Suspense fallback={null}>
               <AskPanel
                 ask={ask}
-                scopeLabel={
-                  active?.kind === "text" ? `This note · ${active.title}` : null
-                }
+                noteTitle={active?.kind === "text" ? active.title : null}
                 providerLabel={providerLabel(ai.config)}
                 width={w.settings.askWidth}
                 onWidth={(px) => w.setSettings({ askWidth: px })}

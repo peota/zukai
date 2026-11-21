@@ -19,13 +19,10 @@ function fakeAsk(
   };
 }
 
-function setup(
-  ask: UseAsk = fakeAsk(),
-  scopeLabel: string | null = "This note · a.md",
-) {
+function setup(ask: UseAsk = fakeAsk(), noteTitle: string | null = "a.md") {
   const props = {
     ask,
-    scopeLabel,
+    noteTitle,
     providerLabel: "Anthropic · claude-sonnet-5-5",
     width: 400,
     onWidth: vi.fn(),
@@ -47,15 +44,62 @@ const answered = (text: string): Conversation => ({
 });
 
 describe("AskPanel", () => {
-  it("is a region named Ask with the note's scope", () => {
+  it("is a region named Ask with the note it asks about", () => {
     setup();
     expect(screen.getByRole("region", { name: "Ask" })).toBeTruthy();
-    expect(screen.getByText("This note · a.md")).toBeTruthy();
+    expect(screen.getByTitle("Asking about a.md")).toHaveTextContent("a.md");
+  });
+
+  it("an empty conversation offers first questions that only fill the box", () => {
+    const ask = fakeAsk();
+    const { input } = setup(ask);
+    expect(screen.getByText("Ask about this note")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Summarise this note" }),
+    );
+    expect(input).toHaveValue("Summarise this note");
+    expect(ask.send).not.toHaveBeenCalled();
+  });
+
+  it("Send is off until there's a question, then sends it", () => {
+    const ask = fakeAsk();
+    const { input } = setup(ask);
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toBeDisabled();
+    fireEvent.change(input, { target: { value: "why?" } });
+    fireEvent.click(send);
+    expect(ask.send).toHaveBeenCalledWith("why?");
+  });
+
+  it("a finished answer can be copied", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.assign(navigator, { clipboard: { writeText } });
+    setup(fakeAsk(answered("the answer")));
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect(writeText).toHaveBeenCalledWith("the answer");
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+  });
+
+  it("a streaming answer has no Copy yet", () => {
+    setup(
+      fakeAsk({
+        turns: [
+          { role: "user", text: "q", noteTitle: "a.md" },
+          { role: "assistant", text: "part" },
+        ],
+        streaming: 2,
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
   });
 
   it("shows No note without a note", () => {
     setup(fakeAsk(), null);
     expect(screen.getByText("No note")).toBeTruthy();
+    expect(screen.getByText("Open a text note to ask about it")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Summarise this note" }),
+    ).toBeNull();
   });
 
   it("Enter sends the question and clears the input", () => {
