@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TextBridge } from "../editor/EditorHost";
+import type { Kind } from "../model/kinds";
 import type { AskEvent } from "./api";
 
 vi.mock("./api", () => ({
@@ -10,7 +11,7 @@ vi.mock("./api", () => ({
 import { aiAsk, aiCancel } from "./api";
 import { useAsk } from "./useAsk";
 
-const tab = (id: string, kind = "text") => ({
+const tab = (id: string, kind: Kind = "text") => ({
   id,
   title: `T${id}`,
   language: "ts",
@@ -57,7 +58,7 @@ describe("useAsk", () => {
     expect(call(1)[0]).not.toBe(id);
   });
 
-  it("omits earlier assistant turns that ended in an error", () => {
+  it("drops an errored answer together with its question", () => {
     const bridge = bridgeOf({ a: "x" });
     const { result } = renderHook(() =>
       useAsk({ bridge, activeTab: tab("a") }),
@@ -66,10 +67,58 @@ describe("useAsk", () => {
     emit(0, { kind: "text", text: "part" });
     emit(0, { kind: "error", message: "boom" });
     act(() => void result.current.send("q2"));
-    expect(call(1)[2]).toEqual([
-      { role: "user", content: "q1" },
-      { role: "user", content: "q2" },
-    ]);
+    expect(call(1)[2]).toEqual([{ role: "user", content: "q2" }]);
+  });
+
+  it("drops a stopped-before-any-text answer together with its question", () => {
+    const bridge = bridgeOf({ a: "x" });
+    const { result } = renderHook(() =>
+      useAsk({ bridge, activeTab: tab("a") }),
+    );
+    act(() => void result.current.send("q1"));
+    act(() => result.current.stop());
+    act(() => void result.current.send("q2"));
+    expect(call(1)[2]).toEqual([{ role: "user", content: "q2" }]);
+  });
+
+  it("shows the message of a rejected aiAsk, not [object Object]", async () => {
+    vi.mocked(aiAsk).mockRejectedValueOnce({
+      kind: "not_ready",
+      message: "No key set",
+    });
+    const bridge = bridgeOf({ a: "x" });
+    const { result } = renderHook(() =>
+      useAsk({ bridge, activeTab: tab("a") }),
+    );
+    await act(async () => void result.current.send("q"));
+    expect(result.current.conversation.streaming).toBeNull();
+    expect(result.current.conversation.turns[1].error).toBe("No key set");
+  });
+
+  it("handles a synchronous throw and Error rejections", async () => {
+    vi.mocked(aiAsk).mockImplementationOnce(() => {
+      throw new Error("sync");
+    });
+    const bridge = bridgeOf({ a: "x" });
+    const { result } = renderHook(() =>
+      useAsk({ bridge, activeTab: tab("a") }),
+    );
+    await act(async () => void result.current.send("q"));
+    expect(result.current.conversation.streaming).toBeNull();
+    expect(result.current.conversation.turns[1].error).toBe("sync");
+  });
+
+  it("refuses a second send in the same event", () => {
+    const bridge = bridgeOf({ a: "x" });
+    const { result } = renderHook(() =>
+      useAsk({ bridge, activeTab: tab("a") }),
+    );
+    let r: string[] = [];
+    act(() => {
+      r = [result.current.send("q1"), result.current.send("q2")];
+    });
+    expect(r).toEqual(["sent", "busy"]);
+    expect(aiAsk).toHaveBeenCalledTimes(1);
   });
 
   it("keeps events in the same turn when the active Tab changes; next send uses the new Tab", () => {
