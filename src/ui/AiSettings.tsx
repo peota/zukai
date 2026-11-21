@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { aiConfigSet, aiKeyRemove, aiKeySet } from "../ask/api";
+import { aiConfigSet, aiKeyRemove, aiKeySet, aiModels } from "../ask/api";
 import { ANTHROPIC_DEFAULT_MODEL } from "../ask/defaults";
 import type { AiConfig, AiStatus, Provider } from "../ask/api";
 import { BUTTON, Row } from "./settingsRows";
@@ -40,9 +40,53 @@ function missing(status: AiStatus): string | null {
     return null;
   }
   if (c.provider !== "anthropic" && !c.model.trim()) {
-    return "Enter a model to use Ask.";
+    return "Choose a model to use Ask.";
   }
   return null;
+}
+
+/** The model list for the saved provider, fetched once it can be. */
+type ModelList =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "loaded"; ids: string[] }
+  | { state: "failed"; message: string };
+
+function useModelList(status: AiStatus) {
+  const c = status.config;
+  // Listing needs the saved key, or for a compatible server its URL.
+  const source =
+    c && (c.provider === "compatible" ? c.baseUrl?.trim() : status.hasKey)
+      ? JSON.stringify([c.provider, c.baseUrl ?? "", status.hasKey])
+      : null;
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  // A result counts only for the source and attempt that fetched it.
+  const want = source === null ? null : `${source}#${attempt}`;
+  const [result, setResult] = useState<{ for: string; list: ModelList }>();
+  useEffect(() => {
+    if (want === null) return;
+    let live = true;
+    aiModels().then(
+      (ids) => live && setResult({ for: want, list: { state: "loaded", ids } }),
+      (e: unknown) =>
+        live &&
+        setResult({
+          for: want,
+          list: { state: "failed", message: messageOf(e) },
+        }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [want]);
+  const list: ModelList =
+    want === null
+      ? { state: "idle" }
+      : result?.for === want
+        ? result.list
+        : { state: "loading" };
+  return { list, retry };
 }
 
 /** A change that forgets the saved key, until it's confirmed or cancelled. */
@@ -169,6 +213,14 @@ export function AiSettings({
     if (await run(() => aiKeySet(key))) setKey("");
   };
   const lacking = missing(status);
+  const { list, retry } = useModelList(status);
+  const ids = list.state === "loaded" ? list.ids : [];
+  // The chosen model stays listed even when the provider no longer lists it.
+  const options = model && !ids.includes(model) ? [model, ...ids] : ids;
+  const pickModel = (m: string) => {
+    setModel(m);
+    void save({ model: m });
+  };
 
   return (
     <div className="flex flex-col">
@@ -221,18 +273,51 @@ export function AiSettings({
         </Row>
       )}
       <Row label={<label htmlFor="z-ai-model">Model</label>}>
-        <input
+        <select
           id="z-ai-model"
-          type="text"
-          spellCheck={false}
-          placeholder={provider === "anthropic" ? ANTHROPIC_DEFAULT_MODEL : ""}
           value={model}
-          onChange={(e) => setModel(e.target.value)}
-          onBlur={() => void save({})}
-          onKeyDown={commit}
+          onChange={(e) => pickModel(e.target.value)}
           className={FIELD}
-        />
+        >
+          {provider === "anthropic" ? (
+            <option value="">Default ({ANTHROPIC_DEFAULT_MODEL})</option>
+          ) : (
+            <option value="" disabled>
+              {list.state === "loading" ? "Loading models…" : "Choose a model"}
+            </option>
+          )}
+          {options.map((id) => (
+            <option key={id} value={id}>
+              {id}
+            </option>
+          ))}
+        </select>
+        {list.state !== "idle" && (
+          <button
+            type="button"
+            className={BUTTON}
+            disabled={list.state === "loading"}
+            onClick={retry}
+          >
+            Refresh
+          </button>
+        )}
       </Row>
+      {list.state === "idle" && provider !== "compatible" && (
+        <p className="m-0 pb-1 text-ui-xs text-muted">
+          Save a key to choose from your models.
+        </p>
+      )}
+      {list.state === "loaded" && ids.length === 0 && (
+        <p className="m-0 pb-1 text-ui-xs text-muted">
+          The provider listed no models.
+        </p>
+      )}
+      {list.state === "failed" && (
+        <p role="alert" className="m-0 pb-1 text-ui-xs text-danger">
+          Couldn't list the models. {list.message}
+        </p>
+      )}
       {status.hasKey ? (
         <Row label="Key">
           <span className="text-muted">Key set</span>

@@ -4,6 +4,7 @@ pub mod ask;
 pub mod commands;
 pub mod config;
 pub mod keychain;
+pub mod models;
 pub mod provider;
 pub mod sse;
 
@@ -20,6 +21,9 @@ pub enum AiError {
     Invalid(String),
     #[error("Ask isn't set up yet")]
     NotReady,
+    /// The provider couldn't be reached or refused; the text names it.
+    #[error("{0}")]
+    Network(String),
 }
 
 impl Serialize for AiError {
@@ -29,6 +33,7 @@ impl Serialize for AiError {
             AiError::Keychain(_) => "keychain",
             AiError::Invalid(_) => "invalid",
             AiError::NotReady => "not_ready",
+            AiError::Network(_) => "network",
         };
         let mut st = s.serialize_struct("AiError", 2)?;
         st.serialize_field("kind", kind)?;

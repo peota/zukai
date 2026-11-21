@@ -137,6 +137,7 @@ vi.mock("./ask/api", () => ({
   aiCancel: vi.fn(),
   aiKeyRemove: vi.fn(),
   aiKeySet: vi.fn(),
+  aiModels: vi.fn(() => Promise.resolve([])),
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({

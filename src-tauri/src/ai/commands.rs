@@ -5,7 +5,8 @@ use super::AiError;
 use super::ask::{AskEvent, Asks, stream_answer};
 use super::config::{self, AiConfig, Provider, effective_model, key_account};
 use super::keychain::{KeyringStore, SecretStore};
-use super::provider::{HttpRequest, Message, build_request, provider_label};
+use super::models::fetch_models;
+use super::provider::{HttpRequest, Message, build_request, models_request, provider_label};
 use crate::storage;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -130,6 +131,34 @@ pub fn prepare_in(
     })
 }
 
+/// What listing the models needs: the request, and the key to take out of
+/// errors.
+pub struct ModelsPrepared {
+    pub req: HttpRequest,
+    pub provider: Provider,
+    pub label: String,
+    pub key: String,
+}
+
+/// Builds the models-list request. Needs a saved provider and its key (or,
+/// for a compatible server, its URL); a model needn't be chosen yet.
+pub fn models_prepare_in(dir: &Path, store: &dyn SecretStore) -> Result<ModelsPrepared, AiError> {
+    let Some(config) = config::load(dir) else {
+        return Err(AiError::NotReady);
+    };
+    let key = match (store.get(&key_account(&config))?, config.provider) {
+        (Some(k), _) => k,
+        (None, Provider::Compatible) => String::new(),
+        (None, _) => return Err(AiError::NotReady),
+    };
+    Ok(ModelsPrepared {
+        req: models_request(&config, &key)?,
+        provider: config.provider,
+        label: provider_label(&config),
+        key,
+    })
+}
+
 /// `text` with every copy of a non-empty `key` replaced by `[key]`.
 fn without_key(text: String, key: &str) -> String {
     if key.is_empty() || !text.contains(key) {
@@ -235,6 +264,20 @@ pub async fn ai_ask(
     Ok(())
 }
 
+/// The saved provider's model ids, for the Model dropdown.
+#[tauri::command]
+pub async fn ai_models(app: AppHandle) -> Result<Vec<String>, AiError> {
+    let p = blocking(app, |d, s| models_prepare_in(&d, s)).await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_models(&p.req, p.provider, &p.label).map_err(|e| match e {
+            AiError::Network(m) => AiError::Network(without_key(m, &p.key)),
+            other => other,
+        })
+    })
+    .await
+    .map_err(|e| AiError::Io(std::io::Error::other(e)))?
+}
+
 #[tauri::command]
 pub fn ai_cancel(app: AppHandle, id: u32) {
     app.state::<Asks>().cancel(id);
@@ -316,6 +359,42 @@ mod tests {
         .unwrap();
         assert!(!st.has_key);
         assert_eq!(store.get("anthropic").unwrap(), None);
+    }
+
+    #[test]
+    fn models_need_a_key_but_not_a_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::default();
+        assert!(matches!(
+            models_prepare_in(dir.path(), &store),
+            Err(AiError::NotReady)
+        ));
+        let mut c = cfg(Provider::Openai, None);
+        c.model = String::new();
+        config_set_in(dir.path(), &store, c).unwrap();
+        assert!(matches!(
+            models_prepare_in(dir.path(), &store),
+            Err(AiError::NotReady)
+        ));
+        key_set_in(dir.path(), &store, "sk-secret").unwrap();
+        let p = models_prepare_in(dir.path(), &store).unwrap();
+        assert_eq!(p.req.url, "https://api.openai.com/v1/models");
+        assert_eq!(p.key, "sk-secret");
+    }
+
+    #[test]
+    fn compatible_models_need_no_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::default();
+        config_set_in(
+            dir.path(),
+            &store,
+            cfg(Provider::Compatible, Some("http://localhost:11434/v1")),
+        )
+        .unwrap();
+        let p = models_prepare_in(dir.path(), &store).unwrap();
+        assert_eq!(p.req.url, "http://localhost:11434/v1/models");
+        assert!(p.req.headers.is_empty());
     }
 
     #[test]
