@@ -118,4 +118,65 @@ describe("AiSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save key" }));
     expect(await screen.findByText("Keychain is locked")).toBeInTheDocument();
   });
+
+  it("warns before a URL change forgets the key; Cancel restores the URL", () => {
+    const status: AiStatus = {
+      config: {
+        provider: "compatible",
+        baseUrl: "http://localhost:11434/v1",
+        model: "llama",
+      },
+      hasKey: true,
+      ready: true,
+    };
+    render(<AiSettings status={status} onStatus={vi.fn()} />);
+    const url = screen.getByLabelText("URL");
+    fireEvent.change(url, { target: { value: "http://other/v1" } });
+    fireEvent.blur(url);
+    expect(
+      screen.getByText("Changing the URL forgets the saved key."),
+    ).toBeInTheDocument();
+    expect(aiConfigSet).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(aiConfigSet).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("URL")).toHaveValue(
+      "http://localhost:11434/v1",
+    );
+  });
+
+  it("goes back to the stored provider when saving fails", async () => {
+    vi.mocked(aiConfigSet).mockRejectedValue({
+      kind: "io",
+      message: "Could not write ai.json",
+    });
+    render(
+      <AiSettings
+        status={{ ...anthropic, hasKey: false, ready: false }}
+        onStatus={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Provider"), {
+      target: { value: "openai" },
+    });
+    expect(await screen.findByText("Could not write ai.json")).toBeVisible();
+    expect(screen.getByLabelText("Provider")).toHaveValue("anthropic");
+  });
+
+  it("follows the stored config when it changes", () => {
+    const { rerender } = render(
+      <AiSettings status={anthropic} onStatus={vi.fn()} />,
+    );
+    rerender(
+      <AiSettings
+        status={{
+          config: { provider: "openai", model: "gpt-x" },
+          hasKey: true,
+          ready: true,
+        }}
+        onStatus={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Provider")).toHaveValue("openai");
+    expect(screen.getByLabelText("Model")).toHaveValue("gpt-x");
+  });
 });

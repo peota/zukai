@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { aiConfigSet, aiKeyRemove, aiKeySet } from "../ask/api";
 import type { AiConfig, AiStatus, Provider } from "../ask/api";
-import { BUTTON, Row } from "./SettingsDialog";
+import { BUTTON, Row } from "./settingsRows";
 
 const PROVIDERS: { id: Provider; label: string }[] = [
   { id: "anthropic", label: "Anthropic" },
@@ -23,11 +23,14 @@ function messageOf(e: unknown): string {
 
 function ErrorText({ children }: { children: ReactNode }) {
   return (
-    <p role="alert" className="m-0 pb-1 text-ui-xs text-red-500">
+    <p role="alert" className="m-0 pb-1 text-ui-xs text-danger">
       {children}
     </p>
   );
 }
+
+/** A change that forgets the saved key, until it's confirmed or cancelled. */
+type Pending = { kind: "provider"; provider: Provider } | { kind: "url" };
 
 /** Settings → AI: the AI provider, its model and its key. */
 export function AiSettings({
@@ -44,9 +47,21 @@ export function AiSettings({
   const [baseUrl, setBaseUrl] = useState(config?.baseUrl ?? "");
   const [model, setModel] = useState(config?.model ?? "");
   const [key, setKey] = useState("");
-  // A provider picked but not yet confirmed (it forgets the saved key).
-  const [pending, setPending] = useState<Provider | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const showStored = () => {
+    setProvider(config?.provider ?? "anthropic");
+    setBaseUrl(config?.baseUrl ?? "");
+    setModel(config?.model ?? "");
+  };
+
+  // The fields follow the stored config when it changes.
+  const [seen, setSeen] = useState(config);
+  if (seen !== config) {
+    setSeen(config);
+    showStored();
+  }
 
   const run = async (op: () => Promise<AiStatus>): Promise<boolean> => {
     try {
@@ -71,14 +86,14 @@ export function AiSettings({
     if (
       config &&
       config.provider === p &&
-      (config.baseUrl ?? "") === (p === "compatible" ? url : "") &&
+      (p !== "compatible" || (config.baseUrl ?? "") === url) &&
       config.model === m
     ) {
       return;
     }
     const c: AiConfig = { provider: p, model: m };
     if (p === "compatible") c.baseUrl = url;
-    await run(() => aiConfigSet(c));
+    if (!(await run(() => aiConfigSet(c)))) showStored();
   };
 
   const applyProvider = async (p: Provider) => {
@@ -91,8 +106,28 @@ export function AiSettings({
 
   const pickProvider = (p: Provider) => {
     if (p === provider) return;
-    if (status.hasKey) setPending(p);
+    if (status.hasKey) setPending({ kind: "provider", provider: p });
     else void applyProvider(p);
+  };
+
+  const blurUrl = () => {
+    if (status.hasKey && baseUrl.trim() !== (config?.baseUrl ?? "")) {
+      setPending({ kind: "url" });
+    } else {
+      void save({});
+    }
+  };
+
+  const confirm = async () => {
+    const p = pending;
+    setPending(null);
+    if (p?.kind === "provider") await applyProvider(p.provider);
+    else if (p) await save({});
+  };
+
+  const cancel = () => {
+    setPending(null);
+    showStored();
   };
 
   const commit = (e: { key: string; currentTarget: HTMLInputElement }) => {
@@ -109,7 +144,7 @@ export function AiSettings({
       <Row label={<label htmlFor="z-ai-provider">Provider</label>}>
         <select
           id="z-ai-provider"
-          value={pending ?? provider}
+          value={pending?.kind === "provider" ? pending.provider : provider}
           onChange={(e) => pickProvider(e.target.value as Provider)}
           className={FIELD}
         >
@@ -123,20 +158,18 @@ export function AiSettings({
       {pending && (
         <div className="flex items-center gap-2 pb-2 text-muted">
           <span className="flex-1">
-            Changing the provider forgets the saved key.
+            {pending.kind === "provider"
+              ? "Changing the provider forgets the saved key."
+              : "Changing the URL forgets the saved key."}
           </span>
           <button
             type="button"
             className={BUTTON}
-            onClick={() => void applyProvider(pending)}
+            onClick={() => void confirm()}
           >
-            Change provider
+            {pending.kind === "provider" ? "Change provider" : "Change URL"}
           </button>
-          <button
-            type="button"
-            className={BUTTON}
-            onClick={() => setPending(null)}
-          >
+          <button type="button" className={BUTTON} onClick={cancel}>
             Cancel
           </button>
         </div>
@@ -150,7 +183,7 @@ export function AiSettings({
             placeholder="http://localhost:11434/v1"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            onBlur={() => void save({})}
+            onBlur={blurUrl}
             onKeyDown={commit}
             className={FIELD}
           />
