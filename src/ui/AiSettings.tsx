@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { aiConfigSet, aiKeyRemove, aiKeySet } from "../ask/api";
+import { ANTHROPIC_DEFAULT_MODEL } from "../ask/defaults";
 import type { AiConfig, AiStatus, Provider } from "../ask/api";
 import { BUTTON, Row } from "./settingsRows";
 
@@ -27,6 +28,21 @@ function ErrorText({ children }: { children: ReactNode }) {
       {children}
     </p>
   );
+}
+
+/** What a saved config still lacks before Ask can be used, if anything. */
+function missing(status: AiStatus): string | null {
+  const c = status.config;
+  if (!c || status.ready) return null;
+  if (c.provider === "compatible") {
+    if (!c.baseUrl?.trim()) return "Enter the server URL to use Ask.";
+  } else if (!status.hasKey) {
+    return null;
+  }
+  if (c.provider !== "anthropic" && !c.model.trim()) {
+    return "Enter a model to use Ask.";
+  }
+  return null;
 }
 
 /** A change that forgets the saved key, until it's confirmed or cancelled. */
@@ -143,8 +159,16 @@ export function AiSettings({
 
   const saveKey = async () => {
     if (key === "") return;
+    // First run: nothing is stored yet, so the provider shown is saved
+    // first; the key belongs to it.
+    if (!config) {
+      const c: AiConfig = { provider, model: model.trim() };
+      if (provider === "compatible") c.baseUrl = baseUrl.trim();
+      if (!(await run(() => aiConfigSet(c)))) return;
+    }
     if (await run(() => aiKeySet(key))) setKey("");
   };
+  const lacking = missing(status);
 
   return (
     <div className="flex flex-col">
@@ -201,7 +225,7 @@ export function AiSettings({
           id="z-ai-model"
           type="text"
           spellCheck={false}
-          placeholder={provider === "anthropic" ? "claude-sonnet-5-5" : ""}
+          placeholder={provider === "anthropic" ? ANTHROPIC_DEFAULT_MODEL : ""}
           value={model}
           onChange={(e) => setModel(e.target.value)}
           onBlur={() => void save({})}
@@ -250,6 +274,12 @@ export function AiSettings({
           </button>
         </Row>
       )}
+      {status.keychainError && (
+        <p className="m-0 pb-1 text-ui-xs text-danger">
+          {status.keychainError}
+        </p>
+      )}
+      {lacking && <p className="m-0 pb-1 text-ui-xs text-muted">{lacking}</p>}
       {error && <ErrorText>{error}</ErrorText>}
       <p className="m-0 pt-3 text-ui-xs text-faint">
         Ask sends only what you ask about, and only when you press Enter. Hidden

@@ -11,6 +11,12 @@ describe("providerLabel", () => {
     );
   });
 
+  it("names Anthropic's default model when none is set", () => {
+    expect(providerLabel({ provider: "anthropic", model: "" })).toBe(
+      "Anthropic · claude-sonnet-5-5",
+    );
+  });
+
   it("names a compatible provider by its host", () => {
     expect(
       providerLabel({

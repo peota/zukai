@@ -1,4 +1,5 @@
 import type { AiConfig } from "./api";
+import { ANTHROPIC_DEFAULT_MODEL } from "./defaults";
 
 const NAMES = { anthropic: "Anthropic", openai: "OpenAI" } as const;
 
@@ -19,5 +20,8 @@ export function providerLabel(config: AiConfig | null): string {
   } else {
     name = NAMES[config.provider];
   }
-  return `${name} · ${config.model}`;
+  const model =
+    config.model.trim() ||
+    (config.provider === "anthropic" ? ANTHROPIC_DEFAULT_MODEL : "");
+  return `${name} · ${model}`;
 }
