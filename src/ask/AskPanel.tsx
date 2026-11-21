@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, PointerEvent } from "react";
 import { linkKind, renderMarkdown } from "../markdown/render";
 import { ASK_MIN_WIDTH, clampTerminalSize } from "../model/settings";
-import { CloseIcon, Icon } from "../ui/icons";
+import { CloseIcon, Icon, fileIcon } from "../ui/icons";
 import type { Turn } from "./conversation";
 import type { UseAsk } from "./useAsk";
 import "./ask.css";
 
 export interface AskPanelProps {
   ask: UseAsk;
-  /** The scope chip's text ("This note · a.md"), or null with no note. */
-  scopeLabel: string | null;
+  /** The title of the note asked about, or null with no text note open. */
+  noteTitle: string | null;
   /** Where questions go, e.g. "Anthropic · claude-sonnet-5-5". */
   providerLabel: string;
   /** The panel's width in px. */
@@ -102,12 +102,40 @@ function ResizeEdge({
   );
 }
 
+/** A finished answer's Copy action; says Copied for a moment. */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard?.writeText(text).then(
+          () => setCopied(true),
+          () => {},
+        );
+      }}
+      className="z-ask-action"
+    >
+      <Icon name={copied ? "check" : "copy"} size={13} />
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 /** An answer: its Markdown as sanitized HTML, or its error. */
 function Answer({
   turn,
+  live,
   onOpenUrl,
 }: {
   turn: Turn;
+  /** Still streaming in. */
+  live: boolean;
   onOpenUrl(url: string): void;
 }) {
   const html = useMemo(() => renderMarkdown(turn.text), [turn.text]);
@@ -121,31 +149,89 @@ function Answer({
   };
   return (
     <div className="z-ask-answer">
-      {turn.text && (
+      {turn.text ? (
         <div
           className="z-md"
           onClick={onClick}
           // Rendered from the provider's answer and sanitized (render.ts).
           dangerouslySetInnerHTML={{ __html: html }}
         />
+      ) : (
+        live && (
+          <span className="z-ask-thinking" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        )
       )}
       {turn.error && (
-        <p className="mt-1 text-ui-sm text-danger" role="alert">
+        <p className="z-ask-error" role="alert">
           {turn.error}
         </p>
+      )}
+      {!live && turn.text && (
+        <div className="z-ask-actions">
+          <CopyButton text={turn.text} />
+        </div>
       )}
     </div>
   );
 }
 
+/** What to ask first, offered on an empty conversation. Fills the box only. */
+const SUGGESTIONS = [
+  "Summarise this note",
+  "Walk me through it step by step",
+  "What's unclear or missing here?",
+];
+
+function EmptyState({
+  hasNote,
+  onPick,
+}: {
+  hasNote: boolean;
+  onPick(q: string): void;
+}) {
+  return (
+    <div className="z-ask-empty">
+      <div className="z-ask-orb" aria-hidden="true" />
+      <h2 className="z-ask-empty-title">
+        {hasNote ? "Ask about this note" : "Open a text note to ask about it"}
+      </h2>
+      <p className="z-ask-empty-sub">
+        Summaries, walkthroughs and explanations of what's open. Nothing is sent
+        until you press Enter.
+      </p>
+      {hasNote && (
+        <div className="z-ask-suggestions">
+          {SUGGESTIONS.map((q) => (
+            <button
+              key={q}
+              type="button"
+              className="z-ask-suggestion"
+              onClick={() => onPick(q)}
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The question box grows with its text up to this height, then scrolls. */
+const INPUT_MAX = 200;
+
 /**
- * The Ask panel: a slim header (the scope, New conversation and ×), the
- * conversation, and the question box. It docks on the right of the editor
- * area.
+ * The Ask panel: a slim header (New conversation and ×), the conversation,
+ * and the question box with the note it asks about and the model. It docks
+ * on the right of the editor area.
  */
 export function AskPanel({
   ask,
-  scopeLabel,
+  noteTitle,
   providerLabel,
   width,
   onWidth,
@@ -162,12 +248,21 @@ export function AskPanel({
 
   useEffect(() => input.current?.focus(), []);
 
+  // The box fits its text.
+  useLayoutEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, INPUT_MAX)}px`;
+  }, [text]);
+
   // Follow the answer as it streams in.
-  const last = conversation.turns[conversation.turns.length - 1];
+  const turns = conversation.turns;
+  const last = turns[turns.length - 1];
   useEffect(() => {
     const el = turnsRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [conversation.turns.length, last?.text, last?.error]);
+  }, [turns.length, last?.text, last?.error]);
 
   /**
    * What a screen reader hears: the status while asking, then the finished
@@ -201,6 +296,12 @@ export function AskPanel({
     }
   };
 
+  const pick = (q: string) => {
+    setText(q);
+    setMessage(null);
+    input.current?.focus();
+  };
+
   return (
     <section
       aria-label="Ask"
@@ -215,12 +316,6 @@ export function AskPanel({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex h-9 shrink-0 select-none items-center gap-2 border-b border-hairline bg-chrome pr-1.5 pl-3 text-ui-sm">
           <span className="shrink-0 font-semibold text-text">Ask</span>
-          <span
-            className="min-w-0 truncate rounded-[5px] bg-sunken px-1.5 py-0.5 text-ui-xs text-muted"
-            title={scopeLabel ?? undefined}
-          >
-            {scopeLabel ?? "No note"}
-          </span>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             <button
               type="button"
@@ -248,49 +343,94 @@ export function AskPanel({
         </div>
         <div
           ref={turnsRef}
-          className="min-h-0 flex-1 overflow-y-auto px-3 py-3"
+          className="z-ask-turns min-h-0 flex-1 overflow-y-auto"
         >
-          {conversation.turns.map((t, i) =>
-            t.role === "user" ? (
-              <p key={i} className="z-ask-question">
-                {t.text}
-              </p>
-            ) : (
-              <Answer key={i} turn={t} onOpenUrl={onOpenUrl} />
-            ),
+          {turns.length === 0 ? (
+            <EmptyState hasNote={noteTitle !== null} onPick={pick} />
+          ) : (
+            turns.map((t, i) =>
+              t.role === "user" ? (
+                <p key={i} className="z-ask-question">
+                  {t.text}
+                </p>
+              ) : (
+                <Answer
+                  key={i}
+                  turn={t}
+                  live={streaming && i === turns.length - 1}
+                  onOpenUrl={onOpenUrl}
+                />
+              ),
+            )
           )}
         </div>
-        <div className="shrink-0 border-t border-hairline px-3 pt-2 pb-2.5">
+        <div className="shrink-0 px-3 pt-1 pb-3">
           {message && (
-            <p className="mb-1.5 text-ui-sm text-danger" role="status">
+            <p className="z-ask-error mb-1.5" role="status">
               {MESSAGES[message]}
             </p>
           )}
-          <textarea
-            ref={input}
-            aria-label="Question"
-            placeholder="Ask about this note"
-            rows={3}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              if (message) setMessage(null);
-            }}
-            onKeyDown={onKeyDown}
-            className="block w-full resize-none rounded-[6px] border border-hairline-strong bg-surface px-2 py-1.5 text-ui text-text outline-none placeholder:text-faint focus:border-accent"
-          />
-          {streaming && (
-            <div className="mt-1.5 flex items-center gap-2 text-ui-xs text-faint">
-              <span className="min-w-0 flex-1 truncate">{`Asking ${providerLabel}…`}</span>
-              <button
-                type="button"
-                onClick={stop}
-                className="shrink-0 rounded-[5px] border border-hairline-strong px-2 py-0.5 text-ui-xs text-muted hover:bg-row-hover hover:text-text"
+          <div className="z-ask-composer">
+            <textarea
+              ref={input}
+              aria-label="Question"
+              placeholder={
+                noteTitle ? "Ask about this note…" : "Open a text note first"
+              }
+              rows={1}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                if (message) setMessage(null);
+              }}
+              onKeyDown={onKeyDown}
+              className="z-ask-input"
+            />
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className="z-ask-chip"
+                title={noteTitle ? `Asking about ${noteTitle}` : undefined}
               >
-                Stop
-              </button>
+                <Icon
+                  name={noteTitle ? fileIcon(noteTitle) : "text"}
+                  size={13}
+                />
+                <span className="truncate">{noteTitle ?? "No note"}</span>
+              </span>
+              <span
+                className={
+                  "min-w-0 flex-1 truncate text-right text-ui-xs " +
+                  (streaming ? "text-muted" : "text-faint")
+                }
+                title={providerLabel}
+              >
+                {streaming ? `Asking ${providerLabel}…` : providerLabel}
+              </span>
+              {streaming ? (
+                <button
+                  type="button"
+                  aria-label="Stop"
+                  title="Stop"
+                  onClick={stop}
+                  className="z-ask-send"
+                  data-stop=""
+                >
+                  <Icon name="square" size={10} strokeWidth={3} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Send"
+                  title="Send (Enter)"
+                  disabled={text.trim() === ""}
+                  onClick={submit}
+                  className="z-ask-send"
+                >
+                  <Icon name="arrowUp" size={15} strokeWidth={2} />
+                </button>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </section>
