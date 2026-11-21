@@ -227,4 +227,96 @@ describe("AiSettings", () => {
     );
     expect(screen.getByLabelText("Model")).toHaveValue("half-typed");
   });
+
+  it("first run: Save key stores the provider shown, then the key", async () => {
+    const saved: AiStatus = {
+      config: { provider: "anthropic", model: "" },
+      hasKey: false,
+      ready: false,
+    };
+    const done: AiStatus = { ...saved, hasKey: true, ready: true };
+    vi.mocked(aiConfigSet).mockResolvedValue(saved);
+    vi.mocked(aiKeySet).mockResolvedValue(done);
+    const onStatus = vi.fn();
+    render(<AiSettings status={none} onStatus={onStatus} />);
+    fireEvent.change(screen.getByLabelText("Key"), {
+      target: { value: "sk-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+    await waitFor(() => expect(aiKeySet).toHaveBeenCalledWith("sk-secret"));
+    expect(aiConfigSet).toHaveBeenCalledWith({
+      provider: "anthropic",
+      model: "",
+    });
+    expect(vi.mocked(aiConfigSet).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(aiKeySet).mock.invocationCallOrder[0],
+    );
+    await waitFor(() => expect(onStatus).toHaveBeenLastCalledWith(done));
+  });
+
+  it("first run: a failed provider save keeps the key unsent", async () => {
+    vi.mocked(aiConfigSet).mockRejectedValue({
+      kind: "io",
+      message: "Could not write ai.json",
+    });
+    render(<AiSettings status={none} onStatus={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Key"), {
+      target: { value: "sk-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+    expect(await screen.findByText("Could not write ai.json")).toBeVisible();
+    expect(aiKeySet).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Key")).toHaveValue("sk-secret");
+  });
+
+  it("says a model is missing when the key is set but Ask isn't ready", () => {
+    render(
+      <AiSettings
+        status={{
+          config: { provider: "openai", model: "" },
+          hasKey: true,
+          ready: false,
+        }}
+        onStatus={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Enter a model to use Ask.")).toBeInTheDocument();
+  });
+
+  it("says the server URL is missing for OpenAI-compatible", () => {
+    render(
+      <AiSettings
+        status={{
+          config: { provider: "compatible", baseUrl: null, model: "llama" },
+          hasKey: true,
+          ready: false,
+        }}
+        onStatus={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("Enter the server URL to use Ask."),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing is missing when Ask is ready", () => {
+    render(<AiSettings status={anthropic} onStatus={vi.fn()} />);
+    expect(screen.queryByText(/to use Ask\./)).toBeNull();
+  });
+
+  it("shows why the keychain couldn't be read", () => {
+    render(
+      <AiSettings
+        status={{
+          config: { provider: "anthropic", model: "" },
+          hasKey: false,
+          ready: false,
+          keychainError: "the keychain failed: no Secret Service",
+        }}
+        onStatus={vi.fn()}
+      />,
+    );
+    const p = screen.getByText("the keychain failed: no Secret Service");
+    expect(p).toHaveClass("text-danger");
+  });
 });

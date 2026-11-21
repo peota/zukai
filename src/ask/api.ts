@@ -4,7 +4,8 @@ export type Provider = "anthropic" | "openai" | "compatible";
 
 export interface AiConfig {
   provider: Provider;
-  baseUrl?: string;
+  /** Rust sends `null` when there is none. */
+  baseUrl?: string | null;
   model: string;
 }
 
@@ -12,6 +13,8 @@ export interface AiStatus {
   config: AiConfig | null;
   hasKey: boolean;
   ready: boolean;
+  /** Why the keychain couldn't be read; the key then counts as missing. */
+  keychainError?: string | null;
 }
 
 export type AskEvent =
