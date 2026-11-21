@@ -94,7 +94,7 @@ _Avoid_: terminal pane, console.
 AI in Zukai is one feature, Ask, using the user's own key (see [ADR 0013](docs/adr/0013-ask-with-the-users-own-key.md)).
 
 **Ask panel**
-A docked panel where the user asks questions about their material and reads the answers. It exists only once an AI provider and key are set; until then there's no panel, shortcut or icon. Each answer links the Files it used, and shows every tool step ("Searched `kafka` · Read `infra/lag.md`") and which provider and model the request went to. Nothing is sent until the user presses Enter.
+A panel docked on the right of the editor area (beside the editor and the terminal panel) where the user asks questions about their material and reads the answers; Mod+J shows or hides it. It exists only once an AI provider and key are set; until then there's no panel, shortcut or icon. Each answer links the Files it used, and shows every tool step ("Searched `kafka` · Read `infra/lag.md`") and which provider and model the request went to. Nothing is sent until the user presses Enter.
 _Avoid_: chat, assistant, copilot, AI panel.
 
 **Ask scope**

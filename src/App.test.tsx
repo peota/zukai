@@ -10,6 +10,7 @@ import * as storage from "./storage/api";
 import * as files from "./files/api";
 import * as lib from "./library/api";
 import * as term from "./terminal/api";
+import * as ask from "./ask/api";
 import App from "./App";
 import { toSessionFile } from "./model/session";
 import { newTabState } from "./model/workspace";
@@ -132,6 +133,8 @@ vi.mock("./ask/api", () => ({
   aiStatus: vi.fn(() =>
     Promise.resolve({ config: null, hasKey: false, ready: false }),
   ),
+  aiAsk: vi.fn(),
+  aiCancel: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -226,6 +229,8 @@ const newTerminal = () =>
     ctrlKey: true,
     shiftKey: true,
   });
+const modJ = () =>
+  fireEvent.keyDown(window, { key: "j", code: "KeyJ", ctrlKey: true });
 const modB = () =>
   fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
 
@@ -789,6 +794,41 @@ describe("App", () => {
     expect(main.querySelector("[data-split-drop]")).toBeNull();
     await waitFor(() => expect(r.getAllByTestId("editor")).toHaveLength(2));
     expect(r.getAllByTestId("editor")[1]).toHaveAttribute("data-id", "b");
+  });
+
+  it("Mod+J does nothing until an AI provider is ready", async () => {
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    await waitFor(() => expect(ask.aiStatus).toHaveBeenCalled());
+    await act(async () => {});
+    act(() => modJ());
+    await act(async () => {});
+    expect(r.queryByRole("region", { name: "Ask" })).toBeNull();
+    expect(r.container.querySelector('[aria-label="Ask"]')).toBeNull();
+    expect(r.queryByLabelText("Ask")).toBeNull();
+  });
+
+  it("Mod+J shows and hides the Ask panel, right of the editor and terminal", async () => {
+    vi.mocked(ask.aiStatus).mockResolvedValue({
+      config: { provider: "anthropic", model: "claude-sonnet-5-5" },
+      hasKey: true,
+      ready: true,
+    });
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    await act(async () => {});
+    act(() => modJ());
+    const panel = await r.findByRole("region", { name: "Ask" });
+    // The editor and the terminal share a column; Ask sits beside it.
+    const main = r.container.querySelector("main")!;
+    const row = main.parentElement!.parentElement!;
+    expect(panel.parentElement).toBe(row);
+    expect(row.lastElementChild).toBe(panel);
+    expect(row.className).toContain("flex-row");
+    act(() => modJ());
+    await waitFor(() =>
+      expect(r.queryByRole("region", { name: "Ask" })).toBeNull(),
+    );
   });
 
   it("toggleTerminalWithNoFolderShowsNotice", async () => {
