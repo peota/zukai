@@ -1013,6 +1013,52 @@ describe("Sidebar multi-select", () => {
     expect(p.onMove).toHaveBeenCalledWith(TODO.path, ROADMAP.path);
   });
 
+  it("a drag lifts a ghost of the row that settles after the release", () => {
+    setup();
+    layOut();
+    const ghost = () => document.querySelector("[data-drag-ghost]");
+    fireEvent.click(row("notes.md"));
+    fireEvent.click(row("todo.txt"), { ctrlKey: true });
+    const src = row("todo.txt");
+    fireEvent.pointerDown(src, {
+      button: 0,
+      pointerId: 1,
+      clientY: yOf("todo.txt"),
+    });
+    expect(ghost()).toBeNull();
+    fireEvent.pointerMove(src, {
+      pointerId: 1,
+      buttons: 1,
+      clientY: yOf("Roadmap"),
+    });
+    // It shows the grabbed row and how many items go with it; they dim.
+    expect(ghost()).toHaveAttribute("data-drag-ghost", "drag");
+    expect(ghost()).toHaveTextContent("todo.txt2");
+    expect(src.className).toContain("opacity-40");
+    expect(row("notes.md").className).toContain("opacity-40");
+
+    // Released on a folder, it settles into it, then goes away.
+    fireEvent.pointerUp(src, { pointerId: 1, clientY: yOf("Roadmap") });
+    expect(ghost()).toHaveAttribute("data-drag-ghost", "drop");
+    expect(src.className).not.toContain("opacity-40");
+    fireEvent.transitionEnd(ghost()!, { propertyName: "opacity" });
+    expect(ghost()).toBeNull();
+
+    // Esc sends it back to its row.
+    fireEvent.pointerDown(src, {
+      button: 0,
+      pointerId: 2,
+      clientY: yOf("todo.txt"),
+    });
+    fireEvent.pointerMove(src, {
+      pointerId: 2,
+      buttons: 1,
+      clientY: yOf("Roadmap"),
+    });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(ghost()).toHaveAttribute("data-drag-ghost", "return");
+  });
+
   it("the selection can't be dropped into one of its own folders", () => {
     const { p } = setup();
     layOut();

@@ -42,7 +42,28 @@ interface Press {
   startY: number;
   moving: boolean;
   dest: string | null;
+  /** Where in the row the pointer grabbed it, measured when the drag starts. */
+  offX: number;
+  offY: number;
 }
+
+/**
+ * The lifted copy of the dragged row that follows the pointer. On release it
+ * glides into the folder it dropped on, or back to where it came from.
+ */
+export interface DragGhost {
+  source: DragSource;
+  left: number;
+  top: number;
+  width: number;
+  /** Set once released: where it settles before it goes away. */
+  landing: { left: number; top: number; drop: boolean } | null;
+}
+
+/** True when the OS asks for less motion: the ghost then just goes away. */
+const reducedMotion = (): boolean =>
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Each row's parent row index (-1 for the top level), in one pass. */
 export function parentIndex(rows: Row[]): Int32Array {
@@ -100,16 +121,38 @@ export function useFolderDrag({
   const [view, setView] = useState<{
     dest: string | null;
     copy: boolean;
+    source: DragSource;
   } | null>(null);
+  const [ghost, setGhost] = useState<DragGhost | null>(null);
+  const ghostRef = useRef<HTMLDivElement | null>(null);
   const swallow = useRef(false);
   // The parent index of the rows being dragged over, built when a drag starts.
   const parents = useRef<{ rows: Row[]; index: Int32Array } | null>(null);
 
-  const clear = useCallback(() => {
-    press.current = null;
-    parents.current = null;
-    setView(null);
-  }, []);
+  /**
+   * Ends the press. A drag's ghost settles at `to` (a drop) or glides back
+   * to its row (anything else) before it goes away.
+   */
+  const clear = useCallback(
+    (to: { left: number; top: number } | null = null) => {
+      const d = press.current;
+      press.current = null;
+      parents.current = null;
+      setView(null);
+      if (!d?.moving || reducedMotion()) {
+        setGhost(null);
+        return;
+      }
+      const landing = to
+        ? { ...to, drop: true }
+        : { left: d.startX - d.offX, top: d.startY - d.offY, drop: false };
+      setGhost((g) => g && { ...g, landing });
+    },
+    [],
+  );
+
+  /** The ghost finished settling: take it away. */
+  const ghostDone = useCallback(() => setGhost(null), []);
 
   const moving = view !== null;
   useEffect(() => {
@@ -166,6 +209,8 @@ export function useFolderDrag({
       startY: e.clientY,
       moving: false,
       dest: null,
+      offX: 0,
+      offY: 0,
     };
     watchRelease(e.pointerId);
   };
@@ -208,6 +253,7 @@ export function useFolderDrag({
       clear();
       return;
     }
+    let { offX, offY } = d;
     if (!d.moving) {
       const dist = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
       if (dist < DRAG_THRESHOLD) return;
@@ -216,9 +262,28 @@ export function useFolderDrag({
       } catch {
         // No capture (e.g. the pointer is gone): the drag still works.
       }
+      // Lift the row: its ghost keeps the grab point under the pointer.
+      const box = e.currentTarget.getBoundingClientRect();
+      offX = d.startX - box.left;
+      offY = d.startY - box.top;
+      setGhost({
+        source: d.source,
+        left: e.clientX - offX,
+        top: e.clientY - offY,
+        width: Math.min(box.width, 260),
+        landing: null,
+      });
+    } else if (ghostRef.current) {
+      // Every move after the lift: straight to the DOM, no render.
+      ghostRef.current.style.transform = `translate(${e.clientX - offX}px, ${e.clientY - offY}px)`;
+    } else {
+      // Moved before the ghost rendered: it mounts where the pointer is now.
+      const left = e.clientX - offX;
+      const top = e.clientY - offY;
+      setGhost((g) => g && { ...g, left, top });
     }
     const dest = destAt(d.source, e.clientX, e.clientY);
-    press.current = { ...d, moving: true, dest };
+    press.current = { ...d, moving: true, dest, offX, offY };
     if (!d.moving || dest !== d.dest) {
       // A drop into another tree copies (Rust never moves across roots).
       const source = d.source;
@@ -228,7 +293,7 @@ export function useFolderDrag({
         draggedEntries(source).some(
           (e) => rootOf(e.path, roots) !== rootOf(dest, roots),
         );
-      setView({ dest, copy });
+      setView({ dest, copy, source });
     }
   };
 
@@ -236,10 +301,24 @@ export function useFolderDrag({
     const d = press.current;
     if (!d || d.pointerId !== e.pointerId) return;
     unlisten.current?.();
-    clear();
+    const dest = drop && d.moving ? d.dest : null;
+    if (dest === null) {
+      clear();
+    } else {
+      // It settles into the highlighted folder row, or where it is (the root).
+      const row = treeRef.current?.querySelector<HTMLElement>(
+        '[data-drop-target="true"]',
+      );
+      const box = row?.getBoundingClientRect();
+      clear(
+        box
+          ? { left: box.left + 16, top: box.top }
+          : { left: e.clientX - d.offX, top: e.clientY - d.offY },
+      );
+    }
     if (!d.moving) return;
     swallow.current = true;
-    if (drop && d.dest !== null) onDrop(d.source, d.dest);
+    if (dest !== null) onDrop(d.source, dest);
   };
 
   /** Pointer handlers for one draggable element. */
@@ -262,6 +341,11 @@ export function useFolderDrag({
     /** The drop would copy into another tree: the target shows "Copy". */
     dropCopy: view?.copy ?? false,
     dragging: moving,
+    /** What is being dragged, while a drag is on. */
+    source: view?.source ?? null,
+    ghost,
+    ghostRef,
+    ghostDone,
     handlers,
     swallowClick,
   };
