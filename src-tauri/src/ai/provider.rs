@@ -87,8 +87,34 @@ pub fn build_request(
     }
 }
 
+/// The error text of an API body: `error.message`, or a bare string `error`
+/// (Ollama and some compatible servers send that form).
 fn api_error_text(v: &serde_json::Value) -> Option<String> {
-    v.get("error")?.get("message")?.as_str().map(str::to_owned)
+    let e = v.get("error")?;
+    e.get("message")
+        .and_then(|m| m.as_str())
+        .or_else(|| e.as_str())
+        .map(str::to_owned)
+}
+
+/// What error messages call the provider: its name, or for a compatible
+/// endpoint the host of its base URL.
+pub fn provider_label(c: &AiConfig) -> String {
+    match c.provider {
+        Provider::Anthropic => "Anthropic".into(),
+        Provider::Openai => "OpenAI".into(),
+        Provider::Compatible => {
+            let base = c.base_url.as_deref().unwrap_or("").trim();
+            let rest = base.split_once("://").map_or(base, |(_, r)| r);
+            let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+            let host = host.rsplit_once('@').map_or(host, |(_, h)| h);
+            if host.is_empty() {
+                "Endpoint".into()
+            } else {
+                host.into()
+            }
+        }
+    }
 }
 
 pub fn parse_event(p: Provider, e: &SseEvent) -> Option<Delta> {
@@ -138,20 +164,14 @@ pub fn parse_event(p: Provider, e: &SseEvent) -> Option<Delta> {
 }
 
 /// A one-line message for a failed HTTP response. Uses the provider's own
-/// `error.message` when the body has one, else just the status.
-pub fn error_message(p: Provider, status: u16, body: &str) -> String {
-    let name = match p {
-        Provider::Anthropic => "Anthropic",
-        Provider::Openai => "OpenAI",
-        // The config isn't passed here, so the host can't be named.
-        Provider::Compatible => "Endpoint",
-    };
+/// error text when the body has one, else just the status.
+pub fn error_message(label: &str, status: u16, body: &str) -> String {
     let text = serde_json::from_str::<serde_json::Value>(body)
         .ok()
         .and_then(|v| api_error_text(&v));
     match text {
-        Some(m) => format!("{name}: {m}"),
-        None => format!("{name}: HTTP {status}"),
+        Some(m) => format!("{label}: {m}"),
+        None => format!("{label}: HTTP {status}"),
     }
 }
 
@@ -295,23 +315,47 @@ mod tests {
     fn error_message_uses_provider_text() {
         assert_eq!(
             error_message(
-                Provider::Anthropic,
+                "Anthropic",
                 401,
                 r#"{"error":{"message":"invalid x-api-key"}}"#
             ),
             "Anthropic: invalid x-api-key"
         );
         assert_eq!(
-            error_message(Provider::Anthropic, 401, "<html>"),
+            error_message("Anthropic", 401, "<html>"),
             "Anthropic: HTTP 401"
         );
         assert_eq!(
-            error_message(
-                Provider::Openai,
-                429,
-                r#"{"error":{"message":"slow down"}}"#
-            ),
+            error_message("OpenAI", 429, r#"{"error":{"message":"slow down"}}"#),
             "OpenAI: slow down"
         );
+    }
+
+    #[test]
+    fn error_message_accepts_string_error() {
+        assert_eq!(
+            error_message("localhost:11434", 404, r#"{"error":"model not found"}"#),
+            "localhost:11434: model not found"
+        );
+    }
+
+    #[test]
+    fn in_stream_string_error() {
+        let e = ev(None, r#"{"error":"model not found"}"#);
+        assert_eq!(
+            parse_event(Provider::Compatible, &e),
+            Some(Delta::Error("model not found".into()))
+        );
+    }
+
+    #[test]
+    fn labels() {
+        assert_eq!(provider_label(&cfg(Provider::Anthropic, None)), "Anthropic");
+        assert_eq!(provider_label(&cfg(Provider::Openai, None)), "OpenAI");
+        let l = |u: Option<&str>| provider_label(&cfg(Provider::Compatible, u));
+        assert_eq!(l(Some("http://localhost:11434/v1/")), "localhost:11434");
+        assert_eq!(l(Some("https://u:p@example.com/v1")), "example.com");
+        assert_eq!(l(Some("example.com/v1")), "example.com");
+        assert_eq!(l(None), "Endpoint");
     }
 }
