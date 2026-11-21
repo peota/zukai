@@ -288,6 +288,7 @@ pub fn run() {
             ai::commands::ai_key_remove,
             ai::commands::ai_ask,
             ai::commands::ai_cancel,
+            ai::commands::ai_models,
             app_exit_after_flush,
             exit_flush_failed,
             app_startup_mark,

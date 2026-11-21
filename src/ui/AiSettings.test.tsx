@@ -7,8 +7,9 @@ vi.mock("../ask/api", () => ({
   aiConfigSet: vi.fn(),
   aiKeySet: vi.fn(),
   aiKeyRemove: vi.fn(),
+  aiModels: vi.fn(),
 }));
-import { aiConfigSet, aiKeyRemove, aiKeySet } from "../ask/api";
+import { aiConfigSet, aiKeyRemove, aiKeySet, aiModels } from "../ask/api";
 
 const none: AiStatus = { config: null, hasKey: false, ready: false };
 const anthropic: AiStatus = {
@@ -19,6 +20,7 @@ const anthropic: AiStatus = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(aiModels).mockResolvedValue([]);
 });
 
 describe("AiSettings", () => {
@@ -180,7 +182,7 @@ describe("AiSettings", () => {
     expect(screen.getByLabelText("Model")).toHaveValue("gpt-x");
   });
 
-  it("does not send an unconfirmed URL when the Model field is left", () => {
+  it("does not send an unconfirmed URL when a model is picked", () => {
     render(
       <AiSettings
         status={{
@@ -198,10 +200,9 @@ describe("AiSettings", () => {
     const url = screen.getByLabelText("URL");
     fireEvent.change(url, { target: { value: "http://other/v1" } });
     fireEvent.blur(url);
-    const model = screen.getByLabelText("Model");
-    fireEvent.focus(model);
-    fireEvent.blur(model);
-    fireEvent.keyDown(model, { key: "Enter" });
+    fireEvent.change(screen.getByLabelText("Model"), {
+      target: { value: "llama" },
+    });
     expect(aiConfigSet).not.toHaveBeenCalled();
     expect(
       screen.getByText("Changing the URL forgets the saved key."),
@@ -209,23 +210,27 @@ describe("AiSettings", () => {
   });
 
   it("keeps typed text when an equal status arrives", () => {
-    const cfg = { provider: "anthropic" as const, model: "claude-sonnet-5-5" };
+    const cfg = {
+      provider: "compatible" as const,
+      baseUrl: "http://localhost:11434/v1",
+      model: "llama",
+    };
     const { rerender } = render(
       <AiSettings
-        status={{ config: cfg, hasKey: false, ready: false }}
+        status={{ config: cfg, hasKey: false, ready: true }}
         onStatus={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Model"), {
-      target: { value: "half-typed" },
+    fireEvent.change(screen.getByLabelText("URL"), {
+      target: { value: "http://half" },
     });
     rerender(
       <AiSettings
-        status={{ config: { ...cfg }, hasKey: true, ready: true }}
+        status={{ config: { ...cfg }, hasKey: false, ready: true }}
         onStatus={vi.fn()}
       />,
     );
-    expect(screen.getByLabelText("Model")).toHaveValue("half-typed");
+    expect(screen.getByLabelText("URL")).toHaveValue("http://half");
   });
 
   it("first run: Save key stores the provider shown, then the key", async () => {
@@ -280,7 +285,7 @@ describe("AiSettings", () => {
         onStatus={vi.fn()}
       />,
     );
-    expect(screen.getByText("Enter a model to use Ask.")).toBeInTheDocument();
+    expect(screen.getByText("Choose a model to use Ask.")).toBeInTheDocument();
   });
 
   it("says the server URL is missing for OpenAI-compatible", () => {
@@ -318,5 +323,95 @@ describe("AiSettings", () => {
     );
     const p = screen.getByText("the keychain failed: no Secret Service");
     expect(p).toHaveClass("text-danger");
+  });
+  it("lists the provider's models and saves the one picked", async () => {
+    const openai: AiStatus = {
+      config: { provider: "openai", model: "" },
+      hasKey: true,
+      ready: false,
+    };
+    const picked: AiStatus = {
+      config: { provider: "openai", model: "gpt-b" },
+      hasKey: true,
+      ready: true,
+    };
+    vi.mocked(aiModels).mockResolvedValue(["gpt-a", "gpt-b"]);
+    vi.mocked(aiConfigSet).mockResolvedValue(picked);
+    const onStatus = vi.fn();
+    render(<AiSettings status={openai} onStatus={onStatus} />);
+    expect(await screen.findByRole("option", { name: "gpt-b" })).toBeVisible();
+    const model = screen.getByLabelText("Model");
+    expect(model.tagName).toBe("SELECT");
+    fireEvent.change(model, { target: { value: "gpt-b" } });
+    expect(aiConfigSet).toHaveBeenCalledWith({
+      provider: "openai",
+      model: "gpt-b",
+    });
+    await waitFor(() => expect(onStatus).toHaveBeenCalledWith(picked));
+  });
+
+  it("offers the default Anthropic model and keeps a stored one listed", async () => {
+    vi.mocked(aiModels).mockResolvedValue(["claude-opus-5-5"]);
+    render(
+      <AiSettings
+        status={{
+          ...anthropic,
+          config: { provider: "anthropic", model: "old-model" },
+        }}
+        onStatus={vi.fn()}
+      />,
+    );
+    expect(
+      await screen.findByRole("option", { name: "claude-opus-5-5" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Default (claude-sonnet-5-5)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Model")).toHaveValue("old-model");
+  });
+
+  it("does not list models before a key is saved", () => {
+    render(
+      <AiSettings
+        status={{ ...anthropic, hasKey: false, ready: false }}
+        onStatus={vi.fn()}
+      />,
+    );
+    expect(aiModels).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Save a key to choose from your models."),
+    ).toBeInTheDocument();
+  });
+
+  it("says why the models couldn't be listed; Refresh tries again", async () => {
+    vi.mocked(aiModels).mockRejectedValueOnce({
+      kind: "network",
+      message: "localhost:11434: Connection refused",
+    });
+    vi.mocked(aiModels).mockResolvedValueOnce(["llama3.2"]);
+    render(
+      <AiSettings
+        status={{
+          config: {
+            provider: "compatible",
+            baseUrl: "http://localhost:11434/v1",
+            model: "",
+          },
+          hasKey: false,
+          ready: false,
+        }}
+        onStatus={vi.fn()}
+      />,
+    );
+    expect(
+      await screen.findByText(
+        "Couldn't list the models. localhost:11434: Connection refused",
+      ),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(
+      await screen.findByRole("option", { name: "llama3.2" }),
+    ).toBeInTheDocument();
+    expect(aiModels).toHaveBeenCalledTimes(2);
   });
 });

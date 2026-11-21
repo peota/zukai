@@ -43,6 +43,11 @@ export function aiKeyRemove(): Promise<AiStatus> {
   return invoke<AiStatus>("ai_key_remove");
 }
 
+/** The saved provider's model ids, fetched with the saved key. */
+export function aiModels(): Promise<string[]> {
+  return invoke<string[]>("ai_models");
+}
+
 /** Streams the answer through `onEvent`; `id` names the request for cancel. */
 export function aiAsk(
   id: number,

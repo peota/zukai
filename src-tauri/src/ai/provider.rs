@@ -87,6 +87,83 @@ pub fn build_request(
     }
 }
 
+/// Build the request that lists the provider's models (a GET; `body` is
+/// unused). Same URL rules and key header as `build_request`.
+pub fn models_request(c: &AiConfig, key: &str) -> Result<HttpRequest, AiError> {
+    match c.provider {
+        Provider::Anthropic => Ok(HttpRequest {
+            url: "https://api.anthropic.com/v1/models?limit=1000".into(),
+            headers: vec![
+                ("x-api-key".into(), key.into()),
+                ("anthropic-version".into(), "2023-06-01".into()),
+            ],
+            body: serde_json::Value::Null,
+        }),
+        Provider::Openai | Provider::Compatible => {
+            let url = if c.provider == Provider::Openai {
+                "https://api.openai.com/v1/models".to_string()
+            } else {
+                let base = c.base_url.as_deref().unwrap_or("").trim();
+                if base.is_empty() {
+                    return Err(AiError::Invalid("no URL set".into()));
+                }
+                format!("{}/models", base.trim_end_matches('/'))
+            };
+            let mut headers = Vec::new();
+            if !key.is_empty() {
+                headers.push(("authorization".into(), format!("Bearer {key}")));
+            }
+            Ok(HttpRequest {
+                url,
+                headers,
+                body: serde_json::Value::Null,
+            })
+        }
+    }
+}
+
+/// OpenAI's list also holds embedding, audio and image models; Ask can only
+/// use chat models.
+fn is_openai_chat_model(id: &str) -> bool {
+    const NOT_CHAT: [&str; 12] = [
+        "embedding",
+        "whisper",
+        "tts",
+        "dall-e",
+        "moderation",
+        "davinci",
+        "babbage",
+        "image",
+        "audio",
+        "realtime",
+        "transcribe",
+        "search",
+    ];
+    !NOT_CHAT.iter().any(|w| id.contains(w))
+}
+
+/// The model ids in a models-list body (`{"data":[{"id":…}]}` for all
+/// three). Anthropic lists newest first and keeps that order; the others
+/// are sorted.
+pub fn parse_models(p: Provider, body: &str) -> Result<Vec<String>, AiError> {
+    let v: serde_json::Value = serde_json::from_str(body)
+        .map_err(|_| AiError::Invalid("the model list couldn't be read".into()))?;
+    let data = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .ok_or_else(|| AiError::Invalid("the model list couldn't be read".into()))?;
+    let mut ids: Vec<String> = data
+        .iter()
+        .filter_map(|m| m.get("id")?.as_str().map(str::to_owned))
+        .filter(|id| p != Provider::Openai || is_openai_chat_model(id))
+        .collect();
+    if p != Provider::Anthropic {
+        ids.sort();
+    }
+    ids.dedup();
+    Ok(ids)
+}
+
 /// The error text of an API body: `error.message`, or a bare string `error`
 /// (Ollama and some compatible servers send that form).
 fn api_error_text(v: &serde_json::Value) -> Option<String> {
@@ -354,6 +431,48 @@ mod tests {
             parse_event(Provider::Compatible, &e),
             Some(Delta::Error("model not found".into()))
         );
+    }
+
+    #[test]
+    fn models_requests() {
+        let a = models_request(&cfg(Provider::Anthropic, Some("http://evil")), "k").unwrap();
+        assert_eq!(a.url, "https://api.anthropic.com/v1/models?limit=1000");
+        assert_eq!(header(&a, "x-api-key"), Some("k"));
+        assert_eq!(header(&a, "anthropic-version"), Some("2023-06-01"));
+        let o = models_request(&cfg(Provider::Openai, Some("http://evil")), "k").unwrap();
+        assert_eq!(o.url, "https://api.openai.com/v1/models");
+        assert_eq!(header(&o, "authorization"), Some("Bearer k"));
+        let c = models_request(
+            &cfg(Provider::Compatible, Some("http://localhost:11434/v1/")),
+            "",
+        )
+        .unwrap();
+        assert_eq!(c.url, "http://localhost:11434/v1/models");
+        assert!(header(&c, "authorization").is_none());
+        let e = models_request(&cfg(Provider::Compatible, None), "").unwrap_err();
+        assert!(matches!(e, AiError::Invalid(_)));
+    }
+
+    #[test]
+    fn parses_model_lists() {
+        let body = r#"{"data":[{"id":"claude-b"},{"id":"claude-a"},{"x":1}]}"#;
+        assert_eq!(
+            parse_models(Provider::Anthropic, body).unwrap(),
+            vec!["claude-b", "claude-a"]
+        );
+        let body = r#"{"object":"list","data":[{"id":"gpt-z"},{"id":"text-embedding-3-small"},
+            {"id":"whisper-1"},{"id":"gpt-a"},{"id":"gpt-4o-realtime-preview"}]}"#;
+        assert_eq!(
+            parse_models(Provider::Openai, body).unwrap(),
+            vec!["gpt-a", "gpt-z"]
+        );
+        let body = r#"{"data":[{"id":"qwen3:8b"},{"id":"llama3.2:latest"}]}"#;
+        assert_eq!(
+            parse_models(Provider::Compatible, body).unwrap(),
+            vec!["llama3.2:latest", "qwen3:8b"]
+        );
+        assert!(parse_models(Provider::Compatible, "<html>").is_err());
+        assert!(parse_models(Provider::Compatible, r#"{"models":[]}"#).is_err());
     }
 
     #[test]
