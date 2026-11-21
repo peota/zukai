@@ -13,6 +13,7 @@ import {
   SearchIcon,
 } from "./icons";
 import { DragGhost } from "./DragGhost";
+import { SectionHeading } from "./SectionHeading";
 import { fileIcon } from "./icons";
 import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
 import { Pinned, TabList, type PinnedItem } from "./Pinned";
@@ -665,6 +666,8 @@ function SidebarPanel({
   };
 
   const rootList = root === null ? undefined : tree.children[root];
+  const libraryEmpty =
+    !available || (Array.isArray(rootList) && rootList.length === 0);
   let status: string | null = null;
   if (searching && !search.ready) status = "Searching…";
   else if (searching && rows.length === 0) status = "No matches";
@@ -725,11 +728,11 @@ function SidebarPanel({
       // on macOS it also clears room for the traffic lights.
       data-tauri-drag-region=""
       className={
-        "relative flex h-full shrink-0 flex-col border-r border-hairline bg-side px-2 text-ui-lg select-none " +
+        "group/side relative flex h-full shrink-0 flex-col border-r border-hairline bg-side px-2 text-ui-lg select-none " +
         (platform === "mac" ? "pt-11" : "pt-2.5")
       }
     >
-      <label className="mx-0.5 mb-2 flex h-8 shrink-0 items-center gap-2 rounded-[8px] border border-hairline bg-sunken px-2.5 text-ui text-faint focus-within:border-accent">
+      <label className="mx-0.5 mb-1 flex h-8 shrink-0 items-center gap-2 rounded-[8px] border border-hairline bg-sunken px-2.5 text-ui text-faint focus-within:border-accent">
         <SearchIcon />
         <input
           type="search"
@@ -758,46 +761,56 @@ function SidebarPanel({
         onContextMenu={showPinnedMenu}
       />
 
-      <div className="flex shrink-0 items-center px-2 pt-3 pb-1 text-ui-xs font-semibold tracking-[0.06em] text-faint">
-        <span className="flex-1">LIBRARY</span>
-        {root !== null &&
-          available &&
-          quickActions.map((a) => (
-            <button
-              key={a.what}
-              type="button"
-              aria-label={a.label}
-              title={a.label}
-              onClick={() => void create(root, a.what)}
-              className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
-            >
-              {a.icon}
-            </button>
-          ))}
-        {available && (
-          <button
-            type="button"
-            aria-label="Collapse all"
-            title={`Collapse all (${formatKeys(["Mod", "Shift", "C"], platform)})`}
-            disabled={tree.expanded.size === 0}
-            onClick={onCollapseAll}
-            className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint"
-          >
-            <CollapseAllIcon />
-          </button>
-        )}
-        <button
-          ref={moreRef}
-          type="button"
-          aria-label="Library actions"
-          title="Library actions"
-          data-z-library-more=""
-          onClick={toggleMoreMenu}
-          className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
+      <SectionHeading label="LIBRARY">
+        {/* Quiet until the sidebar is pointed at or focused; an empty
+            Library keeps them up, since its hint points at them. */}
+        <span
+          className={
+            "flex items-center gap-0.5 " +
+            (libraryEmpty
+              ? ""
+              : "opacity-0 transition-opacity duration-150 ease-out group-focus-within/side:opacity-100 group-hover/side:opacity-100 motion-reduce:transition-none")
+          }
         >
-          <MoreIcon />
-        </button>
-      </div>
+          {root !== null &&
+            available &&
+            quickActions.map((a) => (
+              <button
+                key={a.what}
+                type="button"
+                aria-label={a.label}
+                title={a.label}
+                onClick={() => void create(root, a.what)}
+                className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
+              >
+                {a.icon}
+              </button>
+            ))}
+          {available && (
+            <button
+              type="button"
+              aria-label="Collapse all"
+              title={`Collapse all (${formatKeys(["Mod", "Shift", "C"], platform)})`}
+              disabled={tree.expanded.size === 0}
+              onClick={onCollapseAll}
+              className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint"
+            >
+              <CollapseAllIcon />
+            </button>
+          )}
+          <button
+            ref={moreRef}
+            type="button"
+            aria-label="Library actions"
+            title="Library actions"
+            data-z-library-more=""
+            onClick={toggleMoreMenu}
+            className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
+          >
+            <MoreIcon />
+          </button>
+        </span>
+      </SectionHeading>
 
       {available ? (
         <>

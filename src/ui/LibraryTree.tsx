@@ -360,7 +360,7 @@ export function LibraryTree({
               onContextMenu={(ev) => openMenu(ev, e)}
               {...dragHandlers(e)}
               className={
-                "flex h-[30px] cursor-default items-center gap-2 rounded-[6px] pr-2 whitespace-nowrap " +
+                "relative flex h-[30px] cursor-default items-center gap-2 rounded-[6px] pr-2 whitespace-nowrap " +
                 motion +
                 (blocked ? "text-faint " : "text-text ") +
                 (target
@@ -375,6 +375,17 @@ export function LibraryTree({
                   : "")
               }
             >
+              {/* Indent guides: a hairline under each ancestor's chevron,
+                  joining row to row into one line per open folder. */}
+              {Array.from({ length: r.depth }, (_, d) => (
+                <span
+                  key={d}
+                  aria-hidden="true"
+                  data-indent-guide=""
+                  className="pointer-events-none absolute inset-y-0 w-px bg-hairline"
+                  style={{ left: 8 + d * 16 + 7 }}
+                />
+              ))}
               <span className="flex w-3.5 shrink-0 justify-center text-faint">
                 {e.isDir && <Chevron open={open} />}
               </span>

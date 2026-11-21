@@ -302,6 +302,27 @@ body {
   }
 }
 
+/* The active tab flares into the editor: an 8px concave curve at each
+   bottom corner, in the editor ground, so tab and page read as one shape. */
+.z-tab-flare::before,
+.z-tab-flare::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  background: var(--z-editor);
+  pointer-events: none;
+}
+.z-tab-flare::before {
+  left: -8px;
+  mask: radial-gradient(circle at 0 0, transparent 7.5px, #000 8px);
+}
+.z-tab-flare::after {
+  right: -8px;
+  mask: radial-gradient(circle at 100% 0, transparent 7.5px, #000 8px);
+}
+
 /* Scrollbars: thin, rounded, in the theme's ink. */
 ::-webkit-scrollbar {
   width: 10px;

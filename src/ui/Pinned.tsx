@@ -1,6 +1,7 @@
 import { baseName } from "../files/paths";
 import type { ClosedEntry, TabState } from "../model/types";
 import { fileIcon, Icon, type IconName } from "./icons";
+import { SectionHeading } from "./SectionHeading";
 
 export interface PinnedItem {
   /** The Tab's id, open or in Recently Closed. */
@@ -98,9 +99,7 @@ export function TabList({
   const stop = items.some((i) => i.id === activeId) ? activeId : items[0].id;
   return (
     <section className="flex max-h-[35%] min-h-0 shrink-0 flex-col">
-      <div className="px-2 pt-1 pb-1 text-ui-xs font-semibold tracking-[0.06em] text-faint">
-        {label.toUpperCase()}
-      </div>
+      <SectionHeading label={label.toUpperCase()} />
       <ul aria-label={label} className="min-h-0 overflow-y-auto pb-1">
         {items.map((item) => {
           const active = item.open && item.id === activeId;
@@ -142,16 +141,27 @@ export function TabList({
               }}
               className={
                 "flex h-[30px] cursor-default items-center gap-2 rounded-[6px] px-2 whitespace-nowrap outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] " +
+                // The active item's fill belongs to its home row (the tree or
+                // Scratchpads); a shortcut list marks it by ink and icon alone,
+                // so the screen never shows two selected rows for one Tab.
                 (active
-                  ? "bg-row-sel text-text"
-                  : (item.open ? "text-muted " : "text-faint ") +
-                    "hover:bg-row-hover")
+                  ? "text-text "
+                  : item.open
+                    ? "text-muted "
+                    : "text-faint ") +
+                "hover:bg-row-hover"
               }
             >
               <span className="w-3.5 shrink-0" />
               <Icon
                 name={item.icon}
-                className={item.open ? "text-muted" : "text-faint"}
+                className={
+                  active
+                    ? "text-accent"
+                    : item.open
+                      ? "text-muted"
+                      : "text-faint"
+                }
               />
               <span className="min-w-0 flex-1 truncate">{item.title}</span>
             </li>
