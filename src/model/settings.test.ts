@@ -25,6 +25,7 @@ describe("parseSettings", () => {
       wrapNewTabs: true,
       lineNumbers: false,
       autosaveFiles: true,
+      revealActiveFile: true,
       previewSplit: 0.35,
       markdownDefault: "markdown",
       terminalPosition: "bottom",
@@ -55,6 +56,7 @@ describe("parseSettings", () => {
       wrapNewTabs: false,
       lineNumbers: false,
       autosaveFiles: false,
+      revealActiveFile: true,
       previewSplit: 0.5,
       markdownDefault: "rich",
       terminalPosition: "bottom",
@@ -71,6 +73,17 @@ describe("autosaveFiles", () => {
     expect(parseSettings({ autosaveFiles: true }).autosaveFiles).toBe(true);
     expect(parseSettings({}).autosaveFiles).toBe(false);
     expect(parseSettings({ autosaveFiles: 1 }).autosaveFiles).toBe(false);
+  });
+});
+
+describe("revealActiveFile", () => {
+  it("is on by default and kept only when a boolean", () => {
+    expect(DEFAULT_SETTINGS.revealActiveFile).toBe(true);
+    expect(parseSettings({ revealActiveFile: false }).revealActiveFile).toBe(
+      false,
+    );
+    expect(parseSettings({}).revealActiveFile).toBe(true);
+    expect(parseSettings({ revealActiveFile: 0 }).revealActiveFile).toBe(true);
   });
 });
 

@@ -61,6 +61,8 @@ export interface SidebarProps {
   scratchpads: ScratchpadItem[];
   /** The active Tab's File path, highlighted in the tree. */
   activePath: string | null;
+  /** The File last revealed in the tree: its row scrolls into view. */
+  revealed?: { path: string } | null;
   /** The active Tab's id, highlighted in the Pinned and Scratchpads lists. */
   activeId: string | null;
   onOpen(entry: Entry): void;
@@ -164,6 +166,7 @@ function SidebarPanel({
   onSearch,
   scratchpads,
   activePath,
+  revealed = null,
   activeId,
   onOpen,
   onToggle,
@@ -682,6 +685,7 @@ function SidebarPanel({
       searching={searching}
       isOpen={(p) => tree.expanded.has(p)}
       activePath={activePath}
+      revealed={revealed}
       blocked={blockedReason}
       cursor={cursor}
       onCursor={setCursor}

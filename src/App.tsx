@@ -611,6 +611,7 @@ export default function App() {
         onSearch={lib.setQuery}
         scratchpads={lib.scratchpads}
         activePath={lib.activePath}
+        revealed={lib.revealed}
         activeId={activeId}
         onOpen={(entry) => void lib.open(entry).then(refocus)}
         onToggle={lib.toggle}

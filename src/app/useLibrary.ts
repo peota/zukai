@@ -90,6 +90,8 @@ export interface LibraryDeps {
   saveAs(id: string, opts?: SaveAsOptions): Promise<void>;
   saveTo(id: string, target: string): Promise<boolean>;
   showNotice(text: string): void;
+  /** The active Tab's File is revealed in the tree (Settings). */
+  revealActive: boolean;
 }
 
 /** The Library on the Workspace: what the Sidebar shows and does. */
@@ -107,6 +109,11 @@ export interface LibraryApi {
   scratchpads: ScratchpadItem[];
   /** The active Tab's File path. */
   activePath: string | null;
+  /**
+   * The File last revealed in the tree (a new object each time): its
+   * folders are open and listed, so its row can be scrolled into view.
+   */
+  revealed: { path: string } | null;
   /** A folder toggles; a File opens in a Tab (or its Tab activates). */
   open(entry: Entry): Promise<void>;
   toggle(dir: string): void;
@@ -287,7 +294,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   const { keyOf } = d;
   const { openPaths, flushTabs, withTabsLocked, rewriteTabPaths } = d;
   const { recheckTabs } = d;
-  const { saveAs, saveTo, showNotice } = d;
+  const { saveAs, saveTo, showNotice, revealActive } = d;
 
   const [rootState, setRootStateRaw] = useState<RootState | null>(null);
   const rootRef = useRef<RootState | null>(null);
@@ -630,10 +637,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
 
   // --- Operations ----------------------------------------------------------
 
-  const collapseAll = useCallback(
-    () => setTree(collapseAllDirs),
-    [setTree],
-  );
+  const collapseAll = useCallback(() => setTree(collapseAllDirs), [setTree]);
 
   const toggle = useCallback(
     (dir: string) => {
@@ -1058,6 +1062,74 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   );
   const activePath = tabs.find((t) => t.id === activeId)?.file?.path ?? null;
 
+  const [revealed, setRevealed] = useState<{ path: string } | null>(null);
+  /** Counts reveals: one overtaken by a newer one stops. */
+  const revealSeq = useRef(0);
+
+  /**
+   * Opens (listing as needed) every folder from `path`'s root down to it,
+   * then marks it revealed. A File under no available root is left alone.
+   */
+  const revealInTree = useCallback(
+    async (path: string) => {
+      const seq = ++revealSeq.current;
+      const t0 = treeRef.current;
+      const rs = rootRef.current;
+      const roots = [
+        ...(rs?.available && t0.root !== null ? [t0.root] : []),
+        ...t0.added.filter((a) => a.available).map((a) => a.path),
+      ];
+      const top = rootOf(path, roots);
+      if (top === null) return;
+      const root = t0.root;
+      // An added folder is a row of its own, opened like any folder.
+      const toOpen: string[] = top === root ? [] : [top];
+      let dir = top;
+      for (;;) {
+        let kids = treeRef.current.children[dir];
+        if (!Array.isArray(kids)) {
+          try {
+            const listed = await libraryList(dir);
+            kids = listed;
+          } catch (err) {
+            logError("list library folder")(err);
+            return;
+          }
+          if (seq !== revealSeq.current || treeRef.current.root !== root) {
+            return;
+          }
+          const d = dir;
+          const k = kids;
+          setTree((t) => setChildren(t, d, k));
+        }
+        // The folder on the way down (paths compare as `rootOf` does).
+        const next = kids.find(
+          (e) => e.isDir && e.path !== path && rootOf(path, [e.path]) !== null,
+        );
+        if (!next) break;
+        toOpen.push(next.path);
+        dir = next.path;
+      }
+      if (seq !== revealSeq.current) return;
+      setTree((t) =>
+        toOpen.every((p) => t.expanded.has(p))
+          ? t
+          : { ...t, expanded: new Set([...t.expanded, ...toOpen]) },
+      );
+      setRevealed({ path });
+    },
+    [setTree],
+  );
+
+  // VS Code's "auto reveal": the active File shows in the tree, on a Tab
+  // switch, a newly opened File, or the sidebar opening.
+  const rootKey = rootState === null ? null : watchKey(rootState);
+  useEffect(() => {
+    if (!ready || !open || !revealActive || activePath === null) return;
+    if (rootKey === null) return;
+    void revealInTree(activePath);
+  }, [ready, open, revealActive, activePath, rootKey, revealInTree]);
+
   return {
     root,
     // Not known yet, or the default root being created: no "missing" panel.
@@ -1072,6 +1144,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     search,
     scratchpads,
     activePath,
+    revealed,
     open: openEntry,
     toggle,
     collapseAll,

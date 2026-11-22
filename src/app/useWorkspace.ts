@@ -669,6 +669,7 @@ export function useWorkspace(): Workspace {
     saveAs,
     saveTo,
     showNotice,
+    revealActive: settings.revealActiveFile,
   });
   const collapseLibrary = library.collapseAll;
 

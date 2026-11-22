@@ -425,6 +425,7 @@ describe("useWorkspace settings", () => {
       wrapNewTabs: false,
       lineNumbers: true,
       autosaveFiles: false,
+      revealActiveFile: true,
       previewSplit: 0.5,
       markdownDefault: "rich",
       terminalPosition: "bottom",
