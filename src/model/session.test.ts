@@ -70,6 +70,7 @@ describe("session file", () => {
       wrapNewTabs: true,
       lineNumbers: false,
       autosaveFiles: true,
+      revealActiveFile: false,
       previewSplit: 0.3,
       markdownDefault: "markdown" as const,
       terminalPosition: "bottom" as const,

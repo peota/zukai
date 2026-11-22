@@ -7,6 +7,7 @@ import type { Entry, RootState } from "../library/api";
 import { useWorkspace } from "./useWorkspace";
 import { newTabState } from "../model/workspace";
 import { toSessionFile } from "../model/session";
+import { DEFAULT_SETTINGS } from "../model/settings";
 import type {
   ClosedEntry,
   FileFormat,
@@ -386,6 +387,50 @@ describe("useLibrary", () => {
     const tab = tabByPath(result, created);
     expect(tab).toBeDefined();
     expect(result.current.state.activeId).toBe(tab!.id);
+  });
+
+  it("the active File is revealed: its folders open, nested ones listed", async () => {
+    const deep = `${PROJ}\\sub`;
+    const c = `${deep}\\c.md`;
+    listings[PROJ] = [...listings[PROJ], dir(deep)];
+    listings[deep] = [file(c)];
+    disk[c] = { text: "c", hash: "h1" };
+    const { result } = await mount([fileTab("a", A), fileTab("c", c)], [], {
+      ...OPEN,
+      expanded: [],
+    });
+    // A, the first Tab, is active on restore: proj opens for it.
+    await waitFor(() => expect(result.current.library.revealed?.path).toBe(A));
+    expect(result.current.library.tree.expanded.has(PROJ)).toBe(true);
+    expect(result.current.library.tree.expanded.has(deep)).toBe(false);
+
+    act(() => result.current.activate("c"));
+    await waitFor(() => expect(result.current.library.revealed?.path).toBe(c));
+    expect(result.current.library.tree.expanded.has(deep)).toBe(true);
+    expect(result.current.library.rows.map((x) => x.entry.path)).toContain(c);
+  });
+
+  it("with the setting off, the active File isn't revealed", async () => {
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile(
+          { tabs: [fileTab("a", A)], activeId: "a", closed: [] },
+          { ...OPEN, expanded: [] },
+          13,
+          { ...DEFAULT_SETTINGS, revealActiveFile: false },
+        ),
+      ),
+    );
+    const { result } = renderHook(() => useWorkspace());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await waitFor(() =>
+      expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
+        PROJ,
+      ),
+    );
+    await settle();
+    expect(result.current.library.revealed).toBeNull();
+    expect(result.current.library.tree.expanded.has(PROJ)).toBe(false);
   });
 
   it("moveFolderWithDirtyOpenFileFlushesFirst", async () => {

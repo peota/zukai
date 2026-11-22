@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   KeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -30,6 +30,8 @@ export interface LibraryTreeProps {
   searching: boolean;
   isOpen(path: string): boolean;
   activePath: string | null;
+  /** The File last revealed (a new object each time): its row scrolls into view. */
+  revealed?: { path: string } | null;
   /** Why an entry can't be acted on, or null. */
   blocked(e: Entry): string | null;
   /** The keyboard cursor. */
@@ -81,6 +83,7 @@ export function LibraryTree({
   searching,
   isOpen,
   activePath,
+  revealed = null,
   blocked: blockedOf,
   cursor,
   onCursor,
@@ -110,6 +113,17 @@ export function LibraryTree({
   const focusTree = () => treeRef.current?.focus({ preventScroll: true });
 
   const multi = selected.size > 0;
+
+  // A revealed File's row scrolls into view (once per reveal).
+  useEffect(() => {
+    if (!revealed) return;
+    const i = rows.findIndex((r) => r.entry.path === revealed.path);
+    if (i < 0) return;
+    treeRef.current
+      ?.querySelector(`[data-row="${i}"]`)
+      ?.scrollIntoView?.({ block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new reveal scrolls
+  }, [revealed]);
 
   /** Moves the cursor; Shift extends the selection, else it's cleared. */
   const moveTo = (i: number, extend = false) => {

@@ -542,6 +542,29 @@ function General({
           className="size-4 accent-[var(--z-accent)]"
         />
       </Row>
+      <Row
+        label={
+          <>
+            <label htmlFor="z-reveal-active">Reveal the open file</label>
+            <span
+              id="z-reveal-active-hint"
+              className="block text-ui-xs text-faint"
+            >
+              Switching tabs opens the file's folders in the sidebar and scrolls
+              to it.
+            </span>
+          </>
+        }
+      >
+        <input
+          id="z-reveal-active"
+          aria-describedby="z-reveal-active-hint"
+          type="checkbox"
+          checked={settings.revealActiveFile}
+          onChange={(e) => onSettings({ revealActiveFile: e.target.checked })}
+          className="size-4 accent-[var(--z-accent)]"
+        />
+      </Row>
     </div>
   );
 }

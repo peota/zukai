@@ -38,6 +38,8 @@ export interface Settings {
   lineNumbers: boolean;
   /** Files (not Scratchpads) save themselves as you type; off, they save on Ctrl+S. */
   autosaveFiles: boolean;
+  /** The active Tab's File is shown in the Library tree: its folders open, its row scrolled into view. */
+  revealActiveFile: boolean;
   /** The editor's share of the row in a Markdown Split (the preview has the rest). */
   previewSplit: number;
   /** How a Markdown file (or a picked-Markdown Scratchpad) opens. */
@@ -99,6 +101,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   wrapNewTabs: false,
   lineNumbers: true,
   autosaveFiles: false,
+  revealActiveFile: true,
   previewSplit: 0.5,
   markdownDefault: "rich",
   terminalPosition: "bottom",
@@ -146,6 +149,10 @@ export function parseSettings(v: unknown): Settings {
       typeof v.lineNumbers === "boolean" ? v.lineNumbers : d.lineNumbers,
     autosaveFiles:
       typeof v.autosaveFiles === "boolean" ? v.autosaveFiles : d.autosaveFiles,
+    revealActiveFile:
+      typeof v.revealActiveFile === "boolean"
+        ? v.revealActiveFile
+        : d.revealActiveFile,
     previewSplit:
       typeof v.previewSplit === "number" && Number.isFinite(v.previewSplit)
         ? clampSplit(v.previewSplit)
