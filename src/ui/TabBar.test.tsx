@@ -19,6 +19,7 @@ function setup(
     onActivate: vi.fn(),
     onClose: vi.fn(),
     onNew: vi.fn(),
+    onNewCanvas: vi.fn(),
     onMove: vi.fn(),
     onRename: vi.fn(),
     onContextMenu: vi.fn(),
@@ -200,6 +201,27 @@ describe("TabBar", () => {
   it("the + button calls onNew", () => {
     const p = setup();
     fireEvent.click(screen.getByRole("button", { name: "New Tab" }));
+    expect(p.onNew).toHaveBeenCalled();
+  });
+
+  it("the ▾ beside + offers a new text tab or a new canvas", () => {
+    const p = setup(undefined, { newHints: { text: "Ctrl+N", canvas: "Ctrl+Shift+N" } });
+    const more = screen.getByRole("button", { name: "New Tab options" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("menuitem", { name: /New text/ })).toHaveTextContent("Ctrl+N");
+    fireEvent.click(screen.getByRole("menuitem", { name: /New canvas/ }));
+    expect(p.onNewCanvas).toHaveBeenCalled();
+    expect(p.onNew).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("right-clicking + opens the same menu, not the bar's", () => {
+    const p = setup();
+    fireEvent.contextMenu(screen.getByRole("button", { name: "New Tab" }));
+    expect(p.onContextMenu).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("menuitem", { name: /New text/ }));
     expect(p.onNew).toHaveBeenCalled();
   });
 
