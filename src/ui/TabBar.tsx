@@ -7,6 +7,7 @@ import type {
 } from "react";
 import { baseName, stemOf } from "../files/paths";
 import { CloseIcon, fileIcon, Icon, PlusIcon, type IconName } from "./icons";
+import { Menu } from "./Menu";
 
 export interface TabBarItem {
   id: string;
@@ -50,6 +51,10 @@ export interface TabBarProps {
   onActivate(id: string): void;
   onClose(id: string): void;
   onNew(): void;
+  /** A new Canvas Scratchpad, from the menu beside +. */
+  onNewCanvas(): void;
+  /** Shortcuts shown in that menu, e.g. "Ctrl+N" and "Ctrl+Shift+N". */
+  newHints?: { text: string; canvas: string };
   onMove(id: string, toIndex: number): void;
   /**
    * A Scratchpad gets its new Title; a File gets its new stem and may
@@ -131,6 +136,8 @@ export function TabBar({
   onActivate,
   onClose,
   onNew,
+  onNewCanvas,
+  newHints,
   onMove,
   onRename,
   onContextMenu,
@@ -146,6 +153,15 @@ export function TabBar({
   const barRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  /** The New menu's anchor (the + button's bottom-left), while open. */
+  const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+  const plusRef = useRef<HTMLButtonElement>(null);
+  const openNewMenu = () => {
+    const box = plusRef.current?.getBoundingClientRect();
+    setNewMenu(box ? { x: box.left, y: box.bottom + 4 } : { x: 0, y: 0 });
+  };
   const activeId = tabs.find((t) => t.active)?.id;
   // The press in progress (ref, for the handlers) and its view (state).
   const drag = useRef<Drag | null>(null);
@@ -465,16 +481,63 @@ export function TabBar({
           </div>
         );
       })}
-      <button
-        type="button"
-        aria-label="New Tab"
-        title="New Tab"
-        tabIndex={-1}
-        onClick={onNew}
-        className="mb-[3px] ml-1 flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted hover:bg-row-hover hover:text-text"
-      >
-        <PlusIcon />
-      </button>
+      {/* + makes a text Tab at once; the narrow ▾ beside it (or a
+          right-click on +) offers a canvas too. */}
+      <div className="mb-[3px] ml-1 flex shrink-0 items-center">
+        <button
+          ref={plusRef}
+          type="button"
+          aria-label="New Tab"
+          title="New Tab"
+          tabIndex={-1}
+          onClick={onNew}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openNewMenu();
+          }}
+          className="flex size-7 items-center justify-center rounded-[6px] text-muted hover:bg-row-hover hover:text-text"
+        >
+          <PlusIcon />
+        </button>
+        <button
+          type="button"
+          aria-label="New Tab options"
+          title="New text or canvas"
+          aria-haspopup="menu"
+          aria-expanded={newMenu !== null}
+          data-z-new-menu=""
+          tabIndex={-1}
+          onClick={() => (newMenu ? setNewMenu(null) : openNewMenu())}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          className={
+            "flex h-7 w-4 items-center justify-center rounded-[5px] hover:bg-row-hover hover:text-text " +
+            (newMenu ? "bg-row-hover text-text" : "text-faint")
+          }
+        >
+          <Icon name="chevronDown" size={12} strokeWidth={1.8} />
+        </button>
+      </div>
+      {newMenu && (
+        <Menu
+          label="New Tab"
+          x={newMenu.x}
+          y={newMenu.y}
+          ignoreSelector="[data-z-new-menu]"
+          items={[
+            { label: "New text", hint: newHints?.text, onSelect: onNew },
+            {
+              label: "New canvas",
+              hint: newHints?.canvas,
+              onSelect: onNewCanvas,
+            },
+          ]}
+          onDismiss={() => setNewMenu(null)}
+        />
+      )}
     </div>
   );
 }

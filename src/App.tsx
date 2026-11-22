@@ -66,6 +66,10 @@ const platform = detectPlatform();
 const keyOf = (p: string) => pathKey(p, platform);
 const PLATFORM_ENDING = platform === "windows" ? "crlf" : "lf";
 const REOPEN_HINT = platform === "mac" ? "⇧⌘T" : "Ctrl+Shift+T";
+const NEW_HINTS =
+  platform === "mac"
+    ? { text: "⌘N", canvas: "⇧⌘N" }
+    : { text: "Ctrl+N", canvas: "Ctrl+Shift+N" };
 const REVEAL_LABEL = revealLabel(platform);
 const BEAUTIFY_HINT = platform === "mac" ? "⇧⌥F" : "Shift+Alt+F";
 const SETTINGS_HINT = platform === "mac" ? "⌘," : "Ctrl+,";
@@ -671,6 +675,8 @@ export default function App() {
             onActivate={w.activate}
             onClose={(id) => void w.closeTab(id)}
             onNew={() => void run({ type: "newTab" })}
+            onNewCanvas={() => void run({ type: "newCanvas" })}
+            newHints={NEW_HINTS}
             onMove={w.moveTab}
             onRename={(id, name) => {
               // A File renames on disk and may report why it couldn't.
