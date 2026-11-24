@@ -3,13 +3,17 @@
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use super::error::{GitError, GitKind, classify, first_line};
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Set to ask a running call to stop.
+pub type CancelFlag = Arc<AtomicBool>;
 
 /// A located git executable.
 #[derive(Debug, Clone)]
@@ -28,11 +32,33 @@ pub struct Done {
 pub enum RunFail {
     Spawn(io::Error),
     Timeout,
+    Cancelled,
 }
 
 /// Spawns `cmd` with no stdin and no console window, waits up to `timeout`,
 /// and kills its process tree if it overruns.
-pub(crate) fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<Output, RunFail> {
+pub(crate) fn run_with_timeout(cmd: Command, timeout: Duration) -> Result<Output, RunFail> {
+    run_inner(cmd, timeout, None)
+}
+
+/// `run_with_timeout`, which also stops (killing the tree) once `cancel` is set.
+pub(crate) fn run_cancellable(
+    cmd: Command,
+    timeout: Duration,
+    cancel: &CancelFlag,
+) -> Result<Output, RunFail> {
+    run_inner(cmd, timeout, Some(cancel))
+}
+
+fn run_inner(
+    mut cmd: Command,
+    timeout: Duration,
+    cancel: Option<&CancelFlag>,
+) -> Result<Output, RunFail> {
+    let cancelled = || cancel.is_some_and(|c| c.load(Ordering::SeqCst));
+    if cancelled() {
+        return Err(RunFail::Cancelled);
+    }
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -62,6 +88,13 @@ pub(crate) fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<Ou
 
     let deadline = Instant::now() + timeout;
     let status = loop {
+        if cancelled() {
+            kill(&mut child, tree.as_ref());
+            let grace = Instant::now() + Duration::from_millis(500);
+            let _ = collect(&out, grace);
+            let _ = collect(&err, grace);
+            return Err(RunFail::Cancelled);
+        }
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) if Instant::now() >= deadline => break None,
@@ -114,6 +147,23 @@ fn kill(child: &mut std::process::Child, tree: Option<&crate::terminal::tree::Tr
     let _ = child.wait();
 }
 
+/// Maps a finished run onto git's success/failure vocabulary.
+fn finish(res: Result<Output, RunFail>) -> Result<Done, GitError> {
+    let out = match res {
+        Ok(out) => out,
+        Err(RunFail::Timeout) => return Err(GitError::new(GitKind::Timeout, "git timed out")),
+        Err(RunFail::Cancelled) => return Err(GitError::new(GitKind::Cancelled, "cancelled")),
+        Err(RunFail::Spawn(e)) => return Err(GitError::new(GitKind::Failed, e.to_string())),
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    if out.status.success() {
+        Ok(Done { stdout, stderr })
+    } else {
+        Err(GitError::new(classify(&stderr), first_line(&stderr)))
+    }
+}
+
 impl Git {
     /// The command for `git args` in `cwd`. Prompts are off and messages are
     /// forced to English, since callers recognise git's wording.
@@ -131,25 +181,19 @@ impl Git {
     /// Runs `git args` in `cwd`. Success is the exit code alone; stderr is
     /// only read to explain a failure.
     pub fn run(&self, cwd: &Path, args: &[&str], timeout: Duration) -> Result<Done, GitError> {
-        let cmd = self.command(cwd, args);
-        let out = match run_with_timeout(cmd, timeout) {
-            Ok(out) => out,
-            Err(RunFail::Timeout) => {
-                return Err(GitError::new(GitKind::Timeout, "git timed out"));
-            }
-            Err(RunFail::Spawn(e)) => {
-                return Err(GitError::new(GitKind::Failed, e.to_string()));
-            }
-        };
-        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        if out.status.success() {
-            Ok(Done { stdout, stderr })
-        } else {
-            Err(GitError::new(classify(&stderr), first_line(&stderr)))
-        }
+        finish(run_with_timeout(self.command(cwd, args), timeout))
     }
 
+    /// `run`, which gives up with `Cancelled` once `cancel` is set.
+    pub fn run_cancellable(
+        &self,
+        cwd: &Path,
+        args: &[&str],
+        timeout: Duration,
+        cancel: &CancelFlag,
+    ) -> Result<Done, GitError> {
+        finish(run_cancellable(self.command(cwd, args), timeout, cancel))
+    }
     /// `(major, minor)` of this git, or `(0, 0)` if it can't be read.
     pub fn git_version(&self) -> (u32, u32) {
         let Ok(done) = self.run(Path::new("."), &["--version"], Duration::from_secs(10)) else {
@@ -268,6 +312,28 @@ mod tests {
         // A surviving process would create the marker once its sleep ends.
         std::thread::sleep(Duration::from_millis(3500));
         assert!(!marker.exists(), "process outlived the timeout");
+    }
+
+    #[test]
+    fn runner_cancels_mid_run_and_kills() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("survived");
+        let cancel: CancelFlag = Arc::new(AtomicBool::new(false));
+        let setter = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            setter.store(true, Ordering::SeqCst);
+        });
+        let start = Instant::now();
+        let r = run_cancellable(
+            marker_after_sleep(&marker),
+            Duration::from_secs(60),
+            &cancel,
+        );
+        assert!(matches!(r, Err(RunFail::Cancelled)));
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::sleep(Duration::from_millis(3500));
+        assert!(!marker.exists(), "process outlived the cancel");
     }
 
     #[test]
