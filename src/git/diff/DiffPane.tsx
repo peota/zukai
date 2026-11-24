@@ -60,19 +60,34 @@ function headSide(h: HeadFile): Side {
   return { kind: h.kind };
 }
 
+/**
+ * The committed File: at the old path of a rename, or at the new one once
+ * the rename is committed (the old path is then gone from HEAD).
+ */
+async function readHead(t: DiffTarget): Promise<HeadFile> {
+  if (t.status === "renamed" && t.oldPath) {
+    const old = await gitHeadFile(t.folder, t.oldPath);
+    if (old.kind !== "missing") return old;
+  }
+  return gitHeadFile(t.folder, t.path);
+}
+
 /** The committed side (at the old path of a rename) and the disk's. */
-async function readBoth(t: DiffTarget): Promise<Shown> {
-  const headPath = t.status === "renamed" && t.oldPath ? t.oldPath : t.path;
+async function readBoth(
+  t: DiffTarget,
+): Promise<{ shown: Shown; onDisk: boolean }> {
   const diskPath = joinRel(t.folder, t.path);
   const [head, disk] = await Promise.all([
-    gitHeadFile(t.folder, headPath).then(
+    readHead(t).then(
       (h) => ({ ok: true as const, side: headSide(h) }),
       (err: unknown) => ({ ok: false as const, err }),
     ),
     readDisk(diskPath),
   ]);
+  const onDisk = disk.kind !== "missing";
+  const done = (shown: Shown) => ({ shown, onDisk });
   if (!head.ok) {
-    return { kind: "failed", message: errorCopy(asGitError(head.err)) };
+    return done({ kind: "failed", message: errorCopy(asGitError(head.err)) });
   }
   let after: Side;
   if (disk.kind === "missing") {
@@ -80,10 +95,10 @@ async function readBoth(t: DiffTarget): Promise<Shown> {
   } else if (disk.kind === "failed") {
     if (disk.err.kind !== "too_large") {
       const name = t.path.slice(t.path.lastIndexOf("/") + 1);
-      return {
+      return done({
         kind: "failed",
         message: `Can't read ${name}: ${disk.err.message}`,
-      };
+      });
     }
     after = { kind: "tooLarge" };
   } else {
@@ -91,14 +106,16 @@ async function readBoth(t: DiffTarget): Promise<Shown> {
   }
   const before = head.side;
   if (before.kind === "binary" || after.kind === "binary") {
-    return { kind: "binary" };
+    return done({ kind: "binary" });
   }
   if (before.kind !== "text" || after.kind !== "text") {
-    return { kind: "tooLarge" };
+    return done({ kind: "tooLarge" });
   }
-  return before.text === after.text
-    ? { kind: "same" }
-    : { kind: "diff", original: before.text, modified: after.text };
+  return done(
+    before.text === after.text
+      ? { kind: "same" }
+      : { kind: "diff", original: before.text, modified: after.text },
+  );
 }
 
 const sameShown = (a: Shown, b: Shown) =>
@@ -125,14 +142,20 @@ export function DiffPane({
 }: DiffPaneProps) {
   const { folder, path, oldPath, status } = target;
   const [shown, setShown] = useState<Shown>({ kind: "loading" });
+  /** Whether the File was on disk at the last read (Open file needs it). */
+  const [onDisk, setOnDisk] = useState(status !== "deleted");
   /** Bumped by a (settled) disk change in the folder. */
   const [diskSeq, setDiskSeq] = useState(0);
 
   useEffect(() => {
     let stale = false;
-    void readBoth({ folder, path, oldPath, status }).then((next) => {
-      if (!stale) setShown((prev) => (sameShown(prev, next) ? prev : next));
-    });
+    void readBoth({ folder, path, oldPath, status }).then(
+      ({ shown: next, onDisk: found }) => {
+        if (stale) return;
+        setOnDisk(found);
+        setShown((prev) => (sameShown(prev, next) ? prev : next));
+      },
+    );
     return () => {
       stale = true;
     };
@@ -246,7 +269,7 @@ export function DiffPane({
         <span className="min-w-0 flex-1 truncate" title={path}>
           {path}
         </span>
-        {status !== "deleted" && (
+        {onDisk && (
           <button
             type="button"
             tabIndex={-1}

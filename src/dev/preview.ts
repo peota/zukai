@@ -460,7 +460,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
   ai_key_remove: () => AI_STATUS,
   ai_models: () => ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
   // Git sync: the Library is a repo with work in it (see `repo` below).
-  git_set_enabled: () => ({ available: GIT !== "none" }),
+  git_set_enabled: () => ({ available: GIT !== "nogit" }),
   git_status: () => repoStatus(),
   git_pull: () =>
     later(() => {
