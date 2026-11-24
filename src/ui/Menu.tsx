@@ -179,6 +179,7 @@ function MenuList({
     } else if (e.key === "Tab") {
       onDone();
     } else {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const i = items.findIndex((it) => it.accel === e.key);
       if (i < 0) return;
       if (usable(i)) choose(i);
