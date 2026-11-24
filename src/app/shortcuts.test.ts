@@ -209,6 +209,10 @@ describe("platform differences", () => {
     expect(
       matchShortcut(ev("KeyJ", { ctrlKey: true, shiftKey: true }), "windows"),
     ).toBeNull();
+    // Ctrl+Alt is AltGr on Windows: it types letters, so it's left alone.
+    expect(
+      matchShortcut(ev("KeyJ", { ctrlKey: true, altKey: true }), "windows"),
+    ).toBeNull();
   });
   it("plain Ctrl+M is not the rich switch", () =>
     expect(matchShortcut(ev("KeyM", { ctrlKey: true }), "windows")).toBeNull());
