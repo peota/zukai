@@ -48,6 +48,11 @@ import {
   Trash2,
   X,
   FileSpreadsheet,
+  GitBranch,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  GitCommitHorizontal,
+  Loader2,
 } from "lucide-react";
 import { CANVAS_EXT, IMAGE_EXTS } from "../model/kinds";
 
@@ -101,7 +106,13 @@ export type IconName =
   | "checklist"
   | "quote"
   | "insertTable"
-  | "rule";
+  | "rule"
+  // The library git row.
+  | "gitBranch"
+  | "gitPull"
+  | "gitCommit"
+  | "gitPush"
+  | "spinner";
 
 const DATA_EXTS = [".json", ".jsonc", ".yaml", ".yml", ".xml", ".toml"];
 const TABLE_EXTS = [".csv", ".tsv"];
@@ -193,6 +204,11 @@ const ICONS: Record<IconName, LucideIcon> = {
   quote: TextQuote,
   insertTable: Table,
   rule: Minus,
+  gitBranch: GitBranch,
+  gitPull: ArrowDownToLine,
+  gitCommit: GitCommitHorizontal,
+  gitPush: ArrowUpFromLine,
+  spinner: Loader2,
 };
 
 export function Icon({
