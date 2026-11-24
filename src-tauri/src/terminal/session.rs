@@ -557,6 +557,63 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn agent_leaves_a_prompt() {
+        use crate::terminal::agents::agent_spec;
+        let dir = tempfile::tempdir().unwrap();
+        let script = if cfg!(windows) {
+            let p = dir.path().join("agent.cmd");
+            std::fs::write(&p, "@echo agent-ran\r\n@exit /b 3\r\n").unwrap();
+            p
+        } else {
+            let p = dir.path().join("agent.sh");
+            std::fs::write(&p, "echo agent-ran; exit 3\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            p
+        };
+        let script_str = script.to_string_lossy().into_owned();
+        if script_str.contains(' ') {
+            eprintln!("skipped: temp path has a space: {script_str}");
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        let sink: Sink = Arc::new(move |ev| {
+            let _ = tx.send(ev);
+        });
+        let spec = agent_spec(&current_shell(), &script_str);
+        let running = Running(Session::spawn(&spec, dir.path(), 200, 30, sink).expect("spawn"));
+
+        // Wait for the agent's output, answering cursor requests on the way.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut seen = String::new();
+        while !seen.contains("agent-ran") {
+            let left = deadline
+                .checked_duration_since(Instant::now())
+                .expect("timed out waiting for agent-ran");
+            if let TerminalEvent::Data { data } = rx.recv_timeout(left).expect("agent-ran") {
+                for _ in data.matches("\x1b[6n") {
+                    running.0.write(b"\x1b[1;1R");
+                }
+                running.0.ack(js_len(&data));
+                seen.push_str(&data);
+            }
+        }
+        running.0.write(format!("echo ok{NL}").as_bytes());
+        running.0.write(format!("exit{NL}").as_bytes());
+        let (rest, events) = collect(&running.0, &rx);
+        seen.push_str(&rest);
+        assert!(
+            matches!(events.last(), Some(TerminalEvent::Exit { .. })),
+            "no exit; output: {seen:?}"
+        );
+        let after = seen.split_once("agent-ran").unwrap().1;
+        assert!(after.contains("ok"), "no prompt after agent: {seen:?}");
+    }
+
+    #[test]
     fn utf8_tail_is_carried_across_reads() {
         let bytes = "aé".as_bytes();
         assert_eq!(utf8_split(&bytes[..2]), 1);
