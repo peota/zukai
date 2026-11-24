@@ -5,7 +5,6 @@
 //! parent only ever comes from the dialog, by token.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -106,19 +105,17 @@ fn home() -> Option<PathBuf> {
     Some(dunce::canonicalize(&home).unwrap_or(home))
 }
 
-/// Turns git sync on or off. Off never runs git; on finds git (once, then
-/// cached). `available` is whether git was found (when off: as far as is
-/// known, without looking).
+/// Turns git sync on or off. Off never runs git; on finds git as at startup
+/// (a found git stays cached, "not found" is looked for again). `available`
+/// is whether git was found (when off: as far as is known, without looking).
 #[tauri::command]
 pub async fn git_set_enabled(app: AppHandle, enabled: bool) -> Result<GitAvailability, GitError> {
     let st = app.state::<GitState>();
-    st.enabled.store(enabled, Ordering::SeqCst);
+    st.set_enabled(enabled);
     if !enabled {
-        let known = matches!(
-            *st.git.lock().unwrap_or_else(|e| e.into_inner()),
-            Some(Some(_))
-        );
-        return Ok(GitAvailability { available: known });
+        return Ok(GitAvailability {
+            available: st.known_available(),
+        });
     }
     run(app.clone(), |app| {
         Ok(GitAvailability {
@@ -187,7 +184,8 @@ pub async fn git_pick_clone_parent(
 
 /// Clones `url` into `name` inside the folder picked under `token`, then
 /// adds it to the sidebar or makes it the Library. Cancellable through
-/// `git_cancel(op_id)`. The pick is used up, whatever the outcome.
+/// `git_cancel(op_id)`. The pick is used up once the clone succeeds; after
+/// a failure or cancel the same token works for a retry.
 #[tauri::command]
 pub async fn git_clone(
     app: AppHandle,
@@ -202,7 +200,8 @@ pub async fn git_clone(
         let reg = st.register_cancel(op_id);
         let git = st.git()?;
         check_name(&name)?;
-        let parent = st.take_pick(&token).ok_or_else(|| {
+        // Kept until the clone succeeds, so a failed one can be retried.
+        let parent = st.pick(&token).ok_or_else(|| {
             GitError::new(GitKind::NotAllowed, "pick the folder to clone into again")
         })?;
         let dest = parent.join(&name);
@@ -223,6 +222,7 @@ pub async fn git_clone(
             return Err(GitError::new(GitKind::Refused, r.message()));
         }
         clone_into(&git, &url, &dest, &reg.flag)?;
+        st.take_pick(&token);
         let data = data_dir(app).map_err(from_file)?;
         let state = if use_as_library {
             use_root(&g, &data, &dest, &[])
@@ -237,10 +237,11 @@ pub async fn git_clone(
 }
 
 /// Asks the clone running under `op_id` to stop; nothing if there is none.
+/// Works with the setting off too: it runs nothing, and turning sync off
+/// lets a running clone finish, so this stays the way out of it.
 #[tauri::command]
 pub async fn git_cancel(app: AppHandle, op_id: String) -> Result<(), GitError> {
     let st = app.state::<GitState>();
-    st.check_enabled()?;
     st.cancel(&op_id);
     Ok(())
 }
