@@ -154,22 +154,12 @@ export default function App() {
     rootAvailable: libAvailable,
     added: libAdded,
   });
-  /** A new terminal in `cwd`, shown and focused; none without a folder. */
+  /**
+   * A new terminal in `cwd`, shown and focused, running `agent` if given; none
+   * without a folder.
+   */
   const openTerminal = useCallback(
-    (cwd: string | null) => {
-      if (cwd === null) {
-        showNotice(NO_TERMINAL_FOLDER);
-        return;
-      }
-      openTerm(cwd).catch((err) =>
-        showNotice(`Can't open a terminal: ${asFileError(err).message}`),
-      );
-    },
-    [openTerm, showNotice],
-  );
-  /** An agent in a new terminal in `cwd`, as `openTerminal` opens one. */
-  const openAgent = useCallback(
-    (agent: AgentInfo, cwd: string | null) => {
+    (cwd: string | null, agent?: AgentInfo) => {
       if (cwd === null) {
         showNotice(NO_TERMINAL_FOLDER);
         return;
@@ -194,10 +184,10 @@ export default function App() {
    * The panel's +: the active terminal's folder while it's still granted.
    * If that folder no longer exists, the default folder instead.
    */
-  const plusTerminal = () => {
+  const plusTerminal = (agent?: AgentInfo) => {
     const cwd = panelFolder();
-    if (cwd === null || cwd === termFolder) return openTerminal(cwd);
-    openTerm(cwd).catch(() => openTerminal(termFolder));
+    if (cwd === null || cwd === termFolder) return openTerminal(cwd, agent);
+    openTerm(cwd, agent).catch(() => openTerminal(termFolder, agent));
   };
   /** The installed agents, checked each time the New terminal menu opens. */
   const { agents, refresh: refreshAgents } = useAgents();
@@ -992,10 +982,9 @@ export default function App() {
               : openTerminal(termFolder)
           }
           onAgent={(agent) =>
-            openAgent(
-              agent,
-              agentMenu.from === "panel" ? panelFolder() : termFolder,
-            )
+            agentMenu.from === "panel"
+              ? plusTerminal(agent)
+              : openTerminal(termFolder, agent)
           }
           onDismiss={closeAgentMenu}
         />
