@@ -1834,6 +1834,56 @@ describe("Sidebar git", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
 
+    it("git_view_clone_item_is_off_while_a_clone_runs", async () => {
+      const c = pending();
+      const git = fakeGit({ enabled: true, statuses: { [ROOT]: REPO } });
+      const { p, rerender } = setupGit(git, {
+        onCloneFolder: c.onCloneFolder,
+      });
+      await fillAndClone();
+      rerender(<Sidebar {...p} view="git" />);
+      fireEvent.click(screen.getByRole("button", { name: "Git actions" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: CLONE }));
+      expect(screen.getByRole("menuitem", { name: CLONE })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await c.settle(null);
+    });
+
+    it("clone_from_git_view_switches_to_files_with_placeholder", async () => {
+      const c = pending();
+      const onView = vi.fn();
+      const git = fakeGit({ enabled: true, statuses: { [ROOT]: REPO } });
+      const { p, rerender } = setupGit(git, {
+        view: "git",
+        onView,
+        onCloneFolder: c.onCloneFolder,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Git actions" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: CLONE }));
+      const d = within(
+        screen.getByRole("dialog", { name: "Add folder from git" }),
+      );
+      fireEvent.change(d.getByLabelText("Repo URL"), {
+        target: { value: URL },
+      });
+      await act(async () => {
+        fireEvent.click(d.getByRole("button", { name: "Choose location…" }));
+      });
+      // Only pressing Clone leaves the Git view.
+      expect(onView).not.toHaveBeenCalled();
+      fireEvent.click(d.getByRole("button", { name: "Clone" }));
+      expect(c.onCloneFolder).toHaveBeenCalledTimes(1);
+      expect(onView).toHaveBeenCalledWith("files");
+      rerender(<Sidebar {...p} view="files" />);
+      expect(
+        screen.getByRole("button", { name: "Cloning notes…" }),
+      ).toBeVisible();
+      await c.settle(null);
+    });
+
     it("successful_clone_clears_the_placeholder", async () => {
       const c = pending();
       setupGit(fakeGit({ enabled: true }), { onCloneFolder: c.onCloneFolder });

@@ -41,6 +41,8 @@ export interface GitViewProps {
   onCopyPath(path: string): void;
   /** Opens the existing CloneDialog. */
   onAddFromGit(): void;
+  /** A clone is running: one at a time, so Add folder from git… is off. */
+  cloning?: boolean;
   renderBranchMenu?(slot: BranchMenuSlot): ReactNode;
 }
 
@@ -75,6 +77,7 @@ export function GitView({
   onOpenFile,
   onCopyPath,
   onAddFromGit,
+  cloning = false,
   renderBranchMenu,
 }: GitViewProps) {
   const [chosen, setChosen] = useState(defaultFolder);
@@ -221,7 +224,11 @@ export function GitView({
           align="end"
           ignoreSelector="[data-z-git-more]"
           items={[
-            { label: "Add folder from git…", onSelect: onAddFromGit },
+            {
+              label: "Add folder from git…",
+              disabled: cloning,
+              onSelect: onAddFromGit,
+            },
             { label: "Refresh", onSelect: () => git.refresh() },
           ]}
           onDismiss={() => {
