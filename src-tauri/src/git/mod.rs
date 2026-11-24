@@ -1,6 +1,8 @@
 //! Git sync for library folders: a bounded git runner, discovery, errors,
 //! and the Tauri commands behind the "Git sync" setting.
 
+mod branches;
+mod changes;
 mod clone;
 pub mod commands;
 mod error;
@@ -12,6 +14,8 @@ mod status;
 mod testutil;
 mod url;
 
+pub use branches::{Branches, branches};
+pub use changes::{Change, changes};
 pub use clone::{check_name, clone_into};
 pub use error::{GitError, GitKind};
 pub use run::{CancelFlag, Git, find_git};

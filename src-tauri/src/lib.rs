@@ -281,6 +281,8 @@ pub fn run() {
             library::commands::library_remove_folder,
             git::commands::git_set_enabled,
             git::commands::git_status,
+            git::commands::git_changes,
+            git::commands::git_branches,
             git::commands::git_pull,
             git::commands::git_commit_push,
             git::commands::git_push,
