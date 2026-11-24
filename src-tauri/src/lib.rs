@@ -1,6 +1,7 @@
 mod ai;
 pub mod commands;
 mod files;
+mod git;
 pub mod library;
 pub mod storage;
 pub mod terminal;
