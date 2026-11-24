@@ -115,14 +115,23 @@ fn kill(child: &mut std::process::Child, tree: Option<&crate::terminal::tree::Tr
 }
 
 impl Git {
-    /// Runs `git args` in `cwd`. Success is the exit code alone; stderr is
-    /// only read to explain a failure.
-    pub fn run(&self, cwd: &Path, args: &[&str], timeout: Duration) -> Result<Done, GitError> {
+    /// The command for `git args` in `cwd`. Prompts are off and messages are
+    /// forced to English, since callers recognise git's wording.
+    fn command(&self, cwd: &Path, args: &[&str]) -> Command {
         let mut cmd = Command::new(&self.bin);
         cmd.args(args)
             .current_dir(cwd)
             .env("GIT_TERMINAL_PROMPT", "0")
-            .env("GCM_INTERACTIVE", "never");
+            .env("GCM_INTERACTIVE", "never")
+            .env("LC_ALL", "C")
+            .env("LANGUAGE", "C");
+        cmd
+    }
+
+    /// Runs `git args` in `cwd`. Success is the exit code alone; stderr is
+    /// only read to explain a failure.
+    pub fn run(&self, cwd: &Path, args: &[&str], timeout: Duration) -> Result<Done, GitError> {
+        let cmd = self.command(cwd, args);
         let out = match run_with_timeout(cmd, timeout) {
             Ok(out) => out,
             Err(RunFail::Timeout) => {
@@ -301,6 +310,19 @@ mod tests {
             .run(dir.path(), &["checkout", "-b", "other"], t)
             .expect("exit 0 is success");
         assert!(!done.stderr.is_empty());
+    }
+
+    #[test]
+    fn git_child_gets_c_locale() {
+        let git = find_git().expect("git");
+        let cmd = git.command(Path::new("."), &["status"]);
+        let env = |k: &str| {
+            cmd.get_envs()
+                .find(|(n, _)| *n == k)
+                .and_then(|(_, v)| v.map(|v| v.to_os_string()))
+        };
+        assert_eq!(env("LC_ALL").as_deref(), Some(std::ffi::OsStr::new("C")));
+        assert_eq!(env("LANGUAGE").as_deref(), Some(std::ffi::OsStr::new("C")));
     }
 
     #[test]

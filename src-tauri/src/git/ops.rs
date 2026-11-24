@@ -70,7 +70,7 @@ pub fn pull(git: &Git, dir: &Path) -> Result<(), GitError> {
             "there are uncommitted changes",
         ));
     }
-    net(git, dir, &["pull", "--rebase"], NET).map_err(|mut e| {
+    net(git, dir, &["pull", "--rebase", "--no-autostash"], NET).map_err(|mut e| {
         if e.kind == GitKind::Conflict {
             e.conflicts = read_porcelain(git, dir).ok().map(|p| p.conflicts);
         }
@@ -78,16 +78,23 @@ pub fn pull(git: &Git, dir: &Path) -> Result<(), GitError> {
     })
 }
 
+/// Stages everything and reports whether anything is staged. `diff --cached`
+/// also works before the first commit.
+fn stage_all(git: &Git, dir: &Path) -> Result<bool, GitError> {
+    local(git, dir, &["add", "-A"])?;
+    let out = git.run(dir, &["diff", "--cached", "--name-only"], LOCAL)?;
+    Ok(!out.stdout.trim().is_empty())
+}
+
 pub fn commit_push(git: &Git, dir: &Path, message: &str) -> Result<(), GitError> {
     let s = repo_status(git, dir)?;
     refuse_in_progress(&s)?;
-    local(git, dir, &["add", "-A"])?;
-    let pending = git.run(dir, &["status", "--porcelain"], LOCAL)?;
-    let committed = !pending.stdout.trim().is_empty();
+    let committed = stage_all(git, dir)?;
     if committed {
         local(git, dir, &["commit", "-m", message])?;
     }
-    if s.origin {
+    // With no commit at all there is nothing to push.
+    if s.origin && (committed || !s.head.is_empty()) {
         push_branch(git, dir, &s, NET).map_err(|mut e| {
             e.committed = committed;
             e
@@ -99,10 +106,19 @@ pub fn commit_push(git: &Git, dir: &Path, message: &str) -> Result<(), GitError>
 pub fn push(git: &Git, dir: &Path) -> Result<(), GitError> {
     let s = repo_status(git, dir)?;
     refuse_in_progress(&s)?;
+    if !s.origin {
+        return Err(GitError::new(GitKind::Refused, "no remote is set up"));
+    }
     push_branch(git, dir, &s, NET)
 }
 
 pub fn setup(git: &Git, dir: &Path, url: &str) -> Result<(), GitError> {
+    setup_with(git, dir, url, &[])
+}
+
+/// `setup`, with `commit_cfg` (`-c` options) added to the commit call; tests
+/// use it to make the commit fail.
+fn setup_with(git: &Git, dir: &Path, url: &str, commit_cfg: &[&str]) -> Result<(), GitError> {
     check_url(url)?;
     if folder_git(git, dir)? != FolderGit::NotRepo {
         return Err(GitError::new(
@@ -116,13 +132,15 @@ pub fn setup(git: &Git, dir: &Path, url: &str) -> Result<(), GitError> {
         local(git, dir, &["init"])?;
         local(git, dir, &["symbolic-ref", "HEAD", "refs/heads/main"])?;
     }
-    local(git, dir, &["add", "-A"])?;
-    let staged = git.run(dir, &["status", "--porcelain"], LOCAL)?;
-    let committed = !staged.stdout.trim().is_empty();
-    if committed {
-        local(git, dir, &["commit", "-m", "Set up Zukai sync"])?;
-    }
+    // Add the remote first: if the commit then fails (no identity, a hook),
+    // the folder is still a repo with an origin and Push can retry.
     local(git, dir, &["remote", "add", "origin", "--", url.trim()])?;
+    let committed = stage_all(git, dir)?;
+    if committed {
+        let mut args = commit_cfg.to_vec();
+        args.extend_from_slice(&["commit", "-m", "Set up Zukai sync"]);
+        local(git, dir, &args)?;
+    }
     if committed {
         net(git, dir, &["push", "-u", "origin", "main"], SETUP_PUSH).map_err(|mut e| {
             if e.kind == GitKind::Rejected {
@@ -313,6 +331,41 @@ mod tests {
         std::fs::write(dir.join("n.md"), "n\n").unwrap();
         commit_push(&g(), &dir, "first").unwrap();
         assert!(status(&dir).upstream);
+    }
+
+    #[test]
+    fn failed_setup_commit_leaves_retryable_repo() {
+        let (_t, dir) = plain_folder(&["a.md"]);
+        let (_b, bare) = testutil::bare();
+        // A failing pre-commit hook stands in for "identity unknown".
+        let hooks = dir.parent().unwrap().join("hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        std::fs::write(hooks.join("pre-commit"), "#!/bin/sh\nexit 1\n").unwrap();
+        let cfg = format!("core.hooksPath={}", hooks.to_str().unwrap());
+        let url = bare.to_str().unwrap();
+        let e = setup_with(&g(), &dir, url, &["-c", &cfg]).unwrap_err();
+        assert_eq!(e.kind, GitKind::Failed);
+        assert!(dir.join(".git").exists());
+        let s = status(&dir);
+        assert!(s.origin && !s.upstream);
+        commit_push(&g(), &dir, "retry").unwrap();
+        assert!(status(&dir).upstream);
+    }
+
+    #[test]
+    fn commit_push_on_unborn_empty_folder_pushes_nothing() {
+        let (_t, dir) = plain_folder(&[]);
+        let (_b, bare) = testutil::bare();
+        setup(&g(), &dir, bare.to_str().unwrap()).unwrap();
+        commit_push(&g(), &dir, "nothing").unwrap();
+        let s = status(&dir);
+        assert!(!s.upstream && s.head.is_empty());
+    }
+
+    #[test]
+    fn push_without_origin_is_refused() {
+        let (_t, dir) = testutil::repo();
+        assert_eq!(push(&g(), &dir).unwrap_err().kind, GitKind::Refused);
     }
 
     #[test]
