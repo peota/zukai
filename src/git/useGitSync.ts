@@ -49,7 +49,8 @@ function without<T>(m: Map_<T>, k: string): Map_<T> {
 }
 
 export function useGitSync(opts: {
-  enabled: boolean;
+  /** The setting; `null` while it isn't known yet (nothing is sent). */
+  enabled: boolean | null;
   folders: string[];
 }): GitSyncApi {
   const { enabled: wanted } = opts;
@@ -92,6 +93,7 @@ export function useGitSync(opts: {
 
   // The switch. Turning it off waits for a running op to settle (spec 4.0).
   useEffect(() => {
+    if (wanted === null) return;
     if (wanted) {
       if (applied.current === true) return;
       applied.current = true;

@@ -35,7 +35,10 @@ describe("errorCopy", () => {
     ["in_progress", "Finish the rebase in a terminal first"],
     ["bad_url", "That doesn't look like a git URL."],
     ["dest_exists", "A folder with that name already exists there."],
-    ["busy", "Git failed."],
+    ["busy", "Another git action is still running on this folder."],
+    ["not_allowed", "That folder can't be used here. Choose the folder again."],
+    ["disabled", "Git sync is turned off in Settings."],
+    ["no_git", "Install git to sync folders."],
     ["failed", "Git failed."],
   ] as [GitKind, string][])("%s", (kind, text) => {
     expect(errorCopy(err(kind))).toBe(text);
@@ -43,7 +46,10 @@ describe("errorCopy", () => {
 
   it("conflict counts files", () => {
     expect(errorCopy(err("conflict", { conflicts: 2 }))).toBe(
-      "Pull stopped: 2 files conflict. Finish it in a terminal (`git rebase --continue` or `--abort`).",
+      "Pull stopped: 2 files conflict. Finish it in a terminal (git rebase --continue or --abort).",
+    );
+    expect(errorCopy(err("conflict", { conflicts: 1 }))).toBe(
+      "Pull stopped: 1 file conflicts. Finish it in a terminal (git rebase --continue or --abort).",
     );
   });
 

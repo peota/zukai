@@ -683,7 +683,12 @@ export function useWorkspace(): Workspace {
     ...(library.root !== null && library.available ? [library.root] : []),
     ...library.added.filter((a) => a.available).map((a) => a.path),
   ];
-  const git = useGitSync({ enabled: settings.gitSync, folders: gitFolders });
+  // Until the session is restored the setting isn't known: tell Rust
+  // nothing, so with sync off no git runs, not even the search for it.
+  const git = useGitSync({
+    enabled: ready ? settings.gitSync : null,
+    folders: gitFolders,
+  });
   const unsavedUnder = (folder: string): number =>
     state.tabs.filter(
       (t) => t.file && isUnder(t.file.path, folder) && hasPending(t.id),

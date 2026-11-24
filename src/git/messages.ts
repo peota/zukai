@@ -4,8 +4,11 @@ function base(e: GitError): string {
   switch (e.kind) {
     case "rejected":
       return "The remote has newer changes. Pull first, then push.";
-    case "conflict":
-      return `Pull stopped: ${e.conflicts ?? 0} files conflict. Finish it in a terminal (\`git rebase --continue\` or \`--abort\`).`;
+    case "conflict": {
+      const n = e.conflicts ?? 0;
+      const files = n === 1 ? "1 file conflicts" : `${n} files conflict`;
+      return `Pull stopped: ${files}. Finish it in a terminal (git rebase --continue or --abort).`;
+    }
     case "repo_unreachable":
       return "Couldn't reach that repo. Check the URL and your git credentials.";
     case "network":
@@ -22,7 +25,16 @@ function base(e: GitError): string {
       return "That doesn't look like a git URL.";
     case "dest_exists":
       return "A folder with that name already exists there.";
+    case "busy":
+      return "Another git action is still running on this folder.";
+    case "not_allowed":
+      return "That folder can't be used here. Choose the folder again.";
+    case "disabled":
+      return "Git sync is turned off in Settings.";
+    case "no_git":
+      return "Install git to sync folders.";
     case "refused":
+      // Rust words every refusal as a sentence for the user.
       return e.detail;
     default:
       return "Git failed.";

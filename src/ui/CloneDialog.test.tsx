@@ -104,7 +104,9 @@ describe("CloneDialog", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Choose location…" }));
     });
-    expect(screen.getByRole("alert")).toHaveTextContent("Git failed.");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Install git to sync folders.",
+    );
   });
 
   it("reopens_with_error_and_fields", () => {
