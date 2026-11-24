@@ -17,6 +17,8 @@ export interface TabContextMenuProps {
   reopenHint?: string;
   /** The right-clicked Tab is pinned: the item reads "Unpin tab". */
   pinned?: boolean;
+  /** False for a Tab that can't be pinned (a diff Tab): no Pin item. */
+  pinnable?: boolean;
   onTogglePin(id: string): void;
   onClose(id: string): void;
   onCloseOthers(id: string): void;
@@ -50,6 +52,7 @@ export function TabContextMenu({
   closed,
   reopenHint,
   pinned = false,
+  pinnable = true,
   onTogglePin,
   onClose,
   onCloseOthers,
@@ -69,7 +72,7 @@ export function TabContextMenu({
   onCloseSplit,
 }: TabContextMenuProps) {
   const joinedItems = (id: string, o: SplitOrientation): MenuItem[] => [
-    { label: "Unsplit", separated: true, onSelect: () => onUnsplit(id) },
+    { label: "Unsplit", separated: pinnable, onSelect: () => onUnsplit(id) },
     { label: "Swap sides", onSelect: () => onSwap(id) },
     o === "row"
       ? {
@@ -85,17 +88,21 @@ export function TabContextMenu({
     onSelect: () => onReopenEntry(e.tab.id),
   }));
   const items: MenuItem[] = [
-    {
-      label: pinned ? "Unpin tab" : "Pin tab",
-      disabled: tabId === null,
-      onSelect: () => tabId !== null && onTogglePin(tabId),
-    },
+    ...(pinnable
+      ? [
+          {
+            label: pinned ? "Unpin tab" : "Pin tab",
+            disabled: tabId === null,
+            onSelect: () => tabId !== null && onTogglePin(tabId),
+          },
+        ]
+      : []),
     ...(split && tabId !== null
       ? joinedItems(tabId, split.orientation)
       : [
           {
             label: "Split with",
-            separated: true,
+            separated: pinnable,
             disabled: tabId === null || splitCandidates.length === 0,
             submenu: splitCandidates.map((c) => ({
               label: c.title,

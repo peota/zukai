@@ -76,7 +76,8 @@ export function setPinned(
   const at = rest.filter((t) => t.pinned).length;
   const moved = s.tabs
     .filter((t) => moving.has(t.id))
-    .map((t) => ({ ...t, pinned }));
+    // The other half of a Split may be a diff Tab: never pinned.
+    .map((t) => (t.kind === "diff" ? t : { ...t, pinned }));
   const tabs = [...rest.slice(0, at), ...moved, ...rest.slice(at)];
   return normalizeSplits({ ...s, tabs });
 }
