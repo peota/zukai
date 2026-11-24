@@ -558,7 +558,7 @@ pub(crate) mod tests {
 
     #[test]
     fn agent_leaves_a_prompt() {
-        use crate::terminal::agents::agent_spec;
+        use crate::terminal::agents::{ShellKind, agent_spec, shell_kind};
         let dir = tempfile::tempdir().unwrap();
         let script = if cfg!(windows) {
             let p = dir.path().join("agent.cmd");
@@ -566,7 +566,7 @@ pub(crate) mod tests {
             p
         } else {
             let p = dir.path().join("agent.sh");
-            std::fs::write(&p, "echo agent-ran; exit 3\n").unwrap();
+            std::fs::write(&p, "#!/bin/sh\necho agent-ran; exit 3\n").unwrap();
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -593,15 +593,25 @@ pub(crate) mod tests {
             let left = deadline
                 .checked_duration_since(Instant::now())
                 .expect("timed out waiting for agent-ran");
-            if let TerminalEvent::Data { data } = rx.recv_timeout(left).expect("agent-ran") {
-                for _ in data.matches("\x1b[6n") {
-                    running.0.write(b"\x1b[1;1R");
+            match rx.recv_timeout(left).expect("agent-ran") {
+                TerminalEvent::Data { data } => {
+                    for _ in data.matches("\x1b[6n") {
+                        running.0.write(b"\x1b[1;1R");
+                    }
+                    running.0.ack(js_len(&data));
+                    seen.push_str(&data);
                 }
-                running.0.ack(js_len(&data));
-                seen.push_str(&data);
+                TerminalEvent::Exit { .. } => panic!("exited before agent-ran: {seen:?}"),
             }
         }
-        running.0.write(format!("echo ok{NL}").as_bytes());
+        // A command whose output differs from what is typed, so only a live
+        // shell can produce it (the PTY echo of the input can't).
+        let probe = match shell_kind(&current_shell().program) {
+            ShellKind::Pwsh => "echo ('zk'+42)",
+            ShellKind::Cmd => "echo zk%OS:~0,0%42",
+            _ => "echo zk$((6*7))",
+        };
+        running.0.write(format!("{probe}{NL}").as_bytes());
         running.0.write(format!("exit{NL}").as_bytes());
         let (rest, events) = collect(&running.0, &rx);
         seen.push_str(&rest);
@@ -610,7 +620,36 @@ pub(crate) mod tests {
             "no exit; output: {seen:?}"
         );
         let after = seen.split_once("agent-ran").unwrap().1;
-        assert!(after.contains("ok"), "no prompt after agent: {seen:?}");
+        // Drop escape sequences (CSI and OSC) so a line can be compared whole.
+        let mut plain = String::new();
+        let mut chars = after.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c != '\x1b' {
+                plain.push(c);
+                continue;
+            }
+            match chars.next() {
+                Some('[') => {
+                    for n in chars.by_ref() {
+                        if ('@'..='~').contains(&n) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    for n in chars.by_ref() {
+                        if n == '\x07' {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            plain.lines().any(|l| l.trim() == "zk42"),
+            "no prompt after agent: {seen:?}"
+        );
     }
 
     #[test]
