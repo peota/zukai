@@ -17,6 +17,33 @@ export type FolderGit =
   | { kind: "insideRepo"; top: string }
   | ({ kind: "repo" } & RepoStatus);
 
+export type ChangeStatus =
+  "modified" | "added" | "deleted" | "renamed" | "conflicted";
+
+export interface Change {
+  /** Relative to the folder, `/` separators. */
+  path: string;
+  oldPath?: string | null;
+  status: ChangeStatus;
+}
+
+export interface Branch {
+  name: string;
+  upstream: string | null;
+}
+
+export interface Branches {
+  current: string | null;
+  local: Branch[];
+  remoteOnly: string[];
+}
+
+export type HeadFile =
+  | { kind: "text"; text: string }
+  | { kind: "binary" }
+  | { kind: "tooLarge" }
+  | { kind: "missing" };
+
 export type GitKind =
   | "disabled"
   | "no_git"
@@ -121,3 +148,16 @@ export const gitClone = (req: CloneRequest): Promise<RootState> =>
   invoke("git_clone", { ...req });
 export const gitCancel = (opId: string): Promise<void> =>
   invoke("git_cancel", { opId });
+export const gitChanges = (folder: string): Promise<Change[]> =>
+  invoke("git_changes", { folder });
+export const gitBranches = (folder: string): Promise<Branches> =>
+  invoke("git_branches", { folder });
+export const gitSwitch = (
+  folder: string,
+  branch: string,
+  fromRemote: boolean,
+): Promise<void> => invoke("git_switch", { folder, branch, fromRemote });
+export const gitCreateBranch = (folder: string, name: string): Promise<void> =>
+  invoke("git_create_branch", { folder, name });
+export const gitHeadFile = (folder: string, path: string): Promise<HeadFile> =>
+  invoke("git_head_file", { folder, path });

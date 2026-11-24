@@ -3,17 +3,23 @@ import { onLibraryChanged } from "../library/api";
 import { listenSafely } from "../app/useLibrary";
 import {
   asGitError,
+  gitBranches,
+  gitChanges,
   gitCommitPush,
+  gitCreateBranch,
   gitPull,
   gitPush,
   gitSetEnabled,
   gitSetup,
   gitStatus,
+  gitSwitch,
+  type Branches,
+  type Change,
   type FolderGit,
   type GitError,
 } from "./api";
 
-export type GitOp = "pull" | "commit" | "push" | "setup";
+export type GitOp = "pull" | "commit" | "push" | "setup" | "switch";
 
 export interface GitSyncApi {
   /** Whether git sync is on. It stays true while an op runs after the switch is turned off. */
@@ -22,6 +28,21 @@ export interface GitSyncApi {
   available: boolean;
   /** Undefined while disabled or before the first answer. */
   status(folder: string): FolderGit | undefined;
+  /** The folder the Git view shows; null when the view is hidden. */
+  selected: string | null;
+  /** Only the selected folder's changes and branches are read. */
+  select(folder: string | null): void;
+  changes(folder: string): Change[] | undefined;
+  branches(folder: string): Branches | undefined;
+  /** Some repo folder has uncommitted changes. */
+  anyDirty: boolean;
+  switchBranch(
+    folder: string,
+    name: string,
+    fromRemote: boolean,
+  ): Promise<void>;
+  /** Creates the branch and switches to it. */
+  createBranch(folder: string, name: string): Promise<void>;
   running(folder: string): GitOp | null;
   /** The op that just finished OK (for a moment). */
   justDone(folder: string): GitOp | null;
@@ -48,6 +69,10 @@ function without<T>(m: Map_<T>, k: string): Map_<T> {
   return rest;
 }
 
+function pick<T>(m: Map_<T>, k: string): Map_<T> {
+  return k in m ? { [k]: m[k] } : {};
+}
+
 export function useGitSync(opts: {
   /** The setting; `null` while it isn't known yet (nothing is sent). */
   enabled: boolean | null;
@@ -63,6 +88,11 @@ export function useGitSync(opts: {
   const [enabled, setEnabled] = useState(false);
   const [available, setAvailable] = useState(false);
   const [statuses, setStatuses] = useState<Map_<FolderGit>>({});
+  const [changesMap, setChanges] = useState<Map_<Change[]>>({});
+  const [branchesMap, setBranches] = useState<Map_<Branches>>({});
+  const [selected, setSelected] = useState<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  const detailRequests = useRef(new Map<string, number>());
   const [runningMap, setRunning] = useState<Map_<GitOp>>({});
   const [doneMap, setDone] = useState<Map_<GitOp>>({});
   const [errors, setErrors] = useState<Map_<GitError>>({});
@@ -116,6 +146,8 @@ export function useGitSync(opts: {
       setReady(false);
       setEnabled(false);
       setStatuses({});
+      setChanges({});
+      setBranches({});
       setErrors({});
       setDone({});
       gitSetEnabled(false).then(
@@ -130,34 +162,75 @@ export function useGitSync(opts: {
     }
   }, [wanted, busy]);
 
-  const fetchOne = useCallback((folder: string) => {
+  const fetchDetails = useCallback((folder: string) => {
     if (!enabledRef.current || !readyRef.current || !availableRef.current) {
       return;
     }
-    const id = (requests.current.get(folder) ?? 0) + 1;
-    requests.current.set(folder, id);
-    const latest = () => requests.current.get(folder) === id;
-    gitStatus(folder).then(
-      (s) => {
-        if (!mounted.current || !enabledRef.current || !latest()) return;
-        if (!foldersRef.current.includes(folder)) return;
-        setStatuses((m) => ({ ...m, [folder]: s }));
+    if (selectedRef.current !== folder) return;
+    const id = (detailRequests.current.get(folder) ?? 0) + 1;
+    detailRequests.current.set(folder, id);
+    const current = () =>
+      mounted.current &&
+      enabledRef.current &&
+      selectedRef.current === folder &&
+      detailRequests.current.get(folder) === id;
+    gitChanges(folder).then(
+      (c) => {
+        if (current()) setChanges((m) => ({ ...m, [folder]: c }));
       },
-      (e) => {
-        if (!mounted.current || !latest()) return;
-        // Keep the last good status on a passing failure.
-        const kind = asGitError(e).kind;
-        if (kind === "disabled" || kind === "not_allowed") {
-          setStatuses((m) => without(m, folder));
-        }
+      () => {},
+    );
+    gitBranches(folder).then(
+      (b) => {
+        if (current()) setBranches((m) => ({ ...m, [folder]: b }));
       },
+      () => {},
     );
   }, []);
+
+  const fetchOne = useCallback(
+    (folder: string) => {
+      if (!enabledRef.current || !readyRef.current || !availableRef.current) {
+        return;
+      }
+      const id = (requests.current.get(folder) ?? 0) + 1;
+      requests.current.set(folder, id);
+      const latest = () => requests.current.get(folder) === id;
+      gitStatus(folder).then(
+        (s) => {
+          if (!mounted.current || !enabledRef.current || !latest()) return;
+          if (!foldersRef.current.includes(folder)) return;
+          setStatuses((m) => ({ ...m, [folder]: s }));
+          if (s.kind === "repo") fetchDetails(folder);
+        },
+        (e) => {
+          if (!mounted.current || !latest()) return;
+          // Keep the last good status on a passing failure.
+          const kind = asGitError(e).kind;
+          if (kind === "disabled" || kind === "not_allowed") {
+            setStatuses((m) => without(m, folder));
+          }
+        },
+      );
+    },
+    [fetchDetails],
+  );
 
   const refresh = useCallback(
     (folder?: string) => {
       if (folder !== undefined) fetchOne(folder);
       else for (const f of foldersRef.current) fetchOne(f);
+    },
+    [fetchOne],
+  );
+
+  const select = useCallback(
+    (folder: string | null) => {
+      selectedRef.current = folder;
+      setSelected(folder);
+      setChanges((m) => (folder === null ? {} : pick(m, folder)));
+      setBranches((m) => (folder === null ? {} : pick(m, folder)));
+      if (folder !== null) fetchOne(folder);
     },
     [fetchOne],
   );
@@ -245,6 +318,22 @@ export function useGitSync(opts: {
       run(folder, "setup", () => gitSetup(folder, url)),
     [run],
   );
+  const switchBranch = useCallback(
+    (folder: string, name: string, fromRemote: boolean) =>
+      run(folder, "switch", () => gitSwitch(folder, name, fromRemote)),
+    [run],
+  );
+  const createBranch = useCallback(
+    (folder: string, name: string) =>
+      run(folder, "switch", () => gitCreateBranch(folder, name)),
+    [run],
+  );
+  const anyDirty = useMemo(
+    () =>
+      enabled &&
+      Object.values(statuses).some((s) => s.kind === "repo" && s.dirty),
+    [enabled, statuses],
+  );
   const dismiss = useCallback(
     (folder: string) => setErrors((m) => without(m, folder)),
     [],
@@ -255,6 +344,13 @@ export function useGitSync(opts: {
       enabled,
       available,
       status: (f) => (enabled ? statuses[f] : undefined),
+      selected,
+      select,
+      changes: (f) => (enabled ? changesMap[f] : undefined),
+      branches: (f) => (enabled ? branchesMap[f] : undefined),
+      anyDirty,
+      switchBranch,
+      createBranch,
       running: (f) => runningMap[f] ?? null,
       justDone: (f) => doneMap[f] ?? null,
       error: (f) => errors[f] ?? null,
@@ -269,6 +365,13 @@ export function useGitSync(opts: {
       enabled,
       available,
       statuses,
+      selected,
+      select,
+      changesMap,
+      branchesMap,
+      anyDirty,
+      switchBranch,
+      createBranch,
       runningMap,
       doneMap,
       errors,
