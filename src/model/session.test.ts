@@ -258,7 +258,9 @@ describe("restoreWorkspace", () => {
 
   it("yields one fresh tab when empty", () => {
     const { state } = restore(null, [], fresh, 0);
-    expect(state.tabs).toEqual([newTabState("fresh")]);
+    expect(state.tabs).toEqual([
+      { ...newTabState("fresh"), title: "Scratchpad 1" },
+    ]);
     expect(state.activeId).toBe("fresh");
   });
   it("dedupes tabs by id keeping the first", () => {

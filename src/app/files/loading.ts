@@ -14,7 +14,6 @@ import type {
   WorkspaceState,
 } from "../../model/types";
 import * as ws from "../../model/workspace";
-import { deriveTitle } from "../../model/title";
 import { parseScene } from "../../canvas/scene";
 import { readScratchpad, writeScratchpad } from "../../storage/api";
 import { logError } from "../workspaceEffects";
@@ -30,7 +29,7 @@ import {
 
 /** Loading a Tab's text, the unreadable-shadow mask, and restore. */
 export function useLoading(c: FilesContext) {
-  const { contents, onDisk, freshId, keepTitle, keptShadows } = c;
+  const { contents, onDisk, freshId, keptShadows } = c;
   const { setUnreadable, loadsRef, loadRef, recheckSoonRef } = c;
   const { tabOf, patchFile, showNotice } = c;
 
@@ -143,9 +142,7 @@ export function useLoading(c: FilesContext) {
         p = read
           .then((text) => {
             if (!contents.has(id)) contents.set(id, text);
-            const loaded = contents.get(id)!;
-            keepTitle(id, loaded);
-            return loaded;
+            return contents.get(id)!;
           })
           .finally(() => loadsRef.current.delete(id));
         loadsRef.current.set(id, p);
@@ -158,15 +155,7 @@ export function useLoading(c: FilesContext) {
       }
       return p;
     },
-    [
-      contents,
-      keepTitle,
-      loadsRef,
-      onDisk,
-      readFileText,
-      recheckSoonRef,
-      tabOf,
-    ],
+    [contents, loadsRef, onDisk, readFileText, recheckSoonRef, tabOf],
   );
 
   useEffect(() => {
@@ -238,7 +227,7 @@ export function useLoading(c: FilesContext) {
             onDisk.set(id, text);
             const tab = canvas
               ? ws.newTabState(id, "canvas")
-              : { ...ws.newTabState(id), title: deriveTitle(text) };
+              : { ...ws.newTabState(id), title: ws.nextScratchpadTitle(next) };
             next = { ...next, tabs: [...next.tabs, tab] };
           }
           await shadowDelete(orphan);

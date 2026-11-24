@@ -34,7 +34,6 @@ import type { FindRequest } from "../find/findExtension";
 import * as ws from "../model/workspace";
 import * as sp from "../model/split";
 import { touchRecent } from "../model/recent";
-import { deriveTitle } from "../model/title";
 import {
   clampFontSize,
   clampSidebarWidth,
@@ -380,19 +379,6 @@ export function useWorkspace(): Workspace {
   useExitHandshake(savers, beforeExit);
   useFlushOnBlur(savers, flushRich);
 
-  const keepTitle = useCallback(
-    (id: string, text: string) => {
-      const tab = stateRef.current.tabs.find((t) => t.id === id);
-      // A File's Title is its filename; a Canvas's text is JSON, no Title.
-      if (!tab || tab.renamed || tab.file || tab.kind !== "text") return;
-      const title = deriveTitle(text);
-      if (title !== tab.title) {
-        commit(ws.updateTab(stateRef.current, id, { title }));
-      }
-    },
-    [commit],
-  );
-
   const newTabWrap = useCallback(() => settingsRef.current.wrapNewTabs, []);
   const autosaveFiles = useCallback(
     () => settingsRef.current.autosaveFiles,
@@ -412,7 +398,6 @@ export function useWorkspace(): Workspace {
     freshId,
     track,
     saveSessionNow,
-    keepTitle,
     keyOf,
     newFileFormat: NEW_FILE,
     newTabWrap,
@@ -446,9 +431,8 @@ export function useWorkspace(): Workspace {
       if (contents.get(id) === text || refuseEdit(id)) return;
       contents.set(id, text);
       saver.schedule(id, () => contents.get(id) ?? text);
-      keepTitle(id, text);
     },
-    [contents, saver, keepTitle, refuseEdit],
+    [contents, saver, refuseEdit],
   );
 
   const activate = useCallback(
@@ -497,14 +481,15 @@ export function useWorkspace(): Workspace {
         await renameFile(id, name);
         return;
       }
-      // An empty name falls back to the automatic Title, which needs the
-      // text (a Canvas has none: it's "Untitled").
-      const tab = stateRef.current.tabs.find((t) => t.id === id);
+      // An empty name falls back to the automatic Title: a free
+      // "Scratchpad N" (a Canvas's is "Untitled").
+      const s = stateRef.current;
+      const tab = s.tabs.find((t) => t.id === id);
       const derived =
-        tab?.kind === "text" ? deriveTitle(await loadContent(id)) : "Untitled";
-      commit(ws.rename(stateRef.current, id, name, derived));
+        tab?.kind === "text" ? ws.nextScratchpadTitle(s, id) : "Untitled";
+      commit(ws.rename(s, id, name, derived));
     },
-    [commit, loadContent, renameFile],
+    [commit, renameFile],
   );
 
   const newTab = useCallback(() => {

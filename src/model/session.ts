@@ -10,7 +10,7 @@ import type {
   TabState,
   WorkspaceState,
 } from "./types";
-import { ensureOneTab, newTabState } from "./workspace";
+import { ensureOneTab, newTabState, nextScratchpadTitle } from "./workspace";
 import { normalizeSplits } from "./split";
 import { inShadow } from "../files/fileState";
 import {
@@ -412,11 +412,17 @@ export function restoreWorkspace(
     known.add(t.id);
     return true;
   });
-  const orphans = [...scratchpads]
+  const tabs = [...uniqueTabs];
+  for (const f of [...scratchpads]
     .sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
-    .filter((f) => !known.has(f.id))
-    .map((f) => newTabState(f.id, scratchKind(f.ext)));
-  const tabs = [...uniqueTabs, ...orphans];
+    .filter((f) => !known.has(f.id))) {
+    const tab = newTabState(f.id, scratchKind(f.ext));
+    tabs.push(
+      tab.kind === "text"
+        ? { ...tab, title: nextScratchpadTitle({ tabs }) }
+        : tab,
+    );
+  }
   const activeId = tabs.some((t) => t.id === base.activeId)
     ? base.activeId
     : (tabs[0]?.id ?? "");
