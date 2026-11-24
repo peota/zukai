@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import type { GitError } from "../git/api";
-import { GitErrorBox } from "./GitRow";
+import { GitErrorBox } from "./git/GitErrorBox";
 
 export interface SetupSyncCardProps {
   /** Left margin in px, matching the folder heading's name. */

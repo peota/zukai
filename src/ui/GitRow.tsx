@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { GitError, RepoStatus } from "../git/api";
-import { defaultCommitMessage, errorCopy } from "../git/messages";
+import { defaultCommitMessage } from "../git/messages";
 import type { GitOp } from "../git/useGitSync";
-import { CloseIcon, Icon, type IconName } from "./icons";
+import { GitErrorBox, isTreeKey } from "./git/GitErrorBox";
+import { GitButton, syncRules } from "./git/syncButtons";
+import { Icon } from "./icons";
 
 export interface GitRowProps {
   name: string;
@@ -20,91 +22,6 @@ export interface GitRowProps {
   onPush(): void;
   onSaveAll(): void;
   onDismiss(): void;
-}
-
-const NO_REMOTE = "No remote set up for this folder";
-const REBASE_FIRST = "Finish the rebase in a terminal first";
-const PUSH_FIRST = "Push first to connect this folder to its remote.";
-
-/** Keys the Library tree acts on; anything else (app shortcuts) bubbles. */
-const TREE_KEYS = new Set([
-  "ArrowDown",
-  "ArrowUp",
-  "ArrowLeft",
-  "ArrowRight",
-  "Home",
-  "End",
-  "Enter",
-  "F2",
-  "Delete",
-  "Escape",
-]);
-
-function isTreeKey(e: React.KeyboardEvent): boolean {
-  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "a") {
-    return true;
-  }
-  return TREE_KEYS.has(e.key);
-}
-
-const BTN =
-  "relative flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-row-hover hover:text-muted aria-disabled:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:text-faint disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint";
-
-function GitButton({
-  label,
-  icon,
-  op,
-  running,
-  justDone,
-  title,
-  disabled,
-  inert,
-  active,
-  buttonRef,
-  onClick,
-}: {
-  label: string;
-  icon: IconName;
-  op: GitOp;
-  running: GitOp | null;
-  justDone: GitOp | null;
-  title: string;
-  /** Truly disabled: nothing can happen. */
-  disabled: boolean;
-  /** Looks disabled and ignores clicks, but keeps its tooltip. */
-  inert: boolean;
-  active?: boolean;
-  buttonRef?: React.Ref<HTMLButtonElement>;
-  onClick(): void;
-}) {
-  const spinning = running === op;
-  const done = !spinning && justDone === op;
-  return (
-    <button
-      ref={buttonRef}
-      type="button"
-      aria-label={label}
-      title={title}
-      disabled={disabled}
-      aria-disabled={inert || undefined}
-      onClick={() => {
-        if (!inert) onClick();
-      }}
-      className={BTN + (active ? " bg-accent-soft text-accent" : "")}
-    >
-      {spinning ? (
-        <Icon
-          name="spinner"
-          size={13}
-          className="animate-spin motion-reduce:animate-none"
-        />
-      ) : done ? (
-        <Icon name="check" size={13} className="text-accent" />
-      ) : (
-        <Icon name={icon} size={13} />
-      )}
-    </button>
-  );
 }
 
 function CommitCard({
@@ -228,30 +145,7 @@ export function GitRow({
   const [cardOpen, setCardOpen] = useState(false);
   const commitBtn = useRef<HTMLButtonElement>(null);
   const busy = running !== null || status.state !== "none";
-  const noOrigin = !status.origin;
-  const nothingToPush = !status.dirty && status.upstream && status.ahead === 0;
-  const nothingToCommit = !status.dirty && status.ahead === 0;
-
-  const inProgress = status.state !== "none";
-  const pullTitle = inProgress
-    ? REBASE_FIRST
-    : noOrigin
-      ? NO_REMOTE
-      : !status.upstream
-        ? PUSH_FIRST
-        : "Pull";
-  const pushTitle = inProgress
-    ? REBASE_FIRST
-    : noOrigin
-      ? NO_REMOTE
-      : nothingToPush
-        ? "Nothing to push"
-        : "Push";
-  const commitTitle = inProgress
-    ? REBASE_FIRST
-    : nothingToCommit
-      ? "Nothing to commit"
-      : "Commit";
+  const rules = syncRules(status, running);
 
   const branch =
     (status.branch ?? status.head) +
@@ -292,38 +186,35 @@ export function GitRow({
         )}
         <div className="ml-auto flex shrink-0 gap-px">
           <GitButton
+            compact
             label="Pull"
             icon="gitPull"
             op="pull"
             running={running}
             justDone={justDone}
-            title={pullTitle}
-            disabled={busy || noOrigin || !status.upstream}
-            inert={false}
+            rule={rules.pull}
             onClick={onPull}
           />
           <GitButton
+            compact
             label="Commit"
             icon="gitCommit"
             op="commit"
             running={running}
             justDone={justDone}
-            title={commitTitle}
-            disabled={busy}
-            inert={nothingToCommit}
+            rule={rules.commit}
             active={cardOpen}
             buttonRef={commitBtn}
             onClick={commitClick}
           />
           <GitButton
+            compact
             label="Push"
             icon="gitPush"
             op="push"
             running={running}
             justDone={justDone}
-            title={pushTitle}
-            disabled={busy || noOrigin}
-            inert={nothingToPush}
+            rule={rules.push}
             onClick={onPush}
           />
         </div>
@@ -345,52 +236,5 @@ export function GitRow({
         <GitErrorBox error={error} indent={indent} onDismiss={onDismiss} />
       )}
     </>
-  );
-}
-
-/**
- * A git failure in the float style of the rename error: one plain sentence,
- * git's own line in mono, and (with `onDismiss`) a dismiss button.
- */
-export function GitErrorBox({
-  error,
-  indent,
-  onDismiss,
-}: {
-  error: GitError;
-  indent: number;
-  onDismiss?(): void;
-}) {
-  const copy = errorCopy(error);
-  return (
-    <div
-      role="alert"
-      style={{ marginLeft: indent }}
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        if (isTreeKey(e)) e.stopPropagation();
-      }}
-      className="z-fade-in my-1 mr-1 flex items-start gap-1.5 rounded-float bg-surface px-2.5 py-1.5 text-ui-sm whitespace-normal text-danger shadow-float"
-    >
-      <div className="min-w-0 flex-1">
-        <div>{copy}</div>
-        {error.detail && error.detail !== copy && (
-          <div className="mt-1 font-mono text-ui-xs break-words text-muted">
-            {error.detail}
-          </div>
-        )}
-      </div>
-      {onDismiss && (
-        <button
-          type="button"
-          aria-label="Dismiss"
-          title="Dismiss"
-          onClick={onDismiss}
-          className="flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-row-hover hover:text-text"
-        >
-          <CloseIcon size={12} />
-        </button>
-      )}
-    </div>
   );
 }
