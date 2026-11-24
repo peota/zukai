@@ -94,7 +94,20 @@ pub fn agent_spec(shell: &ShellSpec, command: &str) -> ShellSpec {
     let args = match shell_kind(&shell.program) {
         ShellKind::Pwsh => vec!["-NoExit".into(), "-Command".into(), command.into()],
         ShellKind::Cmd => vec!["/K".into(), command.into()],
-        ShellKind::Posix | ShellKind::Fish => vec![
+        // A handler (`:`), not `''`: it resets to the default on exec, so the
+        // agent still gets Ctrl+C, and an interactive shell doesn't abandon
+        // the `exec` when the agent dies of SIGINT.
+        ShellKind::Posix => vec![
+            "-l".into(),
+            "-i".into(),
+            "-c".into(),
+            format!(
+                "trap : INT; {command}; trap - INT; exec '{}' -l",
+                shell.program.display()
+            ),
+        ],
+        // fish has no `trap`; kept as is.
+        ShellKind::Fish => vec![
             "-l".into(),
             "-i".into(),
             "-c".into(),
@@ -118,10 +131,10 @@ pub fn detect_script(kind: ShellKind, commands: &[&str]) -> String {
     let list = commands.join(" ");
     match kind {
         ShellKind::Fish => {
-            format!("for c in {list}; if type -q $c; printf '%s%s\\n' {MARKER} $c; end; end")
+            format!("for c in {list}; if type -q $c; printf '%s%s\\n' {MARKER} $c; end; end; true")
         }
         _ => format!(
-            "for c in {list}; do command -v \"$c\" >/dev/null 2>&1 && printf '%s%s\\n' {MARKER} \"$c\"; done"
+            "for c in {list}; do command -v \"$c\" >/dev/null 2>&1 && printf '%s%s\\n' {MARKER} \"$c\"; done; true"
         ),
     }
 }
@@ -335,7 +348,21 @@ mod tests {
     fn agent_spec_per_shell() {
         let s = agent_spec(&spec("/bin/zsh"), "claude");
         assert_eq!(s.program, PathBuf::from("/bin/zsh"));
-        assert_eq!(s.args, ["-l", "-i", "-c", "claude; exec '/bin/zsh' -l"]);
+        assert_eq!(
+            s.args,
+            [
+                "-l",
+                "-i",
+                "-c",
+                "trap : INT; claude; trap - INT; exec '/bin/zsh' -l"
+            ]
+        );
+
+        let s = agent_spec(&spec("/usr/bin/fish"), "claude");
+        assert_eq!(
+            s.args,
+            ["-l", "-i", "-c", "claude; exec '/usr/bin/fish' -l"]
+        );
 
         let s = agent_spec(&spec("pwsh.exe"), "claude.cmd");
         assert_eq!(s.program, PathBuf::from("pwsh.exe"));
@@ -359,6 +386,14 @@ mod tests {
         let f = detect_script(ShellKind::Fish, &["claude"]);
         assert!(f.contains("type -q $c"));
         assert!(f.contains(MARKER));
+    }
+
+    #[test]
+    fn detect_scripts_always_end_successfully() {
+        let p = detect_script(ShellKind::Posix, &["claude"]);
+        assert!(p.ends_with("done; true"), "{p}");
+        let f = detect_script(ShellKind::Fish, &["claude"]);
+        assert!(f.ends_with("end; true"), "{f}");
     }
 
     #[cfg(unix)]
