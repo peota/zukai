@@ -15,6 +15,7 @@ use crate::files::FileError;
 use crate::files::commands::blocking;
 use crate::files::grants::Grants;
 use crate::library::commands::folder;
+use crate::terminal::agents::{AGENTS, AgentInfo, installed_commands};
 use crate::terminal::session::{Session, Sink, TerminalEvent};
 use crate::terminal::shell::current_shell;
 
@@ -350,4 +351,20 @@ mod tests {
         t.0.kill(id);
         t.0.kill_all();
     }
+}
+
+/// Every known agent, in menu order, and whether its CLI is installed.
+#[tauri::command]
+pub async fn terminal_agents() -> Vec<AgentInfo> {
+    let installed = tauri::async_runtime::spawn_blocking(installed_commands)
+        .await
+        .unwrap_or_default();
+    AGENTS
+        .iter()
+        .map(|a| AgentInfo {
+            id: a.id.to_string(),
+            name: a.name.to_string(),
+            installed: installed.iter().any(|c| c == a.command),
+        })
+        .collect()
 }
