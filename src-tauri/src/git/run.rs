@@ -118,25 +118,11 @@ impl Git {
     /// Runs `git args` in `cwd`. Success is the exit code alone; stderr is
     /// only read to explain a failure.
     pub fn run(&self, cwd: &Path, args: &[&str], timeout: Duration) -> Result<Done, GitError> {
-        self.run_env(cwd, args, &[], timeout)
-    }
-
-    /// Like [`Git::run`] with extra environment variables for the child.
-    pub fn run_env(
-        &self,
-        cwd: &Path,
-        args: &[&str],
-        env: &[(&str, &str)],
-        timeout: Duration,
-    ) -> Result<Done, GitError> {
         let mut cmd = Command::new(&self.bin);
         cmd.args(args)
             .current_dir(cwd)
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("GCM_INTERACTIVE", "never");
-        for (k, v) in env {
-            cmd.env(k, v);
-        }
         let out = match run_with_timeout(cmd, timeout) {
             Ok(out) => out,
             Err(RunFail::Timeout) => {

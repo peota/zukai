@@ -12,6 +12,8 @@ pub fn check_url(url: &str) -> Result<(), GitError> {
         "the URL looks like an option"
     } else if lower.starts_with("ext::") {
         "ext:: URLs run commands"
+    } else if lower.starts_with("fd::") {
+        "fd:: URLs are not allowed"
     } else if lower.starts_with("file:") {
         "file: URLs are not allowed"
     } else {
@@ -30,6 +32,8 @@ mod tests {
             "--upload-pack=touch x",
             "ext::sh -c id",
             "EXT::x",
+            "fd::17",
+            "FD::x",
             "file:///etc",
             "",
             "   ",

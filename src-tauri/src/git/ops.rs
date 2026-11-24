@@ -14,13 +14,17 @@ const LOCAL: Duration = Duration::from_secs(60);
 /// The first push of a whole library can be large.
 const SETUP_PUSH: Duration = Duration::from_secs(300);
 
-/// Runs a network subcommand with git's `ext::` transport and user-supplied
-/// protocol restrictions applied.
+/// Runs a network subcommand with git's command-running `ext::` and `fd::`
+/// transports disabled. Plain local paths stay allowed.
 fn net(git: &Git, dir: &Path, args: &[&str], timeout: Duration) -> Result<(), GitError> {
-    let mut full = vec!["-c", "protocol.ext.allow=never"];
+    let mut full = vec![
+        "-c",
+        "protocol.ext.allow=never",
+        "-c",
+        "protocol.fd.allow=never",
+    ];
     full.extend_from_slice(args);
-    git.run_env(dir, &full, &[("GIT_PROTOCOL_FROM_USER", "0")], timeout)
-        .map(|_| ())
+    git.run(dir, &full, timeout).map(|_| ())
 }
 
 fn local(git: &Git, dir: &Path, args: &[&str]) -> Result<(), GitError> {
