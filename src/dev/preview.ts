@@ -259,6 +259,14 @@ const handlers: Record<string, (a: Args) => unknown> = {
     return { hits, ready: true };
   },
   library_resolve: (a) => a.path,
+  // The New terminal menu: three agents installed, two not.
+  terminal_agents: () => [
+    { id: "claude-code", name: "Claude Code", installed: true },
+    { id: "codex", name: "Codex", installed: false },
+    { id: "gemini", name: "Gemini", installed: true },
+    { id: "opencode", name: "OpenCode", installed: true },
+    { id: "cursor", name: "Cursor", installed: false },
+  ],
   library_create_folder: (a) => {
     const path = freeName(a.parent as string, a.name as string, "");
     dirs.add(path);

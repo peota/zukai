@@ -1,5 +1,7 @@
 import { createElement } from "react";
+import { Icon } from "../ui/icons";
 import type { MenuItem } from "../ui/Menu";
+import { AgentLogo } from "./agentLogos";
 import type { AgentInfo } from "./api";
 
 /** The agents in the same order as Rust's `AGENTS`, for before the check. */
@@ -11,16 +13,8 @@ const AGENT_NAMES: ReadonlyArray<[id: string, name: string]> = [
   ["cursor", "Cursor"],
 ];
 
-const lead = (name: string) =>
-  createElement(
-    "span",
-    {
-      "aria-hidden": true,
-      className:
-        "flex h-4 w-4 items-center justify-center rounded-[4px] border border-hairline text-ui-xs leading-none text-faint",
-    },
-    name.charAt(0),
-  );
+const lead = (id: string, name: string, dim: boolean) =>
+  createElement(AgentLogo, { id, name, dim });
 
 /** The "new Terminal" menu: a plain Terminal, then the agents to start. */
 export function agentMenuItems(
@@ -32,15 +26,20 @@ export function agentMenuItems(
   },
 ): MenuItem[] {
   const items: MenuItem[] = [
-    { label: "Terminal", hint: a.terminalHint, onSelect: a.onTerminal },
+    {
+      label: "Terminal",
+      hint: a.terminalHint,
+      lead: createElement(Icon, { name: "shell", className: "text-faint" }),
+      onSelect: a.onTerminal,
+    },
   ];
   if (agents === null) {
-    AGENT_NAMES.forEach(([, name], n) =>
+    AGENT_NAMES.forEach(([id, name], n) =>
       items.push({
         label: name,
         hint: "checking…",
         disabled: true,
-        lead: lead(name),
+        lead: lead(id, name, true),
         ...(n === 0 && { separated: true, section: "Start an agent" }),
       }),
     );
@@ -53,7 +52,7 @@ export function agentMenuItems(
       label: g.name,
       hint: n < 9 ? String(n + 1) : undefined,
       accel: n < 9 ? String(n + 1) : undefined,
-      lead: lead(g.name),
+      lead: lead(g.id, g.name, false),
       onSelect: () => a.onAgent(g),
       ...(n === 0 && { separated: true, section: "Start an agent" }),
     }),
@@ -63,7 +62,7 @@ export function agentMenuItems(
       label: g.name,
       hint: "not installed",
       disabled: true,
-      lead: lead(g.name),
+      lead: lead(g.id, g.name, true),
       ...(installed.length === 0 &&
         n === 0 && { separated: true, section: "Start an agent" }),
     }),

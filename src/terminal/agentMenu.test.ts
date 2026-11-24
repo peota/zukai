@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { createElement, Fragment } from "react";
+import { render } from "@testing-library/react";
 import { agentMenuItems } from "./agentMenu";
 import type { AgentInfo } from "./api";
 
@@ -66,5 +68,26 @@ describe("agentMenuItems", () => {
       expect(i.disabled).toBe(true);
       expect(i.hint).toBe("checking…");
     }
+  });
+
+  it("shows each agent's logo, a letter for Codex, and a terminal icon", () => {
+    const items = agentMenuItems(list, handlers());
+    const { container } = render(
+      createElement(Fragment, null, ...items.map((i) => i.lead)),
+    );
+    const marks = [...container.querySelectorAll("[data-agent-logo]")];
+    expect(
+      marks.map((m) => [m.getAttribute("data-agent-logo"), m.tagName]),
+    ).toEqual([
+      ["codex", "SPAN"],
+      ["opencode", "svg"],
+      ["claude-code", "svg"],
+      ["gemini", "svg"],
+      ["cursor", "svg"],
+    ]);
+    // Not installed: dimmed with its row.
+    expect(marks[2].getAttribute("class")).toContain("opacity-45");
+    expect(marks[1].getAttribute("class")).not.toContain("opacity-45");
+    expect(container.querySelector('[data-icon="shell"]')).not.toBeNull();
   });
 });
