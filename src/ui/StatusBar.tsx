@@ -71,6 +71,15 @@ export interface StatusBarProps {
    * Absent until Ask is ready (an AI provider and key are set).
    */
   ask?: { open: boolean; onToggle(): void; hint?: string };
+  /**
+   * The branch of the repo holding the active Tab (a short hash when HEAD is
+   * detached); click opens the Git view. Absent outside a repo.
+   */
+  git?: {
+    branch: string;
+    state: "none" | "rebasing" | "merging";
+    onClick(): void;
+  };
 }
 
 export const LANGUAGE_LABELS: Record<LanguageId, string> = {
@@ -115,6 +124,7 @@ export function StatusBar({
   preview,
   markdownMode,
   ask,
+  git,
 }: StatusBarProps) {
   const rich = markdownMode?.mode === "rich";
   const [formatAt, setFormatAt] = useState<DOMRect | null>(null);
@@ -136,6 +146,22 @@ export function StatusBar({
           className="-ml-1 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
         >
           <Icon name="settings" size={14} />
+        </button>
+      )}
+      {git && (
+        <button
+          type="button"
+          tabIndex={-1}
+          data-git-chip
+          title="Show in Git"
+          onClick={git.onClick}
+          className={`${CHIP} flex min-w-0 items-center gap-1.5`}
+        >
+          <Icon name="gitBranch" size={13} className="shrink-0 text-faint" />
+          <span className="truncate">{git.branch}</span>
+          {git.state !== "none" && (
+            <span className="shrink-0 text-danger">{git.state}</span>
+          )}
         </button>
       )}
       {kindLabel === undefined && !rich ? (
