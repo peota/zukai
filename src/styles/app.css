@@ -30,6 +30,7 @@
   --z-active-line: rgb(24 24 27 / 0.025);
 
   --z-danger: #be123c;
+  --z-warn: #b45309;
   --z-danger-fg: #ffffff;
   --z-bar-warn-bg: #fdf3d8;
   --z-bar-warn-fg: #7a5208;
@@ -109,6 +110,7 @@
   --z-active-line: rgb(255 255 255 / 0.025);
 
   --z-danger: #f87171;
+  --z-warn: #d97706;
   --z-danger-fg: #2a0707;
   --z-bar-warn-bg: #3a2f17;
   --z-bar-warn-fg: #f2c86b;
@@ -233,6 +235,7 @@
   --color-accent-fg: var(--z-accent-fg);
   --color-danger: var(--z-danger);
   --color-danger-fg: var(--z-danger-fg);
+  --color-warn: var(--z-warn);
   --color-side: var(--z-side);
   --color-row-hover: var(--z-row-hover);
   --color-row-sel: var(--z-row-sel);
