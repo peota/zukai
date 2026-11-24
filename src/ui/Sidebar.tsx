@@ -195,7 +195,7 @@ interface CloneProps {
 export function Sidebar(props: SidebarProps) {
   // Held here, not in the panel, so a clone that fails while the sidebar is
   // closed still brings its dialog back.
-  const { onCloneFolder } = props;
+  const { onCloneFolder, git, view, onView } = props;
   const [dialog, setDialog] = useState<CloneInitial | null>(null);
   const [cloning, setCloning] = useState<Cloning | null>(null);
 
@@ -206,6 +206,9 @@ export function Sidebar(props: SidebarProps) {
     const opId = crypto.randomUUID();
     setDialog(null);
     setCloning({ opId, name: shown.name });
+    // Its placeholder (progress, Cancel) shows in the Library tree, where
+    // the new folder will appear.
+    if (git.enabled && view === "git") onView("files");
     void onCloneFolder(req, opId).then((error) => {
       setCloning(null);
       if (error && error.kind !== "cancelled") {
@@ -912,6 +915,7 @@ function SidebarPanel({
           onOpenFile={onOpenFile}
           onCopyPath={onCopyPath}
           onAddFromGit={onStartClone}
+          cloning={cloning !== null}
         />
       ) : (
         <>
