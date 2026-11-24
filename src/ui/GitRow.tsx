@@ -38,6 +38,7 @@ function GitButton({
   disabled,
   inert,
   active,
+  buttonRef,
   onClick,
 }: {
   label: string;
@@ -51,12 +52,14 @@ function GitButton({
   /** Looks disabled and ignores clicks, but keeps its tooltip. */
   inert: boolean;
   active?: boolean;
+  buttonRef?: React.Ref<HTMLButtonElement>;
   onClick(): void;
 }) {
   const spinning = running === op;
   const done = !spinning && justDone === op;
   return (
     <button
+      ref={buttonRef}
       type="button"
       aria-label={label}
       title={title}
@@ -88,9 +91,12 @@ function CommitCard({
   onSubmit,
   onClose,
   onSaveAll,
+  anchorRef,
 }: {
   indent: number;
   unsaved: number;
+  /** The Commit button: a press on it is the toggle, not a click-away. */
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
   onSubmit(message: string): void;
   onClose(): void;
   onSaveAll(): void;
@@ -99,16 +105,29 @@ function CommitCard({
     defaultCommitMessage(new Date()),
   );
   const input = useRef<HTMLInputElement>(null);
+  const card = useRef<HTMLDivElement>(null);
   const empty = message.trim() === "";
   useEffect(() => {
     input.current?.focus();
     input.current?.select();
   }, []);
+  // Click-away: a press outside the card and its Commit button closes it.
+  // (Blur is unreliable: WebKit buttons take no focus on click.)
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (card.current?.contains(t) || anchorRef.current?.contains(t)) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", down, true);
+    return () => document.removeEventListener("pointerdown", down, true);
+  });
   const submit = () => {
     if (!empty) onSubmit(message.trim());
   };
   return (
     <div
+      ref={card}
       role="group"
       aria-label="Commit"
       style={{ marginLeft: indent }}
@@ -123,10 +142,6 @@ function CommitCard({
         }
       }}
       onClick={(e) => e.stopPropagation()}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null))
-          onClose();
-      }}
       className="z-fade-in my-1 mr-1 rounded-float bg-surface px-2 py-2 text-ui whitespace-normal text-text shadow-float"
     >
       <div className="flex items-center gap-1.5">
@@ -189,6 +204,7 @@ export function GitRow({
   onDismiss,
 }: GitRowProps) {
   const [cardOpen, setCardOpen] = useState(false);
+  const commitBtn = useRef<HTMLButtonElement>(null);
   const busy = running !== null || status.state !== "none";
   const noOrigin = !status.origin;
   const nothingToPush = !status.dirty && status.upstream && status.ahead === 0;
@@ -259,6 +275,7 @@ export function GitRow({
             disabled={busy}
             inert={nothingToCommit}
             active={cardOpen}
+            buttonRef={commitBtn}
             onClick={commitClick}
           />
           <GitButton
@@ -278,6 +295,7 @@ export function GitRow({
         <CommitCard
           indent={indent}
           unsaved={unsaved}
+          anchorRef={commitBtn}
           onClose={() => setCardOpen(false)}
           onSaveAll={onSaveAll}
           onSubmit={(m) => {
