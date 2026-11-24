@@ -46,65 +46,115 @@ pub fn check_name(name: &str) -> Result<(), GitError> {
     Ok(())
 }
 
+/// Prefix of the private directory a clone is made in.
+const STAGING_PREFIX: &str = ".zukai-clone-";
+/// How long to keep trying to remove a partial clone.
+const CLEANUP_BUDGET: Duration = Duration::from_secs(3);
+
 /// Clones `url` into `dest`, which must not exist or be an empty directory.
-/// On failure or cancel, what this call put there is removed: `dest` itself if
-/// this call created it, otherwise only its contents.
+///
+/// The clone is made in a private staging directory next to `dest` and moved
+/// into place on success, so a failure or cancel only ever removes staging,
+/// never anything at `dest`.
 pub fn clone_into(git: &Git, url: &str, dest: &Path, cancel: &CancelFlag) -> Result<(), GitError> {
     check_url(url)?;
-    let pre_existing = match std::fs::read_dir(dest) {
+    // Fail before a long clone if the answer is already known.
+    match std::fs::read_dir(dest) {
         Ok(mut entries) => {
             if entries.next().is_some() {
                 return Err(exists());
             }
-            true
         }
         // Not there; a file in the way is also "exists".
         Err(_) if dest.symlink_metadata().is_ok() => return Err(exists()),
-        Err(_) => false,
-    };
-    let Some(name) = dest.file_name().and_then(|n| n.to_str()) else {
+        Err(_) => {}
+    }
+    if dest.file_name().is_none() {
         return Err(GitError::new(
             GitKind::Refused,
             "the destination has no name",
         ));
-    };
+    }
     let parent = match dest.parent() {
         Some(p) if !p.as_os_str().is_empty() => p,
         _ => Path::new("."),
     };
+    let (staging, staging_name) = make_staging(parent)?;
     let mut args = NO_EXEC_TRANSPORTS.to_vec();
-    args.extend_from_slice(&["clone", "--", url.trim(), name]);
-    let result = git.run_cancellable(parent, &args, CLONE, cancel);
-    if result.is_err() {
-        cleanup(dest, pre_existing);
+    args.extend_from_slice(&["clone", "--", url.trim(), &staging_name]);
+    let result = git
+        .run_cancellable(parent, &args, CLONE, cancel)
+        .map(|_| ())
+        .and_then(|()| install(&staging, dest));
+    if let Err(mut e) = result {
+        if !remove_staging(&staging) {
+            e.detail = format!(
+                "{} Couldn't remove the partial clone at {}.",
+                e.detail,
+                staging.display()
+            );
+        }
+        return Err(e);
     }
-    result.map(|_| ())
+    Ok(())
 }
 
 fn exists() -> GitError {
     GitError::new(GitKind::DestExists, "the destination already exists")
 }
 
-/// Removes what a failed clone left. A killed git can leave files briefly
-/// locked on Windows, so retry a few times.
-fn cleanup(dest: &Path, pre_existing: bool) {
-    for _ in 0..10 {
-        let done = if pre_existing {
-            std::fs::read_dir(dest).is_ok_and(|entries| {
-                entries.flatten().all(|e| {
-                    let p = e.path();
-                    if e.file_type().is_ok_and(|t| t.is_dir()) {
-                        std::fs::remove_dir_all(p).is_ok()
-                    } else {
-                        std::fs::remove_file(p).is_ok()
-                    }
-                })
-            })
+/// Atomically creates a fresh `.zukai-clone-<hex>` directory in `parent`.
+fn make_staging(parent: &Path) -> Result<(std::path::PathBuf, String), GitError> {
+    use std::hash::{BuildHasher, Hasher};
+    for _ in 0..5 {
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u32(std::process::id());
+        h.write_u128(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos()),
+        );
+        let name = format!("{STAGING_PREFIX}{:016x}", h.finish());
+        let path = parent.join(&name);
+        match std::fs::create_dir(&path) {
+            Ok(()) => return Ok((path, name)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(GitError::new(GitKind::Failed, e.to_string())),
+        }
+    }
+    Err(GitError::new(
+        GitKind::Failed,
+        "couldn't create a working folder for the clone",
+    ))
+}
+
+/// Moves the finished clone to `dest`. An empty directory already at `dest` is
+/// replaced; anything else there (including something that appeared during
+/// the clone) is left alone and reported as `DestExists`.
+fn install(staging: &Path, dest: &Path) -> Result<(), GitError> {
+    if dest.symlink_metadata().is_ok() {
+        // `remove_dir` only removes an empty directory.
+        std::fs::remove_dir(dest).map_err(|_| exists())?;
+    }
+    std::fs::rename(staging, dest).map_err(|e| {
+        if dest.symlink_metadata().is_ok() {
+            exists()
         } else {
-            !dest.exists() || std::fs::remove_dir_all(dest).is_ok()
-        };
-        if done {
-            return;
+            GitError::new(GitKind::Failed, e.to_string())
+        }
+    })
+}
+
+/// Removes the staging directory, retrying for a while since a killed git can
+/// leave files locked on Windows. True when it is gone.
+fn remove_staging(staging: &Path) -> bool {
+    let deadline = std::time::Instant::now() + CLEANUP_BUDGET;
+    loop {
+        if !staging.exists() || std::fs::remove_dir_all(staging).is_ok() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -123,6 +173,52 @@ mod tests {
 
     fn git() -> Git {
         crate::git::find_git().expect("git")
+    }
+
+    fn no_staging(dir: &Path) -> bool {
+        !std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with(STAGING_PREFIX))
+    }
+
+    #[test]
+    fn dest_created_during_clone_is_not_deleted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let staging = tmp.path().join(".zukai-clone-x");
+        std::fs::create_dir(&staging).unwrap();
+        std::fs::write(staging.join("cloned.md"), "c").unwrap();
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir(&dest).unwrap();
+        std::fs::write(dest.join("theirs.md"), "keep").unwrap();
+        let e = install(&staging, &dest).unwrap_err();
+        assert_eq!(e.kind, GitKind::DestExists);
+        assert_eq!(
+            std::fs::read_to_string(dest.join("theirs.md")).unwrap(),
+            "keep"
+        );
+        assert!(remove_staging(&staging));
+        assert!(!staging.exists());
+    }
+
+    #[test]
+    fn cancel_mid_clone_leaves_nothing() {
+        let (tmp, _work, bare) = testutil::repo_with_remote();
+        let dest = tmp.path().join("new");
+        let cancel = flag();
+        let (setter, root) = (cancel.clone(), tmp.path().to_path_buf());
+        // Cancel as soon as the staging directory exists: before or during git.
+        let watcher = std::thread::spawn(move || {
+            while no_staging(&root) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            setter.store(true, Ordering::SeqCst);
+        });
+        let e = clone_into(&git(), bare.to_str().unwrap(), &dest, &cancel).unwrap_err();
+        watcher.join().unwrap();
+        assert_eq!(e.kind, GitKind::Cancelled);
+        assert!(!dest.exists());
+        assert!(no_staging(tmp.path()));
     }
 
     #[test]
@@ -166,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn clones_into_existing_empty_dir() {
+    fn clone_into_existing_empty_dir_keeps_it_as_the_clone() {
         let (tmp, _work, bare) = testutil::repo_with_remote();
         let dest = tmp.path().join("pre ü");
         std::fs::create_dir(&dest).unwrap();
@@ -211,19 +307,21 @@ mod tests {
     }
 
     #[test]
-    fn failed_clone_removes_only_created_dest() {
+    fn failed_clone_leaves_dest_untouched() {
         let tmp = tempfile::tempdir().unwrap();
         let bad = tmp.path().join("nope.git");
         let new = tmp.path().join("new");
         let e = clone_into(&git(), bad.to_str().unwrap(), &new, &flag()).unwrap_err();
         assert_ne!(e.kind, GitKind::Cancelled);
         assert!(!new.exists());
+        assert!(no_staging(tmp.path()));
 
         let pre = tmp.path().join("pre");
         std::fs::create_dir(&pre).unwrap();
         clone_into(&git(), bad.to_str().unwrap(), &pre, &flag()).unwrap_err();
         assert!(pre.is_dir());
         assert_eq!(std::fs::read_dir(&pre).unwrap().count(), 0);
+        assert!(no_staging(tmp.path()));
     }
 
     #[test]
