@@ -348,4 +348,209 @@ describe("useGitSync", () => {
       vi.useRealTimers();
     }
   });
+
+  describe("changes and branches", () => {
+    const branches = { current: "main", local: [], remoteOnly: [] };
+    beforeEach(() => {
+      const base = invoke.getMockImplementation()!;
+      invoke.mockImplementation((cmd: string, a?: unknown) => {
+        if (cmd === "git_changes") return Promise.resolve([]);
+        if (cmd === "git_branches") return Promise.resolve(branches);
+        return base(cmd, a);
+      });
+    });
+    const detailCalls = () => [
+      ...calls("git_changes"),
+      ...calls("git_branches"),
+    ];
+
+    it("reads changes and branches only for the selected folder", async () => {
+      const { result } = renderHook(() =>
+        useGitSync({ enabled: true, folders: ["/a", "/b"] }),
+      );
+      await waitFor(() => expect(result.current.status("/b")).toEqual(repo));
+      expect(detailCalls()).toEqual([]);
+      act(() => result.current.select("/a"));
+      await waitFor(() =>
+        expect(result.current.branches("/a")).toEqual(branches),
+      );
+      expect(result.current.changes("/a")).toEqual([]);
+      expect(
+        detailCalls().every(
+          (c) => (c[1] as { folder: string }).folder === "/a",
+        ),
+      ).toBe(true);
+      act(() => result.current.select(null));
+      const n = detailCalls().length;
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+      });
+      await waitFor(() =>
+        expect(calls("git_status").length).toBeGreaterThan(2),
+      );
+      expect(detailCalls().length).toBe(n);
+      expect(result.current.changes("/a")).toBeUndefined();
+    });
+
+    it("refreshes changes after commit, switch and library change", async () => {
+      let changed: (e: unknown) => void = () => {};
+      const ev = await import("@tauri-apps/api/event");
+      vi.mocked(ev.listen).mockImplementation(((
+        _n: string,
+        cb: (e: unknown) => void,
+      ) => {
+        changed = cb;
+        return Promise.resolve(() => {});
+      }) as never);
+      const { result } = renderHook(() =>
+        useGitSync({ enabled: true, folders: ["/a"] }),
+      );
+      await waitFor(() => expect(result.current.status("/a")).toEqual(repo));
+      act(() => result.current.select("/a"));
+      await waitFor(() => expect(result.current.changes("/a")).toEqual([]));
+      let n = calls("git_changes").length;
+      await act(async () => {
+        await result.current.commit("/a", "m");
+      });
+      await waitFor(() =>
+        expect(calls("git_changes").length).toBeGreaterThan(n),
+      );
+      n = calls("git_changes").length;
+      await act(async () => {
+        await result.current.switchBranch("/a", "x", false);
+      });
+      await waitFor(() =>
+        expect(calls("git_changes").length).toBeGreaterThan(n),
+      );
+      n = calls("git_changes").length;
+      vi.useFakeTimers();
+      try {
+        changed({ payload: { dirs: [] } });
+        await vi.advanceTimersByTimeAsync(1100);
+      } finally {
+        vi.useRealTimers();
+      }
+      await waitFor(() =>
+        expect(calls("git_changes").length).toBeGreaterThan(n),
+      );
+    });
+
+    it("switchBranch runs as an op and refreshes", async () => {
+      let finish: () => void = () => {};
+      const base = invoke.getMockImplementation()!;
+      invoke.mockImplementation((cmd: string, a?: unknown) =>
+        cmd === "git_switch"
+          ? new Promise((r) => (finish = () => r(null)))
+          : base(cmd, a),
+      );
+      const { result } = renderHook(() =>
+        useGitSync({ enabled: true, folders: ["/a"] }),
+      );
+      await waitFor(() => expect(result.current.status("/a")).toEqual(repo));
+      act(() => result.current.select("/a"));
+      await waitFor(() => expect(result.current.branches("/a")).toBeTruthy());
+      let p: Promise<void> = Promise.resolve();
+      act(() => {
+        p = result.current.switchBranch("/a", "dev", true);
+      });
+      expect(result.current.running("/a")).toBe("switch");
+      expect(calls("git_switch")[0][1]).toEqual({
+        folder: "/a",
+        branch: "dev",
+        fromRemote: true,
+      });
+      const s = calls("git_status").length;
+      const b = calls("git_branches").length;
+      await act(async () => {
+        finish();
+        await p;
+      });
+      expect(result.current.running("/a")).toBeNull();
+      await waitFor(() =>
+        expect(calls("git_status").length).toBeGreaterThan(s),
+      );
+      await waitFor(() =>
+        expect(calls("git_branches").length).toBeGreaterThan(b),
+      );
+    });
+
+    it("createBranch runs as a switch op", async () => {
+      const { result } = renderHook(() =>
+        useGitSync({ enabled: true, folders: ["/a"] }),
+      );
+      await waitFor(() => expect(result.current.status("/a")).toEqual(repo));
+      await act(async () => {
+        await result.current.createBranch("/a", "n");
+      });
+      expect(calls("git_create_branch")[0][1]).toEqual({
+        folder: "/a",
+        name: "n",
+      });
+    });
+
+    it("switchBranch error lands in error(folder)", async () => {
+      const base = invoke.getMockImplementation()!;
+      invoke.mockImplementation((cmd: string, a?: unknown) =>
+        cmd === "git_switch"
+          ? Promise.reject({ kind: "refused", detail: "No." })
+          : base(cmd, a),
+      );
+      const { result } = renderHook(() =>
+        useGitSync({ enabled: true, folders: ["/a"] }),
+      );
+      await waitFor(() => expect(result.current.status("/a")).toEqual(repo));
+      await act(async () => {
+        await result.current.switchBranch("/a", "dev", false);
+      });
+      expect(result.current.error("/a")?.kind).toBe("refused");
+      expect(result.current.error("/a")?.detail).toBe("No.");
+    });
+
+    it("anyDirty is true only when some repo is dirty", async () => {
+      const status: Record<string, unknown> = {
+        "/a": { ...repo, dirty: false },
+        "/b": { kind: "notRepo" },
+      };
+      const base = invoke.getMockImplementation()!;
+      invoke.mockImplementation((cmd: string, a?: unknown) =>
+        cmd === "git_status"
+          ? Promise.resolve(status[(a as { folder: string }).folder])
+          : base(cmd, a),
+      );
+      const { result } = renderHook(() =>
+        useGitSync({ enabled: true, folders: ["/a", "/b"] }),
+      );
+      await waitFor(() => expect(result.current.status("/b")).toBeDefined());
+      expect(result.current.anyDirty).toBe(false);
+      status["/a"] = repo;
+      act(() => result.current.refresh("/a"));
+      await waitFor(() => expect(result.current.anyDirty).toBe(true));
+    });
+
+    it("drops stale changes responses", async () => {
+      const resolvers: ((v: unknown) => void)[] = [];
+      const base = invoke.getMockImplementation()!;
+      invoke.mockImplementation((cmd: string, a?: unknown) =>
+        cmd === "git_changes"
+          ? new Promise((r) => resolvers.push(r))
+          : base(cmd, a),
+      );
+      const { result } = renderHook(() =>
+        useGitSync({ enabled: true, folders: ["/a"] }),
+      );
+      await waitFor(() => expect(result.current.status("/a")).toEqual(repo));
+      act(() => result.current.select("/a"));
+      await waitFor(() => expect(resolvers.length).toBe(1));
+      act(() => result.current.refresh("/a"));
+      await waitFor(() => expect(resolvers.length).toBe(2));
+      const mk = (path: string) => [{ path, status: "modified" }];
+      await act(async () => {
+        resolvers[1](mk("second"));
+      });
+      await act(async () => {
+        resolvers[0](mk("first"));
+      });
+      expect(result.current.changes("/a")).toEqual(mk("second"));
+    });
+  });
 });

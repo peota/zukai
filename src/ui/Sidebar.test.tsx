@@ -47,6 +47,13 @@ function fakeGit(
     push: vi.fn(async () => {}),
     setup: vi.fn(async () => {}),
     refresh: vi.fn(),
+    selected: null,
+    select: vi.fn(),
+    changes: () => undefined,
+    branches: () => undefined,
+    anyDirty: false,
+    switchBranch: vi.fn(async () => {}),
+    createBranch: vi.fn(async () => {}),
     ...rest,
   };
 }

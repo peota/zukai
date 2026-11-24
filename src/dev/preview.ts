@@ -333,6 +333,11 @@ const handlers: Record<string, (a: Args) => unknown> = {
   git_pick_clone_parent: noGit,
   git_clone: noGit,
   git_cancel: () => null,
+  git_changes: noGit,
+  git_branches: noGit,
+  git_switch: noGit,
+  git_create_branch: noGit,
+  git_head_file: noGit,
   ai_cancel: (a) => {
     cancelled.add(a.id as number);
     return null;
