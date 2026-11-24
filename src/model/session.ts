@@ -207,12 +207,20 @@ export function toSessionFile(
   fontSize: number = DEFAULT_FONT_SIZE,
   settings: Settings = { ...DEFAULT_SETTINGS },
 ): SessionFile {
+  // A diff Tab is never restored: it shows the moment it was opened in.
+  const kept = normalizeSplits({
+    ...s,
+    tabs: s.tabs.filter((t) => t.kind !== "diff"),
+  });
+  const activeId = kept.tabs.some((t) => t.id === s.activeId)
+    ? s.activeId
+    : (kept.tabs[0]?.id ?? "");
   return {
     version: SESSION_VERSION,
-    tabs: s.tabs,
-    activeId: s.activeId,
-    closed: s.closed,
-    splits: s.splits ?? [],
+    tabs: kept.tabs,
+    activeId,
+    closed: s.closed.filter((e) => e.tab.kind !== "diff"),
+    splits: kept.splits ?? [],
     sidebar,
     fontSize,
     settings,

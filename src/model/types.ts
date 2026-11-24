@@ -1,4 +1,16 @@
 import type { Kind } from "./kinds";
+import type { ChangeStatus } from "../git/api";
+
+/**
+ * A diff Tab's subject: `path` (relative to `folder`, `/` separators)
+ * against its last commit, read at `oldPath` for a rename.
+ */
+export interface DiffTarget {
+  folder: string;
+  path: string;
+  oldPath?: string;
+  status: ChangeStatus;
+}
 
 export type LanguageId =
   | "plaintext"
@@ -71,8 +83,10 @@ export interface TabState {
   wrap: boolean;
   /** A Canvas Tab's viewport; remembered in the Session, never in the file. */
   viewport?: Viewport;
-  /** Absent for a Scratchpad. */
+  /** Absent for a Scratchpad (and a diff Tab, which has `diff` instead). */
   file?: FileInfo;
+  /** A diff Tab's File and change; never in the Session. */
+  diff?: DiffTarget;
   /**
    * Kept at the start of the tab bar and in the sidebar's Pinned list; a
    * closed pinned Tab stays there (and in Recently Closed) to reopen.

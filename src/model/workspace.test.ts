@@ -11,6 +11,7 @@ import {
   moveTab,
   newTab,
   newTabState,
+  openDiffTab,
   rename,
   movedPath,
   reopenClosed,
@@ -424,5 +425,56 @@ describe("pinned Tabs", () => {
     expect(ids(s)).toEqual(["new", "a"]);
     expect(s.tabs[0].pinned).toBe(true);
     expect(s.closed).toEqual([]);
+  });
+});
+
+describe("diff tabs", () => {
+  const target = {
+    folder: "C:/L",
+    path: "notes/a.md",
+    status: "modified" as const,
+  };
+
+  it("openDiffTab adds a diff tab", () => {
+    const s = openDiffTab(ws(["a", "b"]), "d", target);
+    expect(ids(s)).toEqual(["a", "d", "b"]);
+    expect(s.activeId).toBe("d");
+    const d = s.tabs[1];
+    expect(d.kind).toBe("diff");
+    expect(d.title).toBe("a.md");
+    expect(d.diff).toEqual(target);
+    expect(d.file).toBeUndefined();
+    expect(d.language).toBe("markdown");
+  });
+
+  it("openDiffTab focuses the existing one for the same file", () => {
+    let s = openDiffTab(ws(["a"]), "d", target);
+    s = activate(s, "a");
+    s = openDiffTab(s, "d2", { ...target, status: "deleted" });
+    expect(ids(s)).toEqual(["a", "d"]);
+    expect(s.activeId).toBe("d");
+    // The same path in another folder is another diff.
+    s = openDiffTab(s, "d3", { ...target, folder: "C:/M" });
+    expect(ids(s)).toEqual(["a", "d", "d3"]);
+  });
+
+  it("findByPath ignores diff tabs", () => {
+    const s = openDiffTab(ws(["a"]), "d", target);
+    expect(findByPath(s, "C:/L/notes/a.md", same)).toBeUndefined();
+    expect(findByPath(s, "notes/a.md", same)).toBeUndefined();
+  });
+
+  it("closing a diff tab never adds a Recently Closed entry", () => {
+    let s = openDiffTab(ws(["a"]), "d", target);
+    s = { ...s, tabs: s.tabs.map((t) => ({ ...t, pinned: t.id === "d" })) };
+    const { state, effect } = closeTab(s, "d", false, 5, same);
+    expect(ids(state)).toEqual(["a"]);
+    expect(state.closed).toEqual([]);
+    expect(effect).toBe("deleted");
+  });
+
+  it("a diff tab can't be pinned", () => {
+    const s = openDiffTab(ws(["a"]), "d", target);
+    expect(setPinned(s, "d", true)).toBe(s);
   });
 });

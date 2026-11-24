@@ -6,6 +6,7 @@ import type {
   WheelEvent,
 } from "react";
 import { baseName, stemOf } from "../files/paths";
+import type { Kind } from "../model/kinds";
 import { CloseIcon, fileIcon, Icon, PlusIcon, type IconName } from "./icons";
 import { Menu } from "./Menu";
 
@@ -21,8 +22,11 @@ export interface TabBarItem {
   folder?: string;
   /** Kept at the start; a pin (which unpins) replaces the close button. */
   pinned?: boolean;
-  /** A Scratchpad's Kind picks its icon (a File's comes from its name). */
-  kind?: "text" | "canvas" | "image";
+  /**
+   * A Scratchpad's or diff Tab's Kind picks its icon (a File's comes from
+   * its name).
+   */
+  kind?: Kind;
   /** A File with changes not yet written to disk: shows a dot. */
   unsaved?: boolean;
 }
@@ -38,10 +42,18 @@ function UnsavedDot({ className = "" }: { className?: string }) {
   );
 }
 
-/** A File's icon follows its name; a Scratchpad's its Kind. */
+/** A File's icon follows its name; a Scratchpad's (or diff's) its Kind. */
 function iconFor(tab: TabBarItem): IconName {
   if (tab.file) return fileIcon(tab.file.path);
+  if (tab.kind === "diff") return "gitCompare";
   return tab.kind === "canvas" ? "canvas" : "scratchpad";
+}
+
+/** A Tab's tooltip: a File's path, what a diff shows, a Scratchpad's Title. */
+function tooltipOf(tab: TabBarItem): string {
+  if (tab.file) return tab.file.path;
+  if (tab.kind === "diff") return "Changes since last commit";
+  return tab.title;
 }
 
 export interface TabBarProps {
@@ -154,9 +166,7 @@ export function TabBar({
   const activeRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
   /** The New menu's anchor (the + button's bottom-left), while open. */
-  const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(
-    null,
-  );
+  const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
   const openNewMenu = () => {
     const box = plusRef.current?.getBoundingClientRect();
@@ -344,9 +354,7 @@ export function TabBar({
             role="tab"
             aria-selected={active}
             aria-label={joined ? label + note : undefined}
-            title={
-              (joined ? label : tab.file ? tab.file.path : tab.title) + note
-            }
+            title={(joined ? label : tooltipOf(tab)) + note}
             onClick={(e) => {
               if (swallowClick.current) {
                 swallowClick.current = false;

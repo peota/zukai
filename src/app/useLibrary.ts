@@ -1029,7 +1029,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   const scratchpadMove = useCallback(
     async (id: string, destDir: string | null) => {
       const tab = tabOf(id);
-      if (!tab || tab.file) return;
+      if (!tab || tab.file || tab.kind === "diff") return;
       if (destDir === null) {
         const root = rootRef.current?.root;
         return saveAs(id, {
@@ -1082,8 +1082,9 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
   const scratchpads = useMemo(
     () =>
       tabs
-        // A pinned Scratchpad is listed under Pinned instead.
-        .filter((t) => !t.file && !t.pinned)
+        // A pinned Scratchpad is listed under Pinned instead; a diff Tab
+        // (no File either) isn't a Scratchpad.
+        .filter((t) => !t.file && !t.pinned && t.kind !== "diff")
         .map((t) => ({ id: t.id, title: t.title, kind: t.kind })),
     [tabs],
   );

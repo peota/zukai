@@ -509,12 +509,18 @@ export default function App() {
         .map((t) => ({
           id: t.id,
           title: t.title,
-          detail: t.file ? parentOf(t.file.path) : "Scratchpad",
+          detail: t.file
+            ? parentOf(t.file.path)
+            : t.kind === "diff"
+              ? "Changes since last commit"
+              : "Scratchpad",
           icon: t.file
             ? fileIcon(t.file.path)
-            : t.kind === "canvas"
-              ? "canvas"
-              : "scratchpad",
+            : t.kind === "diff"
+              ? "gitCompare"
+              : t.kind === "canvas"
+                ? "canvas"
+                : "scratchpad",
         }))
     : [];
   const added = lib.added;
@@ -580,6 +586,8 @@ export default function App() {
       onZoom={w.zoomEditor}
       registerRich={w.registerRich}
       onRichConflict={() => w.richConflict(tab.id)}
+      gitStatus={w.git.status}
+      onOpenFile={(path) => void w.openPaths([path]).then(refocus)}
     />
   );
 
@@ -671,7 +679,8 @@ export default function App() {
               file: t.file
                 ? { missing: t.file.held === "missing", path: t.file.path }
                 : undefined,
-              locked: w.shadowUnreadable.has(t.id),
+              // A diff Tab is named after its File: never renamed.
+              locked: w.shadowUnreadable.has(t.id) || t.kind === "diff",
               folder: folders.get(t.id),
               pinned: t.pinned,
               kind: t.kind,

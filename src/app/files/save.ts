@@ -33,6 +33,9 @@ function kindRefusal(kind: Kind, target: string): string | null {
   const into = kindOf(target);
   if (into === kind) return null;
   switch (kind) {
+    case "diff":
+      // Never asked: saveTo stops a diff Tab first.
+      return null;
     case "canvas":
       return "A canvas can only be saved as a .excalidraw file";
     case "text":
@@ -70,7 +73,8 @@ export function useSave(c: FilesContext, d: SaveDeps) {
   const saveTo = useCallback(
     async (id: string, target: string): Promise<boolean> => {
       const tab = tabOf(id);
-      if (!tab || refuseUnreadable(id)) return false;
+      // A diff Tab is read-only and has no text of its own to save.
+      if (!tab || tab.kind === "diff" || refuseUnreadable(id)) return false;
       const refused = kindRefusal(tab.kind, target);
       if (refused) {
         showNotice(refused);
@@ -157,7 +161,7 @@ export function useSave(c: FilesContext, d: SaveDeps) {
   const saveAs = useCallback(
     async (id: string, opts: SaveAsOptions = {}) => {
       const tab = tabOf(id);
-      if (!tab || refuseUnreadable(id)) return;
+      if (!tab || tab.kind === "diff" || refuseUnreadable(id)) return;
       if (tab.kind === "image") return showNotice(IMAGE_READ_ONLY);
       const canvas = tab.kind === "canvas";
       const suggested =
@@ -188,7 +192,7 @@ export function useSave(c: FilesContext, d: SaveDeps) {
   const save = useCallback(
     async (id: string) => {
       const tab = tabOf(id);
-      if (!tab || tab.kind === "image") return;
+      if (!tab || tab.kind === "image" || tab.kind === "diff") return;
       if (!tab.file) return saveAs(id);
       // The same notice as Keep mine: an explicit save never fails silently.
       const failed = (err: unknown) => {

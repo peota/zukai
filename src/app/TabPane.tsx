@@ -10,6 +10,8 @@ import {
   type MarkdownPreviewProps,
 } from "../markdown/MarkdownPreview";
 import { SplitHandle } from "../markdown/SplitHandle";
+import { DiffPane } from "../git/diff/DiffPane";
+import type { FolderGit } from "../git/api";
 
 /** Milkdown stays out of the main bundle until a note is shown in Rich. */
 const RichEditor = lazy(() => import("../rich/RichEditor"));
@@ -48,6 +50,10 @@ export interface TabPaneProps
   registerRich(id: string, sync: RichSync): () => void;
   /** The rich editor's pending edit met an outside change. */
   onRichConflict(): void;
+  /** A folder's git status: a diff Tab reads both sides again as it changes. */
+  gitStatus(folder: string): FolderGit | undefined;
+  /** A diff Tab's Open file: the real File in a normal Tab. */
+  onOpenFile(path: string): void;
 }
 
 /**
@@ -74,7 +80,7 @@ export function useSlots() {
 
 /**
  * One Tab's area: its file bar, then its text (the editor's slot, with a
- * Markdown preview beside it or instead of it), canvas or image.
+ * Markdown preview beside it or instead of it), canvas, image or diff.
  */
 export function TabPane(p: TabPaneProps) {
   const { tab, focused, onFocus, slotRef, onImageInfo, reloadSeq } = p;
@@ -180,6 +186,15 @@ export function TabPane(p: TabPaneProps) {
           theme={p.theme}
           onShortcut={p.onShortcut}
         />
+        {tab.kind === "diff" && tab.diff && (
+          <DiffPane
+            key={id}
+            target={tab.diff}
+            fontSize={p.fontSize}
+            onOpenFile={p.onOpenFile}
+            refreshKey={p.gitStatus(tab.diff.folder)}
+          />
+        )}
         {tab.kind === "image" && tab.file && (
           <ImageHost
             key={id}
