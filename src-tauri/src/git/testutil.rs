@@ -59,3 +59,46 @@ pub fn repo_with_remote() -> (TempDir, PathBuf, PathBuf) {
     git(&work, &["push", "-u", "origin", "main"]);
     (tmp, work, bare)
 }
+
+/// An empty bare repository, for use as a remote.
+pub fn bare() -> (TempDir, PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = dunce::canonicalize(tmp.path()).unwrap().join("remote.git");
+    std::fs::create_dir_all(&dir).unwrap();
+    git(&dir, &["init", "--bare", "-b", "main"]);
+    (tmp, dir)
+}
+
+/// A clone of `bare` next to it with a local identity: "the other machine".
+pub fn clone_of(bare: &Path) -> PathBuf {
+    let parent = bare.parent().unwrap();
+    let dir = parent.join("other");
+    git(
+        parent,
+        &["clone", bare.to_str().unwrap(), dir.to_str().unwrap()],
+    );
+    git(&dir, &["config", "user.name", "Other"]);
+    git(&dir, &["config", "user.email", "other@example.com"]);
+    git(&dir, &["config", "commit.gpgsign", "false"]);
+    dir
+}
+
+/// Gives commits made by code under test (which can't take local config in a
+/// folder that isn't a repo yet) an identity, whatever the machine's config.
+pub fn ensure_identity() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // SAFETY: runs once, before the tests that need it spawn git.
+        unsafe {
+            std::env::set_var("GIT_AUTHOR_NAME", "Test");
+            std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
+            std::env::set_var("GIT_COMMITTER_NAME", "Test");
+            std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
+            // Network ops run with GIT_PROTOCOL_FROM_USER=0, which would
+            // otherwise forbid the local-path remotes these tests use.
+            std::env::set_var("GIT_CONFIG_COUNT", "1");
+            std::env::set_var("GIT_CONFIG_KEY_0", "protocol.file.allow");
+            std::env::set_var("GIT_CONFIG_VALUE_0", "always");
+        }
+    });
+}
