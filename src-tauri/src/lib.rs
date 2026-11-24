@@ -269,6 +269,7 @@ pub fn run() {
             library::commands::library_locate_folder,
             library::commands::library_remove_folder,
             terminal::commands::terminal_open,
+            terminal::commands::terminal_agents,
             terminal::commands::terminal_write,
             terminal::commands::terminal_ack,
             terminal::commands::terminal_resize,
