@@ -70,6 +70,11 @@ export function useGitSync(opts: {
   const applied = useRef<boolean | null>(null);
   const enabledRef = useRef(false);
   const availableRef = useRef(false);
+  // True once Rust has answered git_set_enabled(true): its gate is open.
+  const readyRef = useRef(false);
+  const [ready, setReady] = useState(false);
+  const requests = useRef(new Map<string, number>());
+  const runningRef = useRef(new Set<string>());
   const foldersRef = useRef(folders);
   foldersRef.current = folders;
   const doneTimers = useRef(new Map<string, number>());
@@ -96,13 +101,17 @@ export function useGitSync(opts: {
         (a) => {
           if (!mounted.current || applied.current !== true) return;
           availableRef.current = a.available;
+          readyRef.current = true;
           setAvailable(a.available);
+          setReady(true);
         },
         () => {},
       );
     } else if (busy === 0 && applied.current !== false) {
       applied.current = false;
       enabledRef.current = false;
+      readyRef.current = false;
+      setReady(false);
       setEnabled(false);
       setStatuses({});
       setErrors({});
@@ -120,16 +129,25 @@ export function useGitSync(opts: {
   }, [wanted, busy]);
 
   const fetchOne = useCallback((folder: string) => {
-    if (!enabledRef.current || !availableRef.current) return;
+    if (!enabledRef.current || !readyRef.current || !availableRef.current) {
+      return;
+    }
+    const id = (requests.current.get(folder) ?? 0) + 1;
+    requests.current.set(folder, id);
+    const latest = () => requests.current.get(folder) === id;
     gitStatus(folder).then(
       (s) => {
-        if (!mounted.current || !enabledRef.current) return;
+        if (!mounted.current || !enabledRef.current || !latest()) return;
         if (!foldersRef.current.includes(folder)) return;
         setStatuses((m) => ({ ...m, [folder]: s }));
       },
-      () => {
-        if (!mounted.current) return;
-        setStatuses((m) => without(m, folder));
+      (e) => {
+        if (!mounted.current || !latest()) return;
+        // Keep the last good status on a passing failure.
+        const kind = asGitError(e).kind;
+        if (kind === "disabled" || kind === "not_allowed") {
+          setStatuses((m) => without(m, folder));
+        }
       },
     );
   }, []);
@@ -144,9 +162,9 @@ export function useGitSync(opts: {
 
   // Status for every folder once git is known, and when the folders change.
   useEffect(() => {
-    if (!enabled || !available) return;
+    if (!enabled || !ready || !available) return;
     for (const f of folders) fetchOne(f);
-  }, [enabled, available, folders, fetchOne]);
+  }, [enabled, ready, available, folders, fetchOne]);
 
   useEffect(() => {
     const onFocus = () => refresh();
@@ -172,7 +190,8 @@ export function useGitSync(opts: {
 
   const run = useCallback(
     async (folder: string, op: GitOp, work: () => Promise<void>) => {
-      if (!enabledRef.current) return;
+      if (!enabledRef.current || runningRef.current.has(folder)) return;
+      runningRef.current.add(folder);
       setErrors((m) => without(m, folder));
       setDone((m) => without(m, folder));
       const t = doneTimers.current.get(folder);
@@ -194,6 +213,7 @@ export function useGitSync(opts: {
         if (mounted.current)
           setErrors((m) => ({ ...m, [folder]: asGitError(e) }));
       } finally {
+        runningRef.current.delete(folder);
         if (mounted.current) {
           setRunning((m) => without(m, folder));
           fetchOne(folder);
