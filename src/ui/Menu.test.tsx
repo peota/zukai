@@ -30,6 +30,17 @@ describe("Menu accelerators and sections", () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
+  it("ignores an accel pressed with Ctrl, Meta or Alt", () => {
+    const onSelect = vi.fn();
+    const onDismiss = setup([{ label: "Two", accel: "2", onSelect }]);
+    const menu = screen.getByRole("menu");
+    fireEvent.keyDown(menu, { key: "2", ctrlKey: true });
+    fireEvent.keyDown(menu, { key: "2", metaKey: true });
+    fireEvent.keyDown(menu, { key: "2", altKey: true });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
   it("renders a section's text", () => {
     setup([{ label: "A", section: "Start an agent" }]);
     expect(screen.getByText("Start an agent")).toBeInTheDocument();
