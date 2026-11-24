@@ -438,7 +438,7 @@ describe("App", () => {
     await waitFor(() => {
       const tabs = r.getAllByRole("tab");
       expect(tabs).toHaveLength(1);
-      expect(tabs[0]).toHaveTextContent("Untitled");
+      expect(tabs[0]).toHaveTextContent("Scratchpad 1");
     });
     expect(s.closeScratchpad).toHaveBeenCalledWith("a");
   });

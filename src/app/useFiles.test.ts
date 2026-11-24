@@ -517,7 +517,8 @@ describe("useFiles save and save as", () => {
     const { result } = await mount();
     expect(await result.current.loadContent("a")).toBe("alpha");
     await act(() => result.current.run({ type: "save" }));
-    expect(f.filePickSave).toHaveBeenCalledWith("alpha.txt");
+    // The dialog offers the Title, not the text.
+    expect(f.filePickSave).toHaveBeenCalledWith("Scratchpad 1.txt");
     // New Files are UTF-8, no BOM, with the platform Line ending.
     expect(f.fileSaveAs).toHaveBeenCalledWith(target, "alpha", {
       ...FMT,
@@ -1095,8 +1096,9 @@ describe("useFiles close, reopen and restore", () => {
   it("orphanShadowRecoveredAsScratchpad", async () => {
     shadows.lost = "lost text\nmore";
     const { result } = await mount();
-    const tab = result.current.state.tabs.find((t) => t.title === "lost text");
-    expect(tab).toBeDefined();
+    // A numbered Text Scratchpad, after the one already open ("a").
+    const tab = result.current.state.tabs.find((t) => t.id !== "a");
+    expect(tab?.title).toBe("Scratchpad 2");
     expect(tab!.file).toBeUndefined();
     expect(scratch[tab!.id]).toBe("lost text\nmore");
     expect(await result.current.loadContent(tab!.id)).toBe("lost text\nmore");

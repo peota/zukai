@@ -44,7 +44,6 @@ export interface FilesInternals {
   freshId(): string;
   track(p: Promise<void>): Promise<void>;
   saveSessionNow(): Promise<void>;
-  keepTitle(id: string, text: string): void;
   keyOf(path: string): string;
   newFileFormat: FileFormat;
   /** Whether a newly opened File's Tab starts with word wrap on. */

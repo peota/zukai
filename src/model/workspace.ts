@@ -24,6 +24,37 @@ export function newTabState(id: string, kind: Kind = "text"): TabState {
   };
 }
 
+const NUMBERED = /^Scratchpad (\d+)$/;
+
+/**
+ * "Scratchpad N" with the lowest N no open Text Scratchpad (other than
+ * `except`) uses, as Notepad++ numbers its new documents.
+ */
+export function nextScratchpadTitle(
+  s: Pick<WorkspaceState, "tabs">,
+  except?: string,
+): string {
+  const used = new Set<number>();
+  for (const t of s.tabs) {
+    if (t.id === except || t.file || t.kind !== "text") continue;
+    const m = NUMBERED.exec(t.title);
+    if (m) used.add(Number(m[1]));
+  }
+  let n = 1;
+  while (used.has(n)) n++;
+  return `Scratchpad ${n}`;
+}
+
+/** A new Scratchpad's state: a Text one is numbered. */
+function freshTab(
+  s: Pick<WorkspaceState, "tabs">,
+  id: string,
+  kind: Kind,
+): TabState {
+  const tab = newTabState(id, kind);
+  return kind === "text" ? { ...tab, title: nextScratchpadTitle(s) } : tab;
+}
+
 /** Puts `tabs` in, settles Splits and keeps pinned items first. */
 const settle = (s: WorkspaceState): WorkspaceState =>
   pinnedFirst(normalizeSplits(s));
@@ -43,7 +74,7 @@ export function newTab(
   const at = insertAt(s);
   const tabs = [
     ...s.tabs.slice(0, at),
-    newTabState(id, kind),
+    freshTab(s, id, kind),
     ...s.tabs.slice(at),
   ];
   return settle({ ...s, tabs, activeId: id });
@@ -152,7 +183,7 @@ export function ensureOneTab(
   freshId: string,
 ): WorkspaceState {
   if (s.tabs.length > 0) return s;
-  return { ...s, tabs: [newTabState(freshId)], activeId: freshId };
+  return { ...s, tabs: [freshTab(s, freshId, "text")], activeId: freshId };
 }
 
 /** `index` is into `closed`, newest first. */

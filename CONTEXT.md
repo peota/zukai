@@ -154,7 +154,7 @@ Deferred: Find in Files, macros, plugins, bookmarks, document map.
 
 **Title**
 The name shown on a Tab.
-- **Scratchpad:** an automatic title until the user renames it. A Text Scratchpad uses its first non-empty line, cut to about 30 characters ("Untitled" when empty). A Canvas Scratchpad is "Canvas", "Canvas 2" and so on. Once renamed, the title sticks. It's stored in `session.json`, not in the file name.
+- **Scratchpad:** an automatic title until the user renames it. A new Text Scratchpad is "Scratchpad N", with the lowest N no open Text Scratchpad uses (as Notepad++ numbers new documents); typing doesn't change it. A Canvas Scratchpad is "Canvas", "Canvas 2" and so on. Once renamed, the title sticks. It's stored in `session.json`, not in the file name.
 - **File:** its filename. Renaming the Tab renames the file on disk in the same folder. The extension is locked so the Kind can't change. If the new name already exists, an inline error appears and nothing is overwritten. Hovering shows the full path, and two Files with the same name show their parent folder to tell them apart.
 
 ## Tables
