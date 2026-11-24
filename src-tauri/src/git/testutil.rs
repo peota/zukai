@@ -94,11 +94,6 @@ pub fn ensure_identity() {
             std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
             std::env::set_var("GIT_COMMITTER_NAME", "Test");
             std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
-            // Network ops run with GIT_PROTOCOL_FROM_USER=0, which would
-            // otherwise forbid the local-path remotes these tests use.
-            std::env::set_var("GIT_CONFIG_COUNT", "1");
-            std::env::set_var("GIT_CONFIG_KEY_0", "protocol.file.allow");
-            std::env::set_var("GIT_CONFIG_VALUE_0", "always");
         }
     });
 }
