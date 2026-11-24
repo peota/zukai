@@ -210,6 +210,12 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "View",
+    action: "Start agent menu",
+    keys: [["Mod", "J"]],
+    command: "agentMenu",
+  },
+  {
+    group: "View",
     action: "Settings",
     keys: [["Mod", ","]],
     command: "openSettings",

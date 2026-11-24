@@ -22,6 +22,10 @@ export interface TerminalPanelProps {
   onPosition(p: TerminalPosition): void;
   /** The + button: a new terminal (App picks the folder). */
   onNew(): void;
+  /** The chevron beside +: open the New terminal menu below this box. */
+  onNewMenu(anchor: DOMRect): void;
+  /** Whether that menu is open from here, to highlight the chevron. */
+  newMenuOpen?: boolean;
   fontSize: number;
   palette: Palette;
   platform: Platform;
@@ -157,6 +161,8 @@ export function TerminalPanel({
   onSize,
   onPosition,
   onNew,
+  onNewMenu,
+  newMenuOpen = false,
   fontSize,
   palette,
   platform,
@@ -294,7 +300,28 @@ export function TerminalPanel({
             })}
           </div>
           <div className="flex shrink-0 items-center gap-0.5 pt-1">
-            <HeaderButton label="New terminal" icon="plus" onClick={onNew} />
+            {/* + opens a Terminal at once; the narrow ▾ beside it offers
+                the agents too, as the Tab bar's + does. */}
+            <div className="flex shrink-0 items-center">
+              <HeaderButton label="New terminal" icon="plus" onClick={onNew} />
+              <button
+                type="button"
+                aria-label="New terminal menu"
+                title="New terminal or agent"
+                aria-haspopup="menu"
+                aria-expanded={newMenuOpen}
+                data-z-agent-menu="panel"
+                onClick={(e) =>
+                  onNewMenu(e.currentTarget.getBoundingClientRect())
+                }
+                className={
+                  "flex h-6 w-4 items-center justify-center rounded-[5px] hover:bg-row-hover hover:text-text " +
+                  (newMenuOpen ? "bg-row-hover text-text" : "text-faint")
+                }
+              >
+                <Icon name="chevronDown" size={12} strokeWidth={1.8} />
+              </button>
+            </div>
             <HeaderButton
               label="Kill terminal"
               icon="trash"

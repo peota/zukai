@@ -237,3 +237,30 @@ describe("StatusBar", () => {
     expect(onChange).toHaveBeenCalledWith("markdown");
   });
 });
+
+describe("StatusBar Agent button", () => {
+  it("opens the agent menu from its own box", () => {
+    const onOpen = vi.fn();
+    setup({ agent: { open: false, onOpen, hint: "Ctrl+J" } });
+    const button = screen.getByRole("button", { name: "Agent" });
+    expect(button).toHaveAttribute("title", "Agent (Ctrl+J)");
+    expect(button).toHaveAttribute("aria-haspopup", "menu");
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveAttribute("data-z-agent-menu");
+    fireEvent.click(button);
+    expect(onOpen).toHaveBeenCalledWith(
+      expect.objectContaining({ right: expect.any(Number) }),
+    );
+  });
+
+  it("shows it's open, on a Canvas Tab too", () => {
+    setup({
+      kindLabel: "Canvas",
+      agent: { open: true, onOpen: vi.fn(), hint: "Ctrl+J" },
+    });
+    expect(screen.getByRole("button", { name: "Agent" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+});

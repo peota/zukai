@@ -66,6 +66,11 @@ export interface StatusBarProps {
   /** The gear at the far left; its tooltip shows `settingsHint`. */
   onSettings?(): void;
   settingsHint?: string;
+  /**
+   * The Agent button at the far right: it opens the New terminal menu above
+   * it. `open` is whether that menu is open; `hint` its shortcut.
+   */
+  agent?: { open: boolean; onOpen(anchor: DOMRect): void; hint: string };
 }
 
 export const LANGUAGE_LABELS: Record<LanguageId, string> = {
@@ -109,6 +114,7 @@ export function StatusBar({
   settingsHint,
   preview,
   markdownMode,
+  agent,
 }: StatusBarProps) {
   const rich = markdownMode?.mode === "rich";
   const [formatAt, setFormatAt] = useState<DOMRect | null>(null);
@@ -210,6 +216,38 @@ export function StatusBar({
             </>
           )}
         </div>
+      )}
+      {agent && (
+        <>
+          <span
+            aria-hidden="true"
+            className="h-4 w-px shrink-0 bg-hairline-strong"
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            data-z-agent-menu="status"
+            aria-haspopup="menu"
+            aria-expanded={agent.open}
+            title={`Agent (${agent.hint})`}
+            onClick={(e) =>
+              agent.onOpen(e.currentTarget.getBoundingClientRect())
+            }
+            className={
+              "-mr-1 flex shrink-0 items-center gap-1.5 rounded-[5px] px-2.5 py-1 " +
+              (agent.open
+                ? "bg-row-sel text-text"
+                : "hover:bg-row-hover hover:text-text")
+            }
+          >
+            <Icon
+              name="agent"
+              size={14}
+              className={agent.open ? "text-accent" : "text-faint"}
+            />
+            Agent
+          </button>
+        </>
       )}
       {formatAt && kindLabel === undefined && (
         <Menu
