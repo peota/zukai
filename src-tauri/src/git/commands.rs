@@ -91,9 +91,11 @@ where
 {
     run(app, move |app| {
         let st = app.state::<GitState>();
-        let git = st.git()?;
+        // Authorized before git runs at all (even first-time discovery).
+        st.check_enabled()?;
         let dir = root_folder(&app.state::<Grants>(), &folder)?;
         let _busy = st.lock(key(&dir))?;
+        let git = st.git()?;
         f(&git, &dir)
     })
     .await
@@ -185,7 +187,9 @@ pub async fn git_pick_clone_parent(
 /// Clones `url` into `name` inside the folder picked under `token`, then
 /// adds it to the sidebar or makes it the Library. Cancellable through
 /// `git_cancel(op_id)`. The pick is used up once the clone succeeds; after
-/// a failure or cancel the same token works for a retry.
+/// a failure or cancel the same token works for a retry. `open_paths` (the
+/// Files the UI holds) stay granted when the Library changes, as in
+/// `library_choose`.
 #[tauri::command]
 pub async fn git_clone(
     app: AppHandle,
@@ -194,18 +198,19 @@ pub async fn git_clone(
     name: String,
     use_as_library: bool,
     op_id: String,
+    open_paths: Vec<String>,
 ) -> Result<RootState, GitError> {
     run(app, move |app| {
         let st = app.state::<GitState>();
         let reg = st.register_cancel(op_id);
-        let git = st.git()?;
+        // Everything is authorized before git runs at all.
+        st.check_enabled()?;
         check_name(&name)?;
         // Kept until the clone succeeds, so a failed one can be retried.
         let parent = st.pick(&token).ok_or_else(|| {
             GitError::new(GitKind::NotAllowed, "pick the folder to clone into again")
         })?;
         let dest = parent.join(&name);
-        let _busy = st.lock(key(&dest))?;
         let g = app.state::<Grants>();
         // Checked before cloning, so a refused folder is never made. As the
         // Library, `use_root` takes any folder (the destination can't be a
@@ -221,11 +226,14 @@ pub async fn git_clone(
         {
             return Err(GitError::new(GitKind::Refused, r.message()));
         }
+        let _busy = st.lock(key(&dest))?;
+        let git = st.git()?;
         clone_into(&git, &url, &dest, &reg.flag)?;
         st.take_pick(&token);
         let data = data_dir(app).map_err(from_file)?;
         let state = if use_as_library {
-            use_root(&g, &data, &dest, &[])
+            // As `library_choose`: the Files the UI holds stay granted.
+            use_root(&g, &data, &dest, &open_paths)
         } else {
             add_folder(&g, &data, &dest)
         }
