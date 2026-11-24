@@ -615,6 +615,7 @@ describe("session v3 migration and sidebar", () => {
       width: 260,
       expanded: [],
       recent: [],
+      view: "files",
     });
   });
 
@@ -624,6 +625,7 @@ describe("session v3 migration and sidebar", () => {
       width: 300,
       expanded: ["a", "b/c"],
       recent: ["k"],
+      view: "git" as const,
     };
     const w: WorkspaceState = {
       tabs: [newTabState("k", "canvas"), newTabState("a")],
@@ -657,6 +659,21 @@ describe("session v3 migration and sidebar", () => {
       JSON.stringify({ ...toSessionFile(ws), sidebar: { open: "yes" } }),
     );
     expect(r?.sidebar).toEqual(DEFAULT_SIDEBAR);
+  });
+
+  it("sidebarViewMissingOrInvalidIsFiles", () => {
+    const read = (view: unknown) =>
+      parseSessionFile(
+        JSON.stringify({
+          ...toSessionFile(ws),
+          sidebar: { open: true, width: 260, expanded: [], view },
+        }),
+      )?.sidebar.view;
+    expect(read("git")).toBe("git");
+    expect(read("files")).toBe("files");
+    expect(read(undefined)).toBe("files");
+    expect(read("Git")).toBe("files");
+    expect(read(1)).toBe("files");
   });
 
   it("sidebarWidthClampedOnRead", () => {

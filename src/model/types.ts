@@ -61,7 +61,11 @@ export interface SidebarState {
   expanded: string[];
   /** File Tab ids last viewed, newest first: the sidebar's Recent list. */
   recent: string[];
+  /** What shows below the Files | Git switch. */
+  view: SidebarView;
 }
+
+export type SidebarView = "files" | "git";
 
 /** Where a Canvas Tab was looking (Excalidraw's scroll and zoom). */
 export interface Viewport {

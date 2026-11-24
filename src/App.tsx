@@ -137,13 +137,33 @@ export default function App() {
   const termState = terms.state;
   const { open: openTerm, show: showTerm, hide: hideTerm } = terms;
   const { root: libRoot, available: libAvailable, added: libAdded } = w.library;
+  const activeTab = w.state.tabs.find((x) => x.id === activeId);
+  const activeFile = activeTab?.file?.path;
   /** Where a new terminal opens: the active File's folder, else a root. */
   const termFolder = defaultFolder({
-    activeFile: w.state.tabs.find((x) => x.id === activeId)?.file?.path,
+    activeFile,
     root: libRoot,
     rootAvailable: libAvailable,
     added: libAdded,
   });
+  /** The Library root and the added folders that are there. */
+  const libraryFolders = [
+    ...(libRoot !== null && libAvailable ? [libRoot] : []),
+    ...libAdded.filter((a) => a.available).map((a) => a.path),
+  ];
+  /**
+   * The Git view's folder: the one last picked this session, else the
+   * library folder holding the active File (a diff Tab: its folder). Null
+   * leaves the view where it is (first: the Library root).
+   */
+  const gitFolder =
+    w.gitFolder ??
+    activeTab?.diff?.folder ??
+    (activeFile === undefined
+      ? null
+      : (libraryFolders
+          .filter((f) => isUnder(activeFile, f))
+          .sort((a, b) => b.length - a.length)[0] ?? null));
   /** A new terminal in `cwd`, shown and focused; none without a folder. */
   const openTerminal = useCallback(
     (cwd: string | null) => {
@@ -164,10 +184,7 @@ export default function App() {
   const plusTerminal = () => {
     const cwd = plusFolder(
       termState.terms.find((x) => x.id === termState.activeId),
-      [
-        ...(libRoot !== null && libAvailable ? [libRoot] : []),
-        ...libAdded.filter((a) => a.available).map((a) => a.path),
-      ],
+      libraryFolders,
       termFolder,
     );
     if (cwd === null || cwd === termFolder) return openTerminal(cwd);
@@ -668,8 +685,14 @@ export default function App() {
         onRemoveFolder={(path) => void lib.removeFolder(path)}
         onOpenTerminal={openTerminal}
         git={w.git}
+        view={w.sidebarView}
+        onView={w.setSidebarView}
+        gitFolder={gitFolder}
+        onGitFolder={w.setGitFolder}
         unsavedUnder={w.unsavedUnder}
         onSaveAll={() => void w.saveAll()}
+        onOpenDiff={w.openDiff}
+        onOpenFile={(path) => void w.openPaths([path]).then(refocus)}
         onCloneFolder={lib.cloneFolder}
         platform={platform}
       />

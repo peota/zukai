@@ -167,6 +167,7 @@ const OPEN: SidebarState = {
   width: 240,
   expanded: [PROJ],
   recent: [],
+  view: "files",
 };
 
 beforeEach(() => {
@@ -1161,12 +1162,14 @@ describe("sidebar state", () => {
       width: 9999,
       expanded: [PROJ],
       recent: [],
+      view: "files",
     });
     expect(result.current.sidebar).toEqual({
       open: true,
       width: 480,
       expanded: [PROJ],
       recent: [],
+      view: "files",
     });
     act(() => result.current.setSidebarWidth(300));
     await settle();
@@ -1175,6 +1178,7 @@ describe("sidebar state", () => {
       width: 300,
       expanded: [PROJ],
       recent: [],
+      view: "files",
     });
   });
 
@@ -1189,6 +1193,7 @@ describe("sidebar state", () => {
       width: 240,
       expanded: [],
       recent: [],
+      view: "files",
     });
     expect(l.libraryUseDefault).not.toHaveBeenCalled();
     act(() => result.current.toggleSidebar());

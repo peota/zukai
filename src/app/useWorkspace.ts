@@ -27,6 +27,7 @@ import type {
   DiffTarget,
   FileFormat,
   SidebarState,
+  SidebarView,
   SplitOrientation,
   TabState,
   WorkspaceState,
@@ -106,7 +107,8 @@ const sameSidebar = (a: SidebarState, b: SidebarState) =>
   a.expanded.length === b.expanded.length &&
   a.expanded.every((p, i) => p === b.expanded[i]) &&
   a.recent.length === b.recent.length &&
-  a.recent.every((id, i) => id === b.recent[i]);
+  a.recent.every((id, i) => id === b.recent[i]) &&
+  a.view === b.view;
 
 const platform = detectPlatform();
 const keyOf = (p: string) => pathKey(p, platform);
@@ -159,6 +161,14 @@ export interface Workspace extends FilesApi {
   toggleSidebar(): void;
   /** Opens the sidebar if needed and puts the keyboard in its tree. */
   focusSidebar(): void;
+  /** Below the sidebar's Files | Git switch; Files while git sync is off. */
+  sidebarView: SidebarView;
+  setSidebarView(v: SidebarView): void;
+  /** The folder last picked in the Git view this session (not saved). */
+  gitFolder: string | null;
+  setGitFolder(folder: string): void;
+  /** Opens the sidebar on the Git view with `folder` selected. */
+  showGitFor(folder: string): void;
   /** A new Canvas Scratchpad (Mod+Shift+N). */
   newCanvas(): void;
   /** Opens (or focuses) the read-only diff Tab of a changed File. */
@@ -705,6 +715,39 @@ export function useWorkspace(): Workspace {
       (t) => t.file && isUnder(t.file.path, folder) && hasPending(t.id),
     ).length;
 
+  // --- The Files | Git switch ----------------------------------------------
+
+  const gitSyncOn = settings.gitSync;
+  const sidebarView: SidebarView = gitSyncOn ? sidebar.view : "files";
+  // Turning git sync off leaves the Git view for good, not just hides it.
+  useEffect(() => {
+    if (ready && !gitSyncOn && sidebar.view === "git") {
+      patchSidebar({ view: "files" });
+    }
+  }, [ready, gitSyncOn, sidebar.view, patchSidebar]);
+  const setSidebarView = useCallback(
+    (view: SidebarView) => patchSidebar({ view }),
+    [patchSidebar],
+  );
+  const [gitFolder, setGitFolder] = useState<string | null>(null);
+  const { select: selectGitFolder } = git;
+  const showGitFor = useCallback(
+    (folder: string) => {
+      setGitFolder(folder);
+      selectGitFolder(folder);
+      patchSidebar({ open: true, view: "git" });
+    },
+    [patchSidebar, selectGitFolder],
+  );
+  /** Mod+Shift+G: to the Git view (opening the sidebar), or back to Files. */
+  const toggleGitView = useCallback(() => {
+    if (!settingsRef.current.gitSync) return;
+    const { open, view } = sidebarRef.current;
+    patchSidebar(
+      open && view === "git" ? { view: "files" } : { open: true, view: "git" },
+    );
+  }, [patchSidebar]);
+
   const setClosing = useCallback((id: string, on: boolean) => {
     if (on) closing.current.add(id);
     else closing.current.delete(id);
@@ -955,6 +998,8 @@ export function useWorkspace(): Workspace {
           return toggleSidebar();
         case "focusSidebar":
           return focusSidebar();
+        case "toggleGitView":
+          return toggleGitView();
         case "collapseLibrary":
           return collapseLibrary();
         case "newCanvas":
@@ -1003,6 +1048,7 @@ export function useWorkspace(): Workspace {
       requestFormat,
       save,
       saveAs,
+      toggleGitView,
       toggleSidebar,
       zoomEditor,
       setPreview,
@@ -1207,6 +1253,11 @@ export function useWorkspace(): Workspace {
     setSidebarWidth,
     toggleSidebar,
     focusSidebar,
+    sidebarView,
+    setSidebarView,
+    gitFolder,
+    setGitFolder,
+    showGitFor,
     newCanvas,
     openDiff,
     fontSize,

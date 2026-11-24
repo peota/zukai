@@ -29,19 +29,15 @@ export function isTreeKey(e: React.KeyboardEvent): boolean {
  */
 export function GitErrorBox({
   error,
-  indent = 0,
   onDismiss,
 }: {
   error: GitError;
-  /** Left margin in px. */
-  indent?: number;
   onDismiss?(): void;
 }) {
   const copy = errorCopy(error);
   return (
     <div
       role="alert"
-      style={{ marginLeft: indent }}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (isTreeKey(e)) e.stopPropagation();

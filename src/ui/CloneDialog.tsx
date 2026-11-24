@@ -182,11 +182,7 @@ export function CloneDialog({ initial, onClone, onCancel }: CloneDialogProps) {
           Use as my Library
         </label>
         {error && (
-          <GitErrorBox
-            error={error}
-            indent={0}
-            onDismiss={() => setError(null)}
-          />
+          <GitErrorBox error={error} onDismiss={() => setError(null)} />
         )}
         <div className="flex justify-end gap-2">
           <button
