@@ -165,7 +165,7 @@ export function TerminalPanel({
 }: TerminalPanelProps) {
   const bottom = position === "bottom";
   const { terms, activeId, shown } = t.state;
-  const labels = tabLabels(terms.map((x) => x.cwd));
+  const labels = tabLabels(terms);
   const base = useId();
   const tabId = (id: number) => `${base}-tab-${id}`;
   const panelId = `${base}-panel`;

@@ -3,12 +3,27 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 export type TerminalEvent =
   { kind: "data"; data: string } | { kind: "exit"; code: number | null };
 
-/** Opens a shell in `cwd`; its output and exit arrive through `onEvent`. */
+export interface AgentInfo {
+  id: string;
+  name: string;
+  installed: boolean;
+}
+
+/** The known agents and whether each one's command is installed. */
+export function terminalAgents(): Promise<AgentInfo[]> {
+  return invoke<AgentInfo[]>("terminal_agents");
+}
+
+/**
+ * Opens a shell in `cwd`, or the agent with id `agent` started in it; its
+ * output and exit arrive through `onEvent`.
+ */
 export function terminalOpen(
   cwd: string,
   cols: number,
   rows: number,
   onEvent: (e: TerminalEvent) => void,
+  agent?: string,
 ): Promise<number> {
   const channel = new Channel<TerminalEvent>();
   channel.onmessage = onEvent;
@@ -16,6 +31,7 @@ export function terminalOpen(
     cwd,
     cols,
     rows,
+    agent: agent ?? null,
     onEvent: channel,
   });
 }

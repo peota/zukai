@@ -814,6 +814,7 @@ describe("App", () => {
         80,
         24,
         expect.any(Function),
+        undefined,
       );
     });
     expect(tm.terminalOpen).toHaveBeenCalledTimes(1);
@@ -839,6 +840,7 @@ describe("App", () => {
         80,
         24,
         expect.any(Function),
+        undefined,
       ),
     );
     // The folder has since been deleted: opening there fails.
