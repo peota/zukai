@@ -25,16 +25,16 @@ pub fn repo_name(url: &str) -> String {
 pub fn check_name(name: &str) -> Result<(), GitError> {
     let refuse = |why: &str| Err(GitError::new(GitKind::Refused, why));
     if name.is_empty() || name == "." || name == ".." {
-        return refuse("the folder name is empty or relative");
+        return refuse("The folder needs a name other than \".\" or \"..\".");
     }
     if name
         .chars()
         .any(|c| c.is_control() || "/\\<>:\"|?*".contains(c))
     {
-        return refuse("the folder name has a character that is not allowed");
+        return refuse("Folder names can't contain / \\ < > : \" | ? * or control characters.");
     }
     if name.ends_with(' ') || name.ends_with('.') {
-        return refuse("the folder name can't end in a space or dot");
+        return refuse("Folder names can't end in a space or a dot.");
     }
     // Windows reserves device names, with or without an extension.
     let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
@@ -44,7 +44,7 @@ pub fn check_name(name: &str) -> Result<(), GitError> {
     };
     if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL") || numbered("COM") || numbered("LPT")
     {
-        return refuse("the folder name is reserved by Windows");
+        return refuse("That name can't be used for a folder: Windows reserves it.");
     }
     Ok(())
 }
@@ -73,10 +73,7 @@ pub fn clone_into(git: &Git, url: &str, dest: &Path, cancel: &CancelFlag) -> Res
         Err(_) => {}
     }
     if dest.file_name().is_none() {
-        return Err(GitError::new(
-            GitKind::Refused,
-            "the destination has no name",
-        ));
+        return Err(GitError::new(GitKind::Refused, "The folder needs a name."));
     }
     let parent = match dest.parent() {
         Some(p) if !p.as_os_str().is_empty() => p,
@@ -238,7 +235,14 @@ mod tests {
             "", ".", "..", "a/b", "a\\b", "a:b", "a<b", "a>b", "a\"b", "a|b", "a?b", "a*b", "CON",
             "con", "nul.txt", "Com1", "LPT9.md", "a ", "a.", "a\tb",
         ] {
-            assert_eq!(check_name(n).unwrap_err().kind, GitKind::Refused, "{n:?}");
+            let e = check_name(n).unwrap_err();
+            assert_eq!(e.kind, GitKind::Refused, "{n:?}");
+            // The UI shows a refusal's detail as is: a sentence.
+            assert!(
+                e.detail.starts_with(char::is_uppercase) && e.detail.ends_with('.'),
+                "{:?}",
+                e.detail
+            );
         }
         for n in [
             "notes",

@@ -121,6 +121,11 @@ fn run_inner(
     let mut stdout = collect(&out, deadline);
     let mut stderr = collect(&err, deadline);
     if stdout.is_none() || stderr.is_none() {
+        // On Windows the job object still holds the descendants. On unix the
+        // root is reaped: its pid may already name an unrelated process, and
+        // its orphans were re-parented, so nothing is signalled; the bounded
+        // collection below still returns.
+        #[cfg(windows)]
         if let Some(tree) = &tree {
             tree.kill();
         }
@@ -264,12 +269,11 @@ fn allowed_on_macos(path: &Path, xcode: bool) -> bool {
 
 #[cfg(target_os = "macos")]
 fn xcode_tools_installed() -> bool {
-    run_with_timeout(
-        Command::new("xcode-select").arg("-p"),
-        Duration::from_secs(10),
-    )
-    .map(|o| o.status.success())
-    .unwrap_or(false)
+    let mut cmd = Command::new("xcode-select");
+    cmd.arg("-p");
+    run_with_timeout(cmd, Duration::from_secs(10))
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]

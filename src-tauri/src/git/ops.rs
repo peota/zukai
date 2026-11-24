@@ -39,7 +39,10 @@ fn local(git: &Git, dir: &Path, args: &[&str]) -> Result<(), GitError> {
 fn repo_status(git: &Git, dir: &Path) -> Result<RepoStatus, GitError> {
     match folder_git(git, dir)? {
         FolderGit::Repo(s) => Ok(s),
-        _ => Err(GitError::new(GitKind::Refused, "not a git repository")),
+        _ => Err(GitError::new(
+            GitKind::Refused,
+            "This folder isn't a git repository.",
+        )),
     }
 }
 
@@ -54,8 +57,15 @@ fn refuse_in_progress(s: &RepoStatus) -> Result<(), GitError> {
     }
 }
 
+/// How long a push may take: the first one (no upstream yet, as after setup
+/// or a retry of its failed push) can carry the whole library.
+fn push_timeout(s: &RepoStatus) -> Duration {
+    if s.upstream { NET } else { SETUP_PUSH }
+}
+
 /// `push`, adding `-u origin <branch>` when the branch has no upstream.
-fn push_branch(git: &Git, dir: &Path, s: &RepoStatus, timeout: Duration) -> Result<(), GitError> {
+fn push_branch(git: &Git, dir: &Path, s: &RepoStatus) -> Result<(), GitError> {
+    let timeout = push_timeout(s);
     if s.upstream {
         return net(git, dir, &["push"], timeout);
     }
@@ -99,7 +109,7 @@ pub fn commit_push(git: &Git, dir: &Path, message: &str) -> Result<(), GitError>
     }
     // With no commit at all there is nothing to push.
     if s.origin && (committed || !s.head.is_empty()) {
-        push_branch(git, dir, &s, NET).map_err(|mut e| {
+        push_branch(git, dir, &s).map_err(|mut e| {
             e.committed = committed;
             e
         })?;
@@ -111,9 +121,12 @@ pub fn push(git: &Git, dir: &Path) -> Result<(), GitError> {
     let s = repo_status(git, dir)?;
     refuse_in_progress(&s)?;
     if !s.origin {
-        return Err(GitError::new(GitKind::Refused, "no remote is set up"));
+        return Err(GitError::new(
+            GitKind::Refused,
+            "No remote is set up for this folder.",
+        ));
     }
-    push_branch(git, dir, &s, NET)
+    push_branch(git, dir, &s)
 }
 
 pub fn setup(git: &Git, dir: &Path, url: &str) -> Result<(), GitError> {
@@ -127,7 +140,7 @@ fn setup_with(git: &Git, dir: &Path, url: &str, commit_cfg: &[&str]) -> Result<(
     if folder_git(git, dir)? != FolderGit::NotRepo {
         return Err(GitError::new(
             GitKind::Refused,
-            "this folder is already in a git repository",
+            "This folder is already in a git repository.",
         ));
     }
     if git.git_version() >= (2, 28) {
@@ -321,6 +334,7 @@ mod tests {
         let (_b, bare) = testutil::bare();
         let e = setup(&g(), &sub, bare.to_str().unwrap()).unwrap_err();
         assert_eq!(e.kind, GitKind::Refused);
+        assert_eq!(e.detail, "This folder is already in a git repository.");
         assert!(!sub.join(".git").exists());
     }
 
@@ -344,7 +358,14 @@ mod tests {
         // A failing pre-commit hook stands in for "identity unknown".
         let hooks = dir.parent().unwrap().join("hooks");
         std::fs::create_dir_all(&hooks).unwrap();
-        std::fs::write(hooks.join("pre-commit"), "#!/bin/sh\nexit 1\n").unwrap();
+        let hook = hooks.join("pre-commit");
+        std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+        // git ignores a hook it can't execute.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
         let cfg = format!("core.hooksPath={}", hooks.to_str().unwrap());
         let url = bare.to_str().unwrap();
         let e = setup_with(&g(), &dir, url, &["-c", &cfg]).unwrap_err();
@@ -369,7 +390,26 @@ mod tests {
     #[test]
     fn push_without_origin_is_refused() {
         let (_t, dir) = testutil::repo();
-        assert_eq!(push(&g(), &dir).unwrap_err().kind, GitKind::Refused);
+        let e = push(&g(), &dir).unwrap_err();
+        assert_eq!(e.kind, GitKind::Refused);
+        assert_eq!(e.detail, "No remote is set up for this folder.");
+    }
+
+    #[test]
+    fn first_push_gets_the_setup_timeout() {
+        let mut s = RepoStatus {
+            branch: Some("main".into()),
+            head: "abc".into(),
+            dirty: false,
+            upstream: false,
+            origin: true,
+            ahead: 0,
+            behind: 0,
+            state: RepoState::Clean,
+        };
+        assert_eq!(push_timeout(&s), SETUP_PUSH);
+        s.upstream = true;
+        assert_eq!(push_timeout(&s), NET);
     }
 
     #[test]
