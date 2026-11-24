@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronRight } from "lucide-react";
-import type { CSSProperties, KeyboardEvent } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 
 export interface MenuItem {
   label: string;
@@ -14,6 +14,12 @@ export interface MenuItem {
   checked?: boolean;
   /** A thin rule above this item. */
   separated?: boolean;
+  /** A muted heading drawn above this item (after its rule, if any). */
+  section?: string;
+  /** A single key that chooses this item while the menu has focus. */
+  accel?: string;
+  /** Drawn before the label. */
+  lead?: ReactNode;
   onSelect?(): void;
   /** Opens to the side; `submenuEmpty` shows when the list is empty. */
   submenu?: MenuItem[];
@@ -41,6 +47,8 @@ export interface MenuProps {
 /** The menu's panel and its rows, for lists that look like a Menu. */
 export const MENU_PANEL =
   "z-fade-in min-w-48 max-w-[360px] select-none rounded-float bg-surface p-1.5 text-ui text-text shadow-float outline-none";
+const HEADING =
+  "px-2.5 pt-1.5 pb-1 text-ui-xs font-semibold tracking-[0.04em] text-faint";
 export const menuRow = (active: boolean, disabled = false) =>
   "flex cursor-default items-start gap-3 rounded-[6px] px-2.5 py-[6px] " +
   (disabled ? "text-faint" : active ? "bg-row-sel text-text" : "");
@@ -171,7 +179,9 @@ function MenuList({
     } else if (e.key === "Tab") {
       onDone();
     } else {
-      return;
+      const i = items.findIndex((it) => it.accel === e.key);
+      if (i < 0) return;
+      if (usable(i)) choose(i);
     }
     e.preventDefault();
     e.stopPropagation();
@@ -197,16 +207,13 @@ function MenuList({
           : "")
       }
     >
-      {heading && (
-        <div className="px-2.5 pt-1.5 pb-1 text-ui-xs font-semibold tracking-[0.04em] text-faint">
-          {heading}
-        </div>
-      )}
+      {heading && <div className={HEADING}>{heading}</div>}
       {items.map((item, i) => (
         <div key={`${i}:${item.label}`} className="relative">
           {item.separated && (
             <div className="-mx-1.5 my-1.5 h-px bg-hairline" />
           )}
+          {item.section && <div className={HEADING}>{item.section}</div>}
           <div
             role="menuitem"
             aria-disabled={item.disabled || undefined}
@@ -221,6 +228,9 @@ function MenuList({
             onClick={() => choose(i)}
             className={menuRow(i === active, item.disabled)}
           >
+            {item.lead && (
+              <span className="shrink-0 self-center">{item.lead}</span>
+            )}
             <span className="min-w-0 flex-1">
               <span className="block truncate">{item.label}</span>
               {item.detail && (
