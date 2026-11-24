@@ -8,8 +8,6 @@ use serde::Serialize;
 use std::ffi::OsStr;
 use std::path::Path;
 #[cfg(unix)]
-use std::path::PathBuf;
-#[cfg(unix)]
 use std::time::Duration;
 
 /// A known agent CLI.
