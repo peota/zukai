@@ -212,12 +212,16 @@ describe("TabBar", () => {
   });
 
   it("the ▾ beside + offers a new text tab or a new canvas", () => {
-    const p = setup(undefined, { newHints: { text: "Ctrl+N", canvas: "Ctrl+Shift+N" } });
+    const p = setup(undefined, {
+      newHints: { text: "Ctrl+N", canvas: "Ctrl+Shift+N" },
+    });
     const more = screen.getByRole("button", { name: "New Tab options" });
     expect(more).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(more);
     expect(more).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("menuitem", { name: /New text/ })).toHaveTextContent("Ctrl+N");
+    expect(
+      screen.getByRole("menuitem", { name: /New text/ }),
+    ).toHaveTextContent("Ctrl+N");
     fireEvent.click(screen.getByRole("menuitem", { name: /New canvas/ }));
     expect(p.onNewCanvas).toHaveBeenCalled();
     expect(p.onNew).not.toHaveBeenCalled();
