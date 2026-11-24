@@ -185,4 +185,150 @@ describe("useGitSync", () => {
     expect(calls("git_set_enabled")[1][1]).toEqual({ enabled: false });
     expect(result.current.status("/a")).toBeUndefined();
   });
+
+  it("reads status again after toggling off and on", async () => {
+    const { result, rerender } = renderHook(
+      (p: { enabled: boolean }) => useGitSync({ ...p, folders: ["/a", "/b"] }),
+      { initialProps: { enabled: true } },
+    );
+    await waitFor(() => expect(result.current.status("/b")).toEqual(repo));
+    rerender({ enabled: false });
+    await waitFor(() => expect(result.current.enabled).toBe(false));
+    // Rust's gate stays shut until its answer to the second enable.
+    let open = false;
+    let release: () => void = () => {};
+    invoke.mockImplementation((cmd: string) => {
+      if (cmd === "git_set_enabled") {
+        return new Promise((r) => {
+          release = () => {
+            open = true;
+            r({ available: true });
+          };
+        });
+      }
+      if (cmd === "git_status") {
+        return open
+          ? Promise.resolve(repo)
+          : Promise.reject({ kind: "disabled", detail: "" });
+      }
+      return Promise.resolve(null);
+    });
+    const before = calls("git_status").length;
+    rerender({ enabled: true });
+    await act(async () => {});
+    expect(calls("git_status").length).toBe(before);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => {
+      expect(result.current.status("/a")).toEqual(repo);
+      expect(result.current.status("/b")).toEqual(repo);
+    });
+    expect(calls("git_status").length).toBe(before + 2);
+  });
+
+  it("applies only the latest status response per folder", async () => {
+    const { result } = renderHook(() =>
+      useGitSync({ enabled: true, folders: ["/a"] }),
+    );
+    await waitFor(() => expect(result.current.status("/a")).toEqual(repo));
+    const resolvers: ((v: unknown) => void)[] = [];
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "git_status"
+        ? new Promise((r) => resolvers.push(r))
+        : Promise.resolve(null),
+    );
+    act(() => {
+      result.current.refresh("/a");
+      result.current.refresh("/a");
+    });
+    await act(async () => {
+      resolvers[1]({ ...repo, head: "second" });
+    });
+    await act(async () => {
+      resolvers[0]({ ...repo, head: "first" });
+    });
+    expect((result.current.status("/a") as { head: string }).head).toBe(
+      "second",
+    );
+  });
+
+  it("keeps the last status on a transient failure", async () => {
+    const { result } = renderHook(() =>
+      useGitSync({ enabled: true, folders: ["/a"] }),
+    );
+    await waitFor(() => expect(result.current.status("/a")).toEqual(repo));
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "git_status"
+        ? Promise.reject({ kind: "timeout", detail: "" })
+        : Promise.resolve(null),
+    );
+    await act(async () => {
+      result.current.refresh("/a");
+    });
+    expect(result.current.status("/a")).toEqual(repo);
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "git_status"
+        ? Promise.reject({ kind: "not_allowed", detail: "" })
+        : Promise.resolve(null),
+    );
+    await act(async () => {
+      result.current.refresh("/a");
+    });
+    await waitFor(() => expect(result.current.status("/a")).toBeUndefined());
+  });
+
+  it("ignores an op on a folder that is already running", async () => {
+    let release: () => void = () => {};
+    commitResult = () =>
+      new Promise((r) => {
+        release = () => r(null);
+      });
+    const { result } = renderHook(() =>
+      useGitSync({ enabled: true, folders: ["/a"] }),
+    );
+    await waitFor(() => expect(result.current.status("/a")).toEqual(repo));
+    let p: Promise<void> = Promise.resolve();
+    act(() => {
+      p = result.current.commit("/a", "m");
+    });
+    await act(async () => {
+      await result.current.push("/a");
+    });
+    expect(calls("git_push")).toHaveLength(0);
+    expect(result.current.running("/a")).toBe("commit");
+    await act(async () => {
+      release();
+      await p;
+    });
+    expect(result.current.running("/a")).toBeNull();
+  });
+
+  it("refreshes on a library change, debounced by a second", async () => {
+    let changed: (e: unknown) => void = () => {};
+    const ev = await import("@tauri-apps/api/event");
+    vi.mocked(ev.listen).mockImplementation(((
+      _n: string,
+      cb: (e: unknown) => void,
+    ) => {
+      changed = cb;
+      return Promise.resolve(() => {});
+    }) as never);
+    const { result } = renderHook(() =>
+      useGitSync({ enabled: true, folders: ["/a"] }),
+    );
+    await waitFor(() => expect(result.current.status("/a")).toEqual(repo));
+    vi.useFakeTimers();
+    try {
+      const before = calls("git_status").length;
+      changed({ payload: { dirs: [] } });
+      changed({ payload: { dirs: [] } });
+      await vi.advanceTimersByTimeAsync(900);
+      expect(calls("git_status").length).toBe(before);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(calls("git_status").length).toBe(before + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
