@@ -61,7 +61,7 @@ fn other(msg: &str) -> FileError {
     FileError::Io(std::io::Error::other(msg.to_owned()))
 }
 
-fn data_dir(app: &AppHandle) -> Result<PathBuf, FileError> {
+pub(crate) fn data_dir(app: &AppHandle) -> Result<PathBuf, FileError> {
     crate::storage::data_dir(app).map_err(|e| other(&e.to_string()))
 }
 
@@ -899,7 +899,7 @@ fn available_added(g: &Grants) -> Vec<PathBuf> {
 
 /// Watches and indexes exactly the available added folders: new ones
 /// start, removed ones stop, unchanged ones keep running. Blocking.
-fn sync_added_watchers(app: &AppHandle, g: &Grants) {
+pub(crate) fn sync_added_watchers(app: &AppHandle, g: &Grants) {
     app.state::<AddedWatchers>()
         .sync_with(|| available_added(g), &library_sink(app));
 }
