@@ -83,12 +83,30 @@ pub fn parse_porcelain(out: &str) -> Parsed {
     p
 }
 
+/// Runs the porcelain status. Untracked files always count, whatever the
+/// user's `status.showUntrackedFiles`; optional locks are skipped so a read
+/// never contends with a running write.
+pub(super) fn read_porcelain(git: &Git, dir: &Path) -> Result<Parsed, GitError> {
+    let st = git.run(
+        dir,
+        &[
+            "--no-optional-locks",
+            "status",
+            "--porcelain=v2",
+            "--branch",
+            "--untracked-files=normal",
+        ],
+        TIMEOUT,
+    )?;
+    Ok(parse_porcelain(&st.stdout))
+}
+
 /// What git makes of `dir`: not a repo, a folder inside one, or a repo root.
 pub fn folder_git(git: &Git, dir: &Path) -> Result<FolderGit, GitError> {
     let top = match git.run(dir, &["rev-parse", "--show-toplevel"], TIMEOUT) {
         Ok(d) => d.stdout.trim().to_string(),
-        Err(e) if e.kind == GitKind::Timeout => return Err(e),
-        Err(_) => return Ok(FolderGit::NotRepo),
+        Err(e) if e.detail.contains("not a git repository") => return Ok(FolderGit::NotRepo),
+        Err(e) => return Err(e),
     };
     let here =
         dunce::canonicalize(dir).map_err(|e| GitError::new(GitKind::Failed, e.to_string()))?;
@@ -99,8 +117,7 @@ pub fn folder_git(git: &Git, dir: &Path) -> Result<FolderGit, GitError> {
         });
     }
 
-    let st = git.run(dir, &["status", "--porcelain=v2", "--branch"], TIMEOUT)?;
-    let p = parse_porcelain(&st.stdout);
+    let p = read_porcelain(git, dir)?;
     let origin = git
         .run(dir, &["remote"], TIMEOUT)?
         .stdout
@@ -214,6 +231,18 @@ mod tests {
         assert!(s.origin && s.upstream && s.dirty);
         assert_eq!(s.head.len(), 7);
         assert_eq!((s.ahead, s.behind), (0, 0));
+    }
+
+    #[test]
+    fn untracked_is_dirty_despite_user_config() {
+        let g = find_git().expect("git");
+        let (_t, dir) = testutil::repo();
+        testutil::git(&dir, &["config", "status.showUntrackedFiles", "no"]);
+        std::fs::write(dir.join("new.md"), "x").unwrap();
+        let FolderGit::Repo(s) = folder_git(&g, &dir).unwrap() else {
+            panic!("not a repo");
+        };
+        assert!(s.dirty);
     }
 
     #[test]
