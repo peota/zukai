@@ -341,6 +341,8 @@ export function TabBar({
         const joined = item.members.length === 2;
         const active = item.members.some((m) => m.active);
         const label = item.members.map((m) => m.title).join(" | ");
+        // A Split's pin is on its members that aren't diff Tabs.
+        const pinnedMember = item.members.find((m) => m.pinned);
         const closeItem = () =>
           joined ? onCloseSplit(tab.id) : onClose(tab.id);
         const shift = shiftOf(index);
@@ -445,7 +447,7 @@ export function TabBar({
                 </span>
               </>
             )}
-            {tab.pinned ? (
+            {pinnedMember ? (
               <>
                 {unsaved && <UnsavedDot />}
                 <button
@@ -455,7 +457,7 @@ export function TabBar({
                   tabIndex={-1}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onUnpin(tab.id);
+                    onUnpin(pinnedMember.id);
                   }}
                   onDoubleClick={(e) => e.stopPropagation()}
                   className="flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-sel hover:text-text"

@@ -68,14 +68,22 @@ export function normalizeSplits(s: WorkspaceState): WorkspaceState {
       return sp;
     });
   const byId = new Map(s.tabs.map((t) => [t.id, t]));
-  const pinOfB = new Map(
-    splits.map((sp) => [sp.b, !!byId.get(sp.a)?.pinned] as const),
-  );
+  /** Each member's pin: the Split's, never a diff Tab's. */
+  const pinOf = new Map<string, boolean>();
+  for (const sp of splits) {
+    const a = byId.get(sp.a)!;
+    const b = byId.get(sp.b)!;
+    // A diff Tab is never pinned: the other member holds the Split's pin.
+    const pin = a.kind === "diff" ? !!b.pinned : !!a.pinned;
+    pinOf.set(sp.a, pin);
+    pinOf.set(sp.b, pin);
+  }
   const tabs = itemsOf(s.tabs, splits)
     .flat()
     .map((id) => {
       const t = byId.get(id)!;
-      const pin = pinOfB.get(id);
+      const want = pinOf.get(id);
+      const pin = t.kind === "diff" ? false : want;
       return pin === undefined || !!t.pinned === pin
         ? t
         : { ...t, pinned: pin };
@@ -91,18 +99,20 @@ export function normalizeSplits(s: WorkspaceState): WorkspaceState {
 export function pinnedFirst(s: WorkspaceState): WorkspaceState {
   const byId = new Map(s.tabs.map((t) => [t.id, t]));
   const items = itemsOf(s.tabs, s.splits);
-  const pinned = items.filter((it) => byId.get(it[0])?.pinned);
-  if (
-    pinned.length === 0 ||
-    items.slice(0, pinned.length).every((it) => byId.get(it[0])?.pinned)
-  ) {
+  // A Split's pin is on its members that aren't diff Tabs.
+  const isPinned = (it: string[]) => it.some((id) => byId.get(id)?.pinned);
+  const pinned = items.filter(isPinned);
+  if (pinned.length === 0 || items.slice(0, pinned.length).every(isPinned)) {
     return s;
   }
   const order = [...pinned, ...items.filter((it) => !pinned.includes(it))];
   return { ...s, tabs: order.flat().map((id) => byId.get(id)!) };
 }
 
-/** Joins Tab `b` to Tab `a`, next to it; both are pinned if either was. */
+/**
+ * Joins Tab `b` to Tab `a`, next to it; both are pinned if either was (a
+ * diff Tab never is).
+ */
 export function makeSplit(
   s: WorkspaceState,
   a: string,
@@ -116,11 +126,14 @@ export function makeSplit(
   const pinned = !!tabA.pinned || !!tabB.pinned;
   const rest = s.tabs.filter((t) => t.id !== b);
   const at = rest.indexOf(tabA) + 1;
+  const pinOf = (t: TabState) => pinned && t.kind !== "diff";
   const tabs = [
     ...rest.slice(0, at),
-    { ...tabB, pinned },
+    { ...tabB, pinned: pinOf(tabB) },
     ...rest.slice(at),
-  ].map((t) => (t.id === a && !!t.pinned !== pinned ? { ...t, pinned } : t));
+  ].map((t) =>
+    t.id === a && !!t.pinned !== pinOf(t) ? { ...t, pinned: pinOf(t) } : t,
+  );
   const split: Split = { a, b, orientation, ratio: 0.5, focus };
   return pinnedFirst(
     normalizeSplits({

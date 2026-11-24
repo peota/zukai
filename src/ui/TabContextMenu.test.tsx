@@ -240,4 +240,11 @@ describe("TabContextMenu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Close split" }));
     expect(p.onCloseSplit).toHaveBeenCalledWith("a");
   });
+
+  it("has no Pin item for a Tab that can't be pinned (a diff Tab)", () => {
+    setup("d", [], 2, false, true, { pinnable: false });
+    expect(screen.queryByRole("menuitem", { name: /Pin tab/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /Unpin tab/ })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Close tab" })).toBeTruthy();
+  });
 });

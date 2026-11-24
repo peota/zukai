@@ -25,7 +25,7 @@ import type {
   SplitOrientation,
   TabState,
 } from "./model/types";
-import { splitOf } from "./model/split";
+import { otherHalf, splitOf } from "./model/split";
 import { isUnder, revealLabel } from "./ui/libraryEntries";
 import { EditorHost } from "./editor/EditorHost";
 import { TabPane, useSlots } from "./app/TabPane";
@@ -591,6 +591,19 @@ export default function App() {
     />
   );
 
+  /**
+   * The Tab a pin on `id` acts on: `id` itself, or for a diff Tab (never
+   * pinned) the other half of its Split; none for a diff Tab alone.
+   */
+  const pinTargetOf = (id: string | null): TabState | undefined => {
+    const tab = w.state.tabs.find((t) => t.id === id);
+    if (!tab || tab.kind !== "diff") return tab;
+    const sp = splitOf(w.state, tab.id);
+    const other =
+      sp && w.state.tabs.find((t) => t.id === otherHalf(sp, tab.id));
+    return other?.kind === "diff" ? undefined : other;
+  };
+
   /** Closed Recent entries whose File was deleted (hidden from Recent). */
   const goneClosed = useGoneClosed(w.sidebar.recent, w.state.closed);
 
@@ -947,12 +960,11 @@ export default function App() {
           tabCount={w.state.tabs.length}
           closed={w.state.closed}
           reopenHint={REOPEN_HINT}
-          pinned={
-            w.state.tabs.find((t) => t.id === tabMenu.tabId)?.pinned ?? false
-          }
+          pinned={pinTargetOf(tabMenu.tabId)?.pinned ?? false}
+          pinnable={tabMenu.tabId === null || !!pinTargetOf(tabMenu.tabId)}
           onTogglePin={(id) => {
-            const tab = w.state.tabs.find((t) => t.id === id);
-            if (tab) w.setPinned(id, !tab.pinned);
+            const tab = pinTargetOf(id);
+            if (tab) w.setPinned(tab.id, !tab.pinned);
           }}
           onClose={(id) => void w.closeTab(id)}
           onCloseOthers={(id) =>

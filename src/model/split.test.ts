@@ -15,6 +15,7 @@ import {
   moveTab,
   newTab,
   newTabState,
+  openDiffTab,
   openFileTab,
   setPinned,
 } from "./workspace";
@@ -149,5 +150,57 @@ describe("Split rules", () => {
     expect(ids(normalizeSplits(apart))).toEqual(["a", "b", "x"]);
     const ok = pair(["a", "b"]);
     expect(normalizeSplits(ok)).toBe(ok);
+  });
+});
+
+describe("a diff Tab in a Split is never pinned", () => {
+  const target = { folder: "C:/L", path: "a.md", status: "modified" as const };
+  /** Text Tabs a and x, and diff Tab d. */
+  const withDiff = (): WorkspaceState =>
+    openDiffTab(ws(["a", "x"]), "d", target);
+  const pinOf = (s: WorkspaceState, id: string) =>
+    !!s.tabs.find((t) => t.id === id)?.pinned;
+
+  it("splitting a diff Tab with a pinned Tab pins only the other", () => {
+    const pinned = setPinned(withDiff(), "a", true);
+    for (const s of [
+      makeSplit(pinned, "a", "d"),
+      makeSplit(pinned, "d", "a"),
+    ]) {
+      expect(splitOf(s, "d")).toBeDefined();
+      expect(pinOf(s, "d")).toBe(false);
+      expect(pinOf(s, "a")).toBe(true);
+    }
+  });
+
+  it("pinning the text half of a Split leaves the diff Tab unpinned", () => {
+    for (const [a, b] of [
+      ["a", "d"],
+      ["d", "a"],
+    ]) {
+      let s = makeSplit(withDiff(), a, b);
+      s = setPinned(s, "a", true);
+      expect(pinOf(s, "a")).toBe(true);
+      expect(pinOf(s, "d")).toBe(false);
+      // The pinned Split comes first, whole.
+      expect(ids(s).slice(0, 2).sort()).toEqual(["a", "d"]);
+      s = setPinned(s, "a", false);
+      expect(pinOf(s, "a")).toBe(false);
+    }
+  });
+
+  it("normalizeSplits with a pinned a and a diff b leaves b unpinned", () => {
+    const base = withDiff();
+    const s = normalizeSplits({
+      ...base,
+      tabs: base.tabs.map((t) => (t.id === "a" ? { ...t, pinned: true } : t)),
+      splits: [{ a: "a", b: "d", orientation: "row", ratio: 0.5, focus: "a" }],
+    });
+    expect(pinOf(s, "a")).toBe(true);
+    expect(pinOf(s, "d")).toBe(false);
+    // With the diff Tab as a, the other member keeps its own pin.
+    const swapped = swapSides(s, "a");
+    expect(pinOf(swapped, "a")).toBe(true);
+    expect(pinOf(swapped, "d")).toBe(false);
   });
 });
