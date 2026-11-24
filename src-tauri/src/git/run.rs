@@ -3,6 +3,7 @@
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use super::error::{GitError, GitKind, classify, first_line};
@@ -43,15 +44,18 @@ pub(crate) fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<Ou
     let mut child = cmd.spawn().map_err(RunFail::Spawn)?;
     let tree = crate::terminal::tree::guard(child.id()).ok();
 
-    // Drain both pipes on threads so a full pipe can't stall the child.
-    fn drain<R: Read + Send + 'static>(r: Option<R>) -> std::thread::JoinHandle<Vec<u8>> {
+    // Drain both pipes on threads so a full pipe can't stall the child. Each
+    // sends its buffer when the pipe closes, so waiting on it can be bounded.
+    fn drain<R: Read + Send + 'static>(r: Option<R>) -> mpsc::Receiver<Vec<u8>> {
+        let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let mut buf = Vec::new();
             if let Some(mut r) = r {
                 let _ = r.read_to_end(&mut buf);
             }
-            buf
-        })
+            let _ = tx.send(buf);
+        });
+        rx
     }
     let out = drain(child.stdout.take());
     let err = drain(child.stderr.take());
@@ -70,13 +74,36 @@ pub(crate) fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<Ou
     };
     let Some(status) = status else {
         kill(&mut child, tree.as_ref());
+        // The pipes close once the tree is dead; give the readers a moment.
+        let grace = Instant::now() + Duration::from_millis(500);
+        let _ = collect(&out, grace);
+        let _ = collect(&err, grace);
         return Err(RunFail::Timeout);
     };
+    // The child is done, but a descendant (a daemonized gc, a credential
+    // helper) may still hold the pipes open. Wait only until the deadline,
+    // then end the tree so it can't hold this call open.
+    let mut stdout = collect(&out, deadline);
+    let mut stderr = collect(&err, deadline);
+    if stdout.is_none() || stderr.is_none() {
+        if let Some(tree) = &tree {
+            tree.kill();
+        }
+        let grace = Instant::now() + Duration::from_millis(500);
+        stdout = stdout.or_else(|| collect(&out, grace));
+        stderr = stderr.or_else(|| collect(&err, grace));
+    }
     Ok(Output {
         status,
-        stdout: out.join().unwrap_or_default(),
-        stderr: err.join().unwrap_or_default(),
+        stdout: stdout.unwrap_or_default(),
+        stderr: stderr.unwrap_or_default(),
     })
+}
+
+/// The reader's buffer if it finishes by `deadline`.
+fn collect(rx: &mpsc::Receiver<Vec<u8>>, deadline: Instant) -> Option<Vec<u8>> {
+    rx.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .ok()
 }
 
 fn kill(child: &mut std::process::Child, tree: Option<&crate::terminal::tree::TreeGuard>) {
@@ -149,6 +176,7 @@ pub fn find_git() -> Option<Git> {
     }
     #[cfg(unix)]
     {
+        let xcode = cfg!(not(target_os = "macos")) || xcode_tools_installed();
         let mut candidates: Vec<PathBuf> = Vec::new();
         if let Ok(shell) = std::env::var("SHELL") {
             let mut cmd = Command::new(shell);
@@ -164,11 +192,18 @@ pub fn find_git() -> Option<Git> {
         }
         candidates.push("/opt/homebrew/bin/git".into());
         candidates.push("/usr/local/bin/git".into());
-        if cfg!(not(target_os = "macos")) || xcode_tools_installed() {
-            candidates.push("/usr/bin/git".into());
-        }
-        candidates.into_iter().find_map(Git::works)
+        candidates.push("/usr/bin/git".into());
+        candidates
+            .into_iter()
+            .filter(|p| allowed_on_macos(p, xcode))
+            .find_map(Git::works)
     }
+}
+
+/// Without the Command Line Tools `/usr/bin/git` is a stub that pops an
+/// install dialog when run, so it is skipped, whichever way it was found.
+fn allowed_on_macos(path: &Path, xcode: bool) -> bool {
+    xcode || path != Path::new("/usr/bin/git")
 }
 
 #[cfg(target_os = "macos")]
@@ -192,24 +227,68 @@ mod tests {
     use std::process::Command;
     use std::time::{Duration, Instant};
 
-    #[test]
-    fn runner_times_out_and_kills() {
+    /// A command that sleeps ~2s, then creates `marker`.
+    fn marker_after_sleep(marker: &Path) -> Command {
         #[cfg(windows)]
         let cmd = {
+            use std::os::windows::process::CommandExt;
             let mut c = Command::new("cmd");
-            c.args(["/C", "ping", "-n", "30", "127.0.0.1"]);
+            c.raw_arg(format!(
+                r#"/C "ping -n 3 127.0.0.1 >NUL & echo x > "{}"""#,
+                marker.display()
+            ));
             c
         };
         #[cfg(unix)]
         let cmd = {
-            let mut c = Command::new("sleep");
-            c.arg("30");
+            let mut c = Command::new("sh");
+            c.args(["-c", "sleep 2; touch \"$0\""]).arg(marker);
+            c
+        };
+        cmd
+    }
+
+    #[test]
+    fn runner_times_out_and_kills() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("survived");
+        let start = Instant::now();
+        let r = run_with_timeout(marker_after_sleep(&marker), Duration::from_millis(300));
+        assert!(matches!(r, Err(RunFail::Timeout)));
+        assert!(start.elapsed() < Duration::from_secs(5));
+        // A surviving process would create the marker once its sleep ends.
+        std::thread::sleep(Duration::from_millis(3500));
+        assert!(!marker.exists(), "process outlived the timeout");
+    }
+
+    #[test]
+    fn lingering_descendant_cannot_hold_the_call_open() {
+        // The shell exits at once; its background child keeps the pipes open.
+        #[cfg(windows)]
+        let cmd = {
+            use std::os::windows::process::CommandExt;
+            let mut c = Command::new("cmd");
+            c.raw_arg("/C start /b ping -n 30 127.0.0.1");
+            c
+        };
+        #[cfg(unix)]
+        let cmd = {
+            let mut c = Command::new("sh");
+            c.args(["-c", "sleep 30 &"]);
             c
         };
         let start = Instant::now();
-        let r = run_with_timeout(cmd, Duration::from_millis(300));
-        assert!(matches!(r, Err(RunFail::Timeout)));
-        assert!(start.elapsed() < Duration::from_secs(5));
+        let r = run_with_timeout(cmd, Duration::from_secs(1));
+        assert!(start.elapsed() < Duration::from_secs(5), "hung");
+        assert!(r.is_ok_and(|o| o.status.success()));
+    }
+
+    #[test]
+    fn xcode_stub_is_skipped_only_without_tools() {
+        let stub = Path::new("/usr/bin/git");
+        assert!(!allowed_on_macos(stub, false));
+        assert!(allowed_on_macos(stub, true));
+        assert!(allowed_on_macos(Path::new("/opt/homebrew/bin/git"), false));
     }
 
     #[test]
