@@ -66,14 +66,17 @@ describe("GitRow enablement", () => {
     expect(dis(s.push())).toBe(true);
   });
 
-  it("rebase state disables all with the terminal tooltip on Pull", () => {
-    const s = setup({ state: "rebasing" });
-    expect(dis(s.pull())).toBe(true);
-    expect(dis(s.commit())).toBe(true);
-    expect(dis(s.push())).toBe(true);
-    expect(s.pull().title).toBe("Finish the rebase in a terminal first");
-    expect(screen.getByText(/rebasing/)).toBeTruthy();
-  });
+  it.each(["rebasing", "merging"] as const)(
+    "%s disables all three with the terminal tooltip",
+    (state) => {
+      const s = setup({ state, dirty: true, ahead: 1, upstream: false });
+      for (const b of [s.pull(), s.commit(), s.push()]) {
+        expect(dis(b)).toBe(true);
+        expect(b.title).toBe("Finish the rebase in a terminal first");
+      }
+      expect(screen.getByText(new RegExp(state))).toBeTruthy();
+    },
+  );
 
   it("no origin: pull and push disabled with the remote tooltip, commit enabled", () => {
     const s = setup({ origin: false, upstream: false, dirty: true });
@@ -87,6 +90,9 @@ describe("GitRow enablement", () => {
   it("origin without upstream: pull disabled, commit and push enabled", () => {
     const s = setup({ upstream: false });
     expect(dis(s.pull())).toBe(true);
+    expect(s.pull().title).toBe(
+      "Push first to connect this folder to its remote.",
+    );
     expect(dis(s.push())).toBe(false);
     fireEvent.click(s.push());
     expect(s.onPush).toHaveBeenCalledTimes(1);
@@ -135,8 +141,9 @@ describe("GitRow display", () => {
   });
 
   it("detached_shows_head", () => {
-    setup({ branch: null });
-    expect(screen.getByText("head")).toBeTruthy();
+    setup({ branch: null, head: "abc1234" });
+    expect(screen.getByText("abc1234")).toBeTruthy();
+    expect(screen.queryByText("head")).toBeNull();
   });
 
   it("shows a spinner while running and a check when just done", () => {
@@ -286,6 +293,32 @@ describe("GitRow error", () => {
     fireEvent.click(input);
     fireEvent.keyDown(input, { key: "Enter" });
     expect(outer).not.toHaveBeenCalled();
+  });
+
+  it("lets app shortcuts through but keeps tree keys from the tree", () => {
+    const tree = vi.fn();
+    const doc = vi.fn();
+    document.addEventListener("keydown", doc);
+    try {
+      render(
+        <div onKeyDown={tree}>
+          <GitRow {...props({ dirty: true }, {})} />
+        </div>,
+      );
+      const pull = screen.getByRole("button", { name: "Pull" });
+      pull.focus();
+      fireEvent.keyDown(pull, { key: "s", ctrlKey: true });
+      expect(doc).toHaveBeenCalledTimes(1);
+      expect(doc.mock.calls[0][0].key).toBe("s");
+      for (const key of ["ArrowDown", "Home", "End", "F2", "Delete"]) {
+        fireEvent.keyDown(pull, { key });
+      }
+      fireEvent.keyDown(pull, { key: "a", ctrlKey: true });
+      expect(doc).toHaveBeenCalledTimes(1);
+      expect(tree).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener("keydown", doc);
+    }
   });
 
   it("escape in the card does not leak", () => {

@@ -24,6 +24,28 @@ export interface GitRowProps {
 
 const NO_REMOTE = "No remote set up for this folder";
 const REBASE_FIRST = "Finish the rebase in a terminal first";
+const PUSH_FIRST = "Push first to connect this folder to its remote.";
+
+/** Keys the Library tree acts on; anything else (app shortcuts) bubbles. */
+const TREE_KEYS = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+  "Enter",
+  "F2",
+  "Delete",
+  "Escape",
+]);
+
+function isTreeKey(e: React.KeyboardEvent): boolean {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "a") {
+    return true;
+  }
+  return TREE_KEYS.has(e.key);
+}
 
 const BTN =
   "relative flex size-5 shrink-0 items-center justify-center rounded-[4px] text-faint hover:bg-row-hover hover:text-muted aria-disabled:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:text-faint disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint";
@@ -210,17 +232,29 @@ export function GitRow({
   const nothingToPush = !status.dirty && status.upstream && status.ahead === 0;
   const nothingToCommit = !status.dirty && status.ahead === 0;
 
-  const pullTitle =
-    status.state !== "none" ? REBASE_FIRST : noOrigin ? NO_REMOTE : "Pull";
-  const pushTitle = noOrigin
-    ? NO_REMOTE
-    : nothingToPush
-      ? "Nothing to push"
-      : "Push";
-  const commitTitle = nothingToCommit ? "Nothing to commit" : "Commit";
+  const inProgress = status.state !== "none";
+  const pullTitle = inProgress
+    ? REBASE_FIRST
+    : noOrigin
+      ? NO_REMOTE
+      : !status.upstream
+        ? PUSH_FIRST
+        : "Pull";
+  const pushTitle = inProgress
+    ? REBASE_FIRST
+    : noOrigin
+      ? NO_REMOTE
+      : nothingToPush
+        ? "Nothing to push"
+        : "Push";
+  const commitTitle = inProgress
+    ? REBASE_FIRST
+    : nothingToCommit
+      ? "Nothing to commit"
+      : "Commit";
 
   const branch =
-    (status.branch ?? "head") +
+    (status.branch ?? status.head) +
     (status.state === "rebasing"
       ? " · rebasing"
       : status.state === "merging"
@@ -240,7 +274,10 @@ export function GitRow({
         aria-label={`${name} git`}
         style={{ paddingLeft: indent }}
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          // Keep the tree's keys from the tree; app shortcuts still work.
+          if (isTreeKey(e)) e.stopPropagation();
+        }}
         className="flex h-[22px] items-center gap-1 pr-1.5 whitespace-nowrap"
       >
         <Icon name="gitBranch" size={12} className="text-faint opacity-75" />
@@ -330,7 +367,9 @@ export function GitErrorBox({
       role="alert"
       style={{ marginLeft: indent }}
       onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (isTreeKey(e)) e.stopPropagation();
+      }}
       className="z-fade-in my-1 mr-1 flex items-start gap-1.5 rounded-float bg-surface px-2.5 py-1.5 text-ui-sm whitespace-normal text-danger shadow-float"
     >
       <div className="min-w-0 flex-1">

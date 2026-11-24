@@ -59,6 +59,23 @@ describe("useGitSync", () => {
     expect(result.current.status("/a")).toBeUndefined();
   });
 
+  it("unknown_setting_sends_nothing_until_known", async () => {
+    const { rerender } = renderHook(
+      ({ enabled }: { enabled: boolean | null }) =>
+        useGitSync({ enabled, folders: ["/a"] }),
+      { initialProps: { enabled: null as boolean | null } },
+    );
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    rerender({ enabled: false });
+    await waitFor(() => expect(invoke).toHaveBeenCalled());
+    expect(invoke.mock.calls).toEqual([
+      ["git_set_enabled", { enabled: false }],
+    ]);
+  });
+
   it("fetches_status_per_folder", async () => {
     const { result } = renderHook(() =>
       useGitSync({ enabled: true, folders: ["/a", "/b"] }),
