@@ -1,9 +1,5 @@
 import {
-  ArrowUp,
   Bot,
-  Check,
-  Copy,
-  Square,
   Bold,
   Braces,
   ChevronDown,
@@ -53,11 +49,7 @@ import { CANVAS_EXT, IMAGE_EXTS } from "../model/kinds";
 
 /** The app's line icons (Lucide, one stroke weight throughout). */
 export type IconName =
-  | "arrowUp"
   | "agent"
-  | "check"
-  | "copy"
-  | "square"
   | "folder"
   | "folderOpen"
   | "markdown"
@@ -146,11 +138,7 @@ export function fileIcon(name: string): IconName {
 }
 
 const ICONS: Record<IconName, LucideIcon> = {
-  arrowUp: ArrowUp,
   agent: Bot,
-  check: Check,
-  copy: Copy,
-  square: Square,
   folder: Folder,
   folderOpen: FolderOpen,
   markdown: FileText,
