@@ -36,7 +36,7 @@ fn local(git: &Git, dir: &Path, args: &[&str]) -> Result<(), GitError> {
 }
 
 /// The repo at `dir`, or `Refused` when it isn't a repo root.
-fn repo_status(git: &Git, dir: &Path) -> Result<RepoStatus, GitError> {
+pub(super) fn repo_status(git: &Git, dir: &Path) -> Result<RepoStatus, GitError> {
     match folder_git(git, dir)? {
         FolderGit::Repo(s) => Ok(s),
         _ => Err(GitError::new(

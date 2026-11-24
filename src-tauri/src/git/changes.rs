@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
+use super::ops::repo_status;
 use super::{Git, GitError};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -82,6 +83,7 @@ fn parse(out: &str) -> Vec<Change> {
 /// Every changed file under `dir`, relative to it, `/`-separated, by path.
 /// Untracked folders are listed file by file; ignored files are skipped.
 pub fn changes(git: &Git, dir: &Path) -> Result<Vec<Change>, GitError> {
+    repo_status(git, dir)?;
     let st = git.run(
         dir,
         &[
@@ -196,6 +198,20 @@ mod tests {
         let g = find_git().unwrap();
         let _ = g.run(&dir, &["rebase", "main"], Duration::from_secs(30));
         assert_eq!(got(&dir), vec![("x.md".into(), ChangeStatus::Conflicted)]);
+    }
+
+    #[test]
+    fn changes_refuses_non_repo_and_inside_repo() {
+        let (_t, dir) = testutil::repo();
+        let inner = dir.join("sub");
+        fs::create_dir_all(&inner).unwrap();
+        fs::write(inner.join("a.md"), "a\n").unwrap();
+        let g = find_git().unwrap();
+        let e = changes(&g, &inner).unwrap_err();
+        assert_eq!(e.kind, crate::git::GitKind::Refused);
+        let plain = tempfile::tempdir().unwrap();
+        let e = changes(&g, plain.path()).unwrap_err();
+        assert_eq!(e.kind, crate::git::GitKind::Refused);
     }
 
     #[test]

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-use super::status::read_porcelain;
+use super::ops::repo_status;
 use super::{Git, GitError};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -27,7 +27,7 @@ pub struct Branches {
 /// Local branches (the current one first, then by name) and `origin`
 /// branches without a local namesake.
 pub fn branches(git: &Git, dir: &Path) -> Result<Branches, GitError> {
-    let current = read_porcelain(git, dir)?.branch;
+    let current = repo_status(git, dir)?.branch;
     let refs = git.run(
         dir,
         &[
@@ -93,6 +93,19 @@ mod tests {
         assert_eq!(b.local[0].upstream.as_deref(), Some("origin/main"));
         assert_eq!(b.local[2].upstream, None);
         assert_eq!(b.remote_only, ["laptop"]);
+    }
+
+    #[test]
+    fn branches_refuses_non_repo_and_inside_repo() {
+        let (_t, dir) = testutil::repo();
+        let inner = dir.join("sub");
+        std::fs::create_dir_all(&inner).unwrap();
+        let g = find_git().unwrap();
+        let e = branches(&g, &inner).unwrap_err();
+        assert_eq!(e.kind, crate::git::GitKind::Refused);
+        let plain = tempfile::tempdir().unwrap();
+        let e = branches(&g, plain.path()).unwrap_err();
+        assert_eq!(e.kind, crate::git::GitKind::Refused);
     }
 
     #[test]
