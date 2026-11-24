@@ -207,6 +207,133 @@ function freeName(dir: string, name: string, ext: string): string {
 
 type Args = Record<string, unknown>;
 
+/*
+ * Git: the Library is a repo on `main`, 2 ahead and 1 behind origin, with
+ * one change of each kind. ?git=rebasing stops it mid-rebase (with a
+ * conflicted file), ?git=notrepo makes it unsynced, ?git=nogit hides git.
+ */
+const GIT = new URLSearchParams(location.search).get("git") ?? "repo";
+const UNSAVED = new URLSearchParams(location.search).has("unsaved");
+const rel = (p: string) => join(ROOT, p.split("/").join(sep));
+
+const oldMd = md
+  .replace("after 31s", "after about 30s")
+  .replace("- [ ] Lower `socket_timeout` in the pool to 2s\n", "")
+  .replace("| 14:11 | Latency back to normal         |       |\n", "");
+const roadmap = `# Q3 roadmap (draft)
+
+- Ship the search index rewrite
+- Move notes sync to git
+- Drop the legacy importer
+`;
+const plan = `# 日本 plan "v2"
+
+- Tokyo: 3 nights, Shinjuku
+- Kyoto: 2 nights, near the station
+- JR pass: 7 days
+`;
+const peering = `# VPC peering runbook
+
+1. Accept the peering request in the target account.
+2. Add routes for 10.40.0.0/16 on both sides.
+3. Open 5432 from the app subnets only.
+`;
+/** In the work tree; added to the notebook's files. */
+const gitFiles: Record<string, string> = {
+  'notes/日本 plan "v2".md': plan,
+  "projects/platform/infrastructure/terraform/modules/networking/vpc peering runbook.md":
+    peering,
+  "diagrams/architecture.png": "\u0000PNG",
+};
+for (const [p, text] of Object.entries(gitFiles)) {
+  files[rel(p)] = text;
+  const parts = p.split("/");
+  for (let i = 1; i < parts.length; i++) {
+    dirs.add(rel(parts.slice(0, i).join("/")));
+  }
+}
+/** The last commit's text, by path; absent = not in it. */
+const headTexts: Record<string, string> = {
+  "incidents/2026-11-12 redis failover.md": oldMd,
+  "drafts/q3-roadmap.md": roadmap,
+  "misc/onboarding.txt": notes,
+  'notes/日本 plan "v2".md': plan.replace("2 nights", "1 night"),
+  "order-paid.json": json.replace('"retry": false', '"retry": true'),
+};
+const binary = new Set(["diagrams/architecture.png"]);
+
+const repo = {
+  kind: (GIT === "notrepo" ? "notRepo" : "repo") as "repo" | "notRepo",
+  branch: "main",
+  ahead: 2,
+  behind: 1,
+  state: (GIT === "rebasing" ? "rebasing" : "none") as "none" | "rebasing",
+  local: [
+    "main",
+    "draft/reorg-2026",
+    "laptop-sync",
+    "spike/sqlite-fts",
+    "2026-q4-planning",
+    "feature/incident-retro-follow-ups-for-the-redis-failover",
+  ],
+  remoteOnly: [
+    "laptop-draft",
+    "release/0.4",
+    "experiment/canvas-export",
+    "dana/runbook-edits",
+  ],
+  changes: [
+    { path: "diagrams/architecture.png", status: "modified" },
+    { path: "drafts/q3-roadmap.md", status: "deleted" },
+    { path: "incidents/2026-11-12 redis failover.md", status: "modified" },
+    { path: 'notes/日本 plan "v2".md', status: "modified" },
+    {
+      path: "onboarding.txt",
+      oldPath: "misc/onboarding.txt",
+      status: "renamed",
+    },
+    ...(GIT === "rebasing"
+      ? [{ path: "order-paid.json", status: "conflicted" }]
+      : []),
+    {
+      path: "projects/platform/infrastructure/terraform/modules/networking/vpc peering runbook.md",
+      status: "added",
+    },
+    { path: "snippets/slow-queries.sql", status: "added" },
+  ] as { path: string; oldPath?: string; status: string }[],
+};
+
+function repoStatus() {
+  if (GIT === "nogit") return noGit();
+  if (repo.kind === "notRepo") return { kind: "notRepo" };
+  return {
+    kind: "repo",
+    branch: repo.branch,
+    head: "3f9c2a1",
+    dirty: repo.changes.length > 0,
+    upstream: true,
+    origin: true,
+    ahead: repo.ahead,
+    behind: repo.behind,
+    state: repo.state,
+  };
+}
+
+function headFile(path: string) {
+  if (binary.has(path)) return { kind: "binary" };
+  const text = headTexts[path];
+  return text === undefined ? { kind: "missing" } : { kind: "text", text };
+}
+
+/** A git op: takes a moment, then lands. */
+const later = (land: () => void) =>
+  new Promise<null>((resolve) =>
+    setTimeout(() => {
+      land();
+      resolve(null);
+    }, 700),
+  );
+
 const noGit = () =>
   Promise.reject({
     kind: "no_git",
@@ -230,8 +357,10 @@ const handlers: Record<string, (a: Args) => unknown> = {
       text: a.content as string,
     };
   },
-  shadow_list: () => [],
-  shadow_read: () => null,
+  // ?unsaved: the pinned script has an edit not yet saved.
+  shadow_list: () => (UNSAVED ? ["f1"] : []),
+  shadow_read: (a) =>
+    UNSAVED && a.id === "f1" ? `${sh}\n# Drain a node first\n` : null,
   take_launch_paths: () => ({ paths: [], folders: [], missing: [] }),
   grants_filter: (a) => a.paths,
   library_root: () => ({ root: ROOT, available: true, added: [] }),
@@ -306,8 +435,14 @@ const handlers: Record<string, (a: Args) => unknown> = {
         : null,
     ),
   file_read: (a) => {
-    const text = files[a.path as string] ?? "";
-    return { text, format: fmt, readable: true, fingerprint: fp(text) };
+    const path = a.path as string;
+    const text = files[path];
+    // Like Rust: a gone file is an io error and has no fingerprint.
+    if (text === undefined) {
+      return Promise.reject({ kind: "io", message: "The file is gone." });
+    }
+    const readable = !text.includes("\u0000");
+    return { text, format: fmt, readable, fingerprint: fp(text) };
   },
   file_write: (a) => {
     files[a.path as string] = a.text as string;
@@ -315,7 +450,8 @@ const handlers: Record<string, (a: Args) => unknown> = {
   },
   file_read_bytes: (a) =>
     new TextEncoder().encode(files[a.path as string] ?? "").buffer,
-  file_fingerprint: (a) => fp(files[a.path as string] ?? ""),
+  file_fingerprint: (a) =>
+    (a.path as string) in files ? fp(files[a.path as string]) : null,
   file_fingerprint_quick: (a) => a.expected,
   // Ask: a configured Anthropic key, and a canned answer streamed in words.
   ai_status: () => AI_STATUS,
@@ -323,21 +459,50 @@ const handlers: Record<string, (a: Args) => unknown> = {
   ai_key_set: () => AI_STATUS,
   ai_key_remove: () => AI_STATUS,
   ai_models: () => ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
-  // Git sync: the preview has no git.
-  git_set_enabled: () => ({ available: false }),
-  git_status: noGit,
-  git_pull: noGit,
-  git_commit_push: noGit,
-  git_push: noGit,
-  git_setup: noGit,
-  git_pick_clone_parent: noGit,
+  // Git sync: the Library is a repo with work in it (see `repo` below).
+  git_set_enabled: () => ({ available: GIT !== "none" }),
+  git_status: () => repoStatus(),
+  git_pull: () =>
+    later(() => {
+      repo.behind = 0;
+    }),
+  git_commit_push: () =>
+    later(() => {
+      repo.changes = [];
+      repo.ahead = 0;
+    }),
+  git_push: () =>
+    later(() => {
+      repo.ahead = 0;
+    }),
+  git_setup: () => later(() => (repo.kind = "repo")),
+  git_pick_clone_parent: () => null,
   git_clone: noGit,
   git_cancel: () => null,
-  git_changes: noGit,
-  git_branches: noGit,
-  git_switch: noGit,
-  git_create_branch: noGit,
-  git_head_file: noGit,
+  git_changes: () => (repo.kind === "repo" ? repo.changes : []),
+  git_branches: () => ({
+    current: repo.branch,
+    local: [
+      { name: repo.branch, upstream: `origin/${repo.branch}` },
+      ...repo.local
+        .filter((n) => n !== repo.branch)
+        .sort()
+        .map((name) => ({ name, upstream: null })),
+    ],
+    remoteOnly: repo.remoteOnly.filter((n) => !repo.local.includes(n)).sort(),
+  }),
+  git_switch: (a) =>
+    later(() => {
+      const name = a.branch as string;
+      if (!repo.local.includes(name)) repo.local.push(name);
+      repo.branch = name;
+    }),
+  git_create_branch: (a) =>
+    later(() => {
+      repo.local.push(a.name as string);
+      repo.branch = a.name as string;
+    }),
+  git_head_file: (a) => headFile(a.path as string),
   ai_cancel: (a) => {
     cancelled.add(a.id as number);
     return null;
@@ -394,7 +559,12 @@ mockIPC(
  * ?accent= pick the theme. ?reset starts empty.
  */
 function demoSession(params: URLSearchParams): string {
-  const fileTab = (id: string, rel: string, language: string) => {
+  const fileTab = (
+    id: string,
+    rel: string,
+    language: string,
+    unsaved = false,
+  ) => {
     const path = join(ROOT, rel);
     return {
       id,
@@ -412,6 +582,7 @@ function demoSession(params: URLSearchParams): string {
         format: fmt,
         fingerprint: fp(files[path] ?? ""),
         held: null,
+        ...(unsaved ? { unsaved: true } : {}),
       },
       ...(language === "markdown" ? { markdownMode: "rich" } : {}),
     };
@@ -424,7 +595,7 @@ function demoSession(params: URLSearchParams): string {
   return JSON.stringify({
     version: 3,
     tabs: [
-      { ...fileTab("f1", "snippets\\k8s.sh", "shell"), pinned: true },
+      { ...fileTab("f1", "snippets\\k8s.sh", "shell", UNSAVED), pinned: true },
       s1,
       fileTab("f2", "incidents\\2026-11-12 redis failover.md", "markdown"),
       { ...fileTab("f3", "flow.excalidraw", "plaintext"), kind: "canvas" },
@@ -435,8 +606,9 @@ function demoSession(params: URLSearchParams): string {
     splits: [],
     sidebar: {
       open: true,
-      width: 260,
+      width: Number(params.get("width") ?? 260),
       expanded: [join(ROOT, "incidents"), join(ROOT, "snippets")],
+      view: params.get("view") === "git" ? "git" : "files",
     },
     fontSize: 14,
     settings: {
@@ -475,6 +647,45 @@ if (params.has("ask")) {
       }),
     );
   }, 1500);
+}
+
+/**
+ * With ?view=git: ?diff=<path> opens that change's diff tab; ?branches opens
+ * the branch menu, and ?branches=<name> then picks that branch.
+ */
+/** Clicks the first element `find` returns, once there is one. */
+function clickWhen(
+  find: () => HTMLElement | null | undefined,
+  then?: () => void,
+) {
+  const t = window.setInterval(() => {
+    const el = find();
+    if (!el) return;
+    window.clearInterval(t);
+    el.click();
+    then?.();
+  }, 50);
+}
+const diff = params.get("diff");
+if (diff) {
+  clickWhen(() =>
+    document.querySelector<HTMLElement>(`li[data-path="${CSS.escape(diff)}"]`),
+  );
+}
+if (params.has("branches")) {
+  const pick = params.get("branches");
+  clickWhen(
+    () => document.querySelector<HTMLElement>("[data-z-git-branch]"),
+    () =>
+      pick &&
+      clickWhen(() =>
+        [
+          ...document.querySelectorAll<HTMLElement>(
+            '[aria-label="Branches"] [role="menuitemradio"]',
+          ),
+        ].find((r) => r.textContent?.endsWith(pick)),
+      ),
+  );
 }
 
 // ?settings opens Settings once the app is up (Mod+,), for screenshots.
