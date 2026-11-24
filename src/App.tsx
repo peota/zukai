@@ -874,7 +874,15 @@ export default function App() {
           col={here.col}
           language={active?.language ?? "plaintext"}
           saveStatus={w.saveStatus}
-          kindLabel={isCanvas ? "Canvas" : isImage ? "Image" : undefined}
+          kindLabel={
+            isCanvas
+              ? "Canvas"
+              : isImage
+                ? "Image"
+                : active?.kind === "diff"
+                  ? "Diff"
+                  : undefined
+          }
           image={shownImageInfo}
           onPickLanguage={() => (picking ? closePicker() : setPicking(true))}
           platformLineEnding={PLATFORM_ENDING}

@@ -17,7 +17,7 @@ function setup(changes: Change[] | undefined) {
   return p;
 }
 
-const rows = () => screen.getAllByRole("listitem");
+const rows = () => screen.getAllByRole("option");
 const menuItems = () =>
   within(screen.getByRole("menu"))
     .getAllByRole("menuitem")
@@ -86,7 +86,36 @@ describe("ChangesList", () => {
   it("empty shows No changes", () => {
     setup([]);
     expect(screen.getByText("No changes")).toBeTruthy();
-    expect(screen.queryAllByRole("listitem")).toEqual([]);
+    expect(screen.queryAllByRole("option")).toEqual([]);
+  });
+
+  it("names each row by its status and path", () => {
+    setup([
+      { path: "notes/new.md", oldPath: "old.md", status: "renamed" },
+      { path: "x.md", status: "modified" },
+    ]);
+    expect(screen.getByRole("listbox", { name: "Changed files" })).toBeTruthy();
+    expect(rows().map((r) => r.getAttribute("aria-label"))).toEqual([
+      "Renamed: old.md → notes/new.md",
+      "Modified: x.md",
+    ]);
+  });
+
+  it("the tab stop follows the focused row", () => {
+    setup([
+      { path: "a.md", status: "added" },
+      { path: "b.md", status: "added" },
+      { path: "c.md", status: "added" },
+    ]);
+    const stops = () => rows().map((r) => r.tabIndex);
+    expect(stops()).toEqual([0, -1, -1]);
+    rows()[0].focus();
+    fireEvent.keyDown(rows()[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(rows()[1]);
+    expect(stops()).toEqual([-1, 0, -1]);
+    fireEvent.click(rows()[2]);
+    expect(stops()).toEqual([-1, -1, 0]);
+    expect(rows()[2].getAttribute("aria-selected")).toBe("true");
   });
 
   it("shows the first 500 rows, then how many more", () => {

@@ -62,6 +62,15 @@ describe("StatusBar git chip", () => {
     expect(screen.getByRole("button", { name: /feat/ }).textContent).toContain(
       "rebasing",
     );
+    // A rebase isn't an error: the word is in the chip's own ink.
+    expect(screen.getByText("rebasing").className).not.toContain("text-danger");
+  });
+
+  it("names the branch in its tooltip, for a truncated name", () => {
+    setup({ git: { branch: "feat/long", state: "none", onClick: vi.fn() } });
+    expect(
+      screen.getByRole("button", { name: /feat\/long/ }).getAttribute("title"),
+    ).toBe("feat/long: show in Git");
   });
 
   it("is absent without the git prop", () => {

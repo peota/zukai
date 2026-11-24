@@ -182,9 +182,11 @@ export function DiffPane({
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const fontSizeRef = useRef(fontSize);
+  const scrollTop = useRef(0);
   const [sizeSlot] = useState(() => new Compartment());
   const original = shown.kind === "diff" ? shown.original : null;
   const modified = shown.kind === "diff" ? shown.modified : null;
+  const wholeFile = original === "" || modified === "";
   useEffect(() => {
     if (original === null || modified === null || !langExt || !host.current) {
       return;
@@ -201,17 +203,23 @@ export function DiffPane({
           unifiedMergeView({
             original,
             mergeControls: false,
+            // A whole File added or deleted has no words to compare: its
+            // lines' ground says it, without a block on every line.
+            highlightChanges: !wholeFile,
             collapseUnchanged: { margin: 3, minSize: 4 },
           }),
         ],
       }),
     });
     view.current = v;
+    // A new text rebuilds the view: it stays where the reader was.
+    v.scrollDOM.scrollTop = scrollTop.current;
     return () => {
+      scrollTop.current = v.scrollDOM.scrollTop;
       v.destroy();
       view.current = null;
     };
-  }, [original, modified, langExt, sizeSlot]);
+  }, [original, modified, wholeFile, langExt, sizeSlot]);
 
   useEffect(() => {
     if (fontSizeRef.current === fontSize) return;
@@ -251,7 +259,7 @@ export function DiffPane({
       </div>
       <div className="relative min-h-0 flex-1">
         {shown.kind === "diff" ? (
-          <div ref={host} className="size-full" />
+          <div ref={host} className="z-diff size-full" />
         ) : message !== null ? (
           <div className="grid size-full select-none place-items-center px-6 text-center text-ui text-muted">
             {message}

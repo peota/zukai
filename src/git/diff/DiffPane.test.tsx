@@ -116,6 +116,17 @@ describe("DiffPane", () => {
       expect(lines(container, ".cm-changedLine")).toEqual(["new", "file"]),
     );
     expect(lines(container, ".cm-deletedLine")).toEqual([]);
+    // Nothing to compare words with: no changed-word marks.
+    expect(container.querySelector(".cm-changedText")).toBeNull();
+  });
+
+  it("marks the changed words in a modified line", async () => {
+    head = { kind: "text", text: "after 30s\n" };
+    disk = "after 31s\n";
+    const { container } = show();
+    await waitFor(() =>
+      expect(container.querySelector(".cm-changedText")).not.toBeNull(),
+    );
   });
 
   it("shows a deleted file as all deleted, with no Open file", async () => {
@@ -250,6 +261,51 @@ describe("DiffPane", () => {
     expect(
       await screen.findByText("No changes since the last commit."),
     ).toBeTruthy();
+  });
+
+  it("keeps its scroll position when the diff text changes", async () => {
+    // jsdom doesn't scroll: remember what's set.
+    const scrolled = new WeakMap<Element, number>();
+    const desc = Object.getOwnPropertyDescriptor(
+      Element.prototype,
+      "scrollTop",
+    );
+    Object.defineProperty(Element.prototype, "scrollTop", {
+      configurable: true,
+      get(this: Element) {
+        return scrolled.get(this) ?? 0;
+      },
+      set(this: Element, v: number) {
+        scrolled.set(this, v);
+      },
+    });
+    try {
+      head = { kind: "text", text: "a\n" };
+      disk = "b\n";
+      const { container, rerender, target, onOpenFile } = show(
+        {},
+        { refreshKey: 1 },
+      );
+      await waitFor(() =>
+        expect(lines(container, ".cm-changedLine")).toEqual(["b"]),
+      );
+      container.querySelector<HTMLElement>(".cm-scroller")!.scrollTop = 120;
+      disk = "c\n";
+      rerender(
+        <DiffPane
+          target={target}
+          fontSize={14}
+          onOpenFile={onOpenFile}
+          refreshKey={2}
+        />,
+      );
+      await waitFor(() =>
+        expect(lines(container, ".cm-changedLine")).toEqual(["c"]),
+      );
+      expect(container.querySelector(".cm-scroller")!.scrollTop).toBe(120);
+    } finally {
+      if (desc) Object.defineProperty(Element.prototype, "scrollTop", desc);
+    }
   });
 
   it("reads both sides again when the folder's git status changes", async () => {

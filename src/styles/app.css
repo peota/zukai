@@ -32,6 +32,9 @@
   --z-danger: #be123c;
   --z-warn: #b45309;
   --z-danger-fg: #ffffff;
+  /* A diff's inserted and deleted ink; tints are mixed from them below. */
+  --z-diff-insert: #1a7f37;
+  --z-diff-delete: #cf222e;
   --z-bar-warn-bg: #fdf3d8;
   --z-bar-warn-fg: #7a5208;
   --z-bar-err-bg: #fde6e4;
@@ -112,6 +115,8 @@
   --z-danger: #f87171;
   --z-warn: #d97706;
   --z-danger-fg: #2a0707;
+  --z-diff-insert: #3fb950;
+  --z-diff-delete: #f85149;
   --z-bar-warn-bg: #3a2f17;
   --z-bar-warn-fg: #f2c86b;
   --z-bar-err-bg: #3d2020;
@@ -217,6 +222,27 @@
   --z-search-current: color-mix(in srgb, var(--z-accent) 42%, transparent);
   --z-selection-match: color-mix(in srgb, var(--z-accent) 14%, transparent);
   --z-focus: color-mix(in srgb, var(--z-accent) 70%, transparent);
+  /* A diff's line grounds and changed-word marks, from its two inks. */
+  --z-diff-insert-line: color-mix(
+    in srgb,
+    var(--z-diff-insert) 10%,
+    transparent
+  );
+  --z-diff-insert-text: color-mix(
+    in srgb,
+    var(--z-diff-insert) 20%,
+    transparent
+  );
+  --z-diff-delete-line: color-mix(
+    in srgb,
+    var(--z-diff-delete) 9%,
+    transparent
+  );
+  --z-diff-delete-text: color-mix(
+    in srgb,
+    var(--z-diff-delete) 20%,
+    transparent
+  );
 }
 
 @theme inline {
@@ -324,6 +350,56 @@ body {
 .z-tab-flare::after {
   right: -8px;
   mask: radial-gradient(circle at 100% 0, transparent 7.5px, #000 8px);
+}
+
+/*
+ * The diff tab's unified merge view, in the --z-diff-* tokens. Scoped under
+ * .z-diff with the editor's own classes so these outrank @codemirror/merge's
+ * base theme (which would pick its light colors on every palette).
+ */
+.z-diff .cm-editor.cm-merge-b .cm-content .cm-changedLine,
+.z-diff .cm-editor .cm-content .cm-inlineChangedLine {
+  background-color: var(--z-diff-insert-line);
+}
+.z-diff .cm-editor.cm-merge-b .cm-content .cm-changedText {
+  background: var(--z-diff-insert-text);
+  border-radius: 2px;
+}
+.z-diff .cm-editor .cm-content .cm-deletedChunk {
+  padding-left: 0;
+  background-color: var(--z-diff-delete-line);
+}
+/* Deleted lines sit where the editor's own lines do (.cm-line's padding). */
+.z-diff .cm-editor .cm-content .cm-deletedChunk .cm-deletedLine {
+  padding: 0 32px 0 14px;
+}
+.z-diff .cm-editor.cm-merge-b .cm-content .cm-deletedChunk .cm-deletedText,
+.z-diff .cm-editor.cm-merge-b .cm-content .cm-deletedText {
+  background: var(--z-diff-delete-text);
+  border-radius: 2px;
+}
+.z-diff .cm-editor.cm-merge-b .cm-gutters .cm-changedLineGutter {
+  background: var(--z-diff-insert);
+}
+.z-diff .cm-editor .cm-gutters .cm-deletedLineGutter {
+  background: var(--z-diff-delete);
+}
+/* "N unchanged lines": a quiet full-width row in the UI face, no glyphs. */
+.z-diff .cm-editor .cm-content .cm-collapsedLines {
+  margin: 4px 0;
+  padding: 4px 14px;
+  background: var(--z-active-line);
+  color: var(--z-faint);
+  font-family: var(--z-font-ui);
+  font-size: calc(var(--z-ui-font) - 1px);
+}
+.z-diff .cm-editor .cm-content .cm-collapsedLines:hover {
+  background: var(--z-row-hover);
+  color: var(--z-muted);
+}
+.z-diff .cm-editor .cm-content .cm-collapsedLines::before,
+.z-diff .cm-editor .cm-content .cm-collapsedLines::after {
+  content: none;
 }
 
 /* Scrollbars: thin, rounded, in the theme's ink. */

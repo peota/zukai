@@ -64,6 +64,8 @@ export function ChangesList({
     items: MenuItem[];
   } | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
+  /** The row holding the list's one tab stop, by path. */
+  const [current, setCurrent] = useState<string | null>(null);
 
   const closeMenu = useCallback(() => {
     setMenu(null);
@@ -78,6 +80,10 @@ export function ChangesList({
     : undefined;
   const shown = sorted?.slice(0, MAX_ROWS) ?? [];
   const more = (sorted?.length ?? 0) - shown.length;
+  // The first row until another is focused, or when that one is gone.
+  const stop = shown.some((c) => c.path === current)
+    ? current
+    : (shown[0]?.path ?? null);
 
   const showMenu = (c: Change, x: number, y: number, from: HTMLElement) => {
     const abs = joinRel(folder, c.path);
@@ -92,7 +98,10 @@ export function ChangesList({
   };
 
   return (
-    <section aria-label="Changes" className="flex min-h-0 flex-1 flex-col">
+    <section
+      aria-label="Changes"
+      className="@container flex min-h-0 flex-1 flex-col"
+    >
       <SectionHeading label="CHANGES">
         {sorted && sorted.length > 0 && (
           <span className="pr-1.5 font-normal tracking-normal tabular-nums">
@@ -105,16 +114,28 @@ export function ChangesList({
       )}
       {shown.length > 0 && (
         <div className="min-h-0 overflow-y-auto pb-1">
-          <ul aria-label="Changed files" className="m-0 list-none p-0">
-            {shown.map((c, i) => {
+          <ul
+            role="listbox"
+            aria-label="Changed files"
+            className="m-0 list-none p-0"
+          >
+            {shown.map((c) => {
               const { name, parent } = split(c.path);
+              const where = c.oldPath ? `${c.oldPath} → ${c.path}` : c.path;
               return (
                 <li
                   key={c.path}
+                  role="option"
+                  aria-label={`${NAME[c.status]}: ${where}`}
+                  aria-selected={c.path === stop}
                   data-path={c.path}
-                  title={c.oldPath ? `${c.oldPath} → ${c.path}` : c.path}
-                  tabIndex={i === 0 ? 0 : -1}
-                  onClick={() => onOpenDiff(target(folder, c))}
+                  title={where}
+                  tabIndex={c.path === stop ? 0 : -1}
+                  onFocus={() => setCurrent(c.path)}
+                  onClick={() => {
+                    setCurrent(c.path);
+                    onOpenDiff(target(folder, c));
+                  }}
                   onKeyDown={(e) => {
                     const li = e.currentTarget;
                     if (e.key === "Enter" || e.key === " ") {
@@ -145,7 +166,6 @@ export function ChangesList({
                   }}
                   className="flex h-[30px] cursor-default items-center gap-2 rounded-[6px] px-2 whitespace-nowrap outline-none hover:bg-row-hover focus-visible:shadow-[inset_0_0_0_1px_var(--z-accent-soft)]"
                 >
-                  <span className="sr-only">{NAME[c.status]}</span>
                   <span
                     aria-hidden="true"
                     className={
@@ -159,8 +179,10 @@ export function ChangesList({
                     {name}
                   </span>
                   {parent && (
-                    // Truncated from the left: the nearest folders stay visible.
-                    <span className="ml-auto min-w-0 flex-1 truncate text-right text-ui-sm text-faint [direction:rtl]">
+                    // Truncated from the left: the nearest folders stay
+                    // visible. Never a sliver; in a narrow sidebar the
+                    // tooltip has it.
+                    <span className="ml-auto min-w-8 flex-1 truncate text-right text-ui-sm text-faint [direction:rtl] @max-[220px]:hidden">
                       <bdi>{parent}</bdi>
                     </span>
                   )}

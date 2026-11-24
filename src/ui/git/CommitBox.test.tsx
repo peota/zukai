@@ -104,6 +104,20 @@ describe("CommitBox", () => {
     expect(field().value).toBe("");
   });
 
+  it("is read-only while the commit runs, so nothing typed is lost", () => {
+    const git = fakeGit();
+    const { rerender } = render(<CommitBox {...props(git)} />);
+    fireEvent.change(field(), { target: { value: "work" } });
+    fireEvent.click(button());
+    const running = fakeGit({ runningOf: { [FOLDER]: "commit" } });
+    rerender(<CommitBox {...props(running)} />);
+    expect(field().readOnly).toBe(true);
+    const done = fakeGit({ doneOf: { [FOLDER]: "commit" } });
+    rerender(<CommitBox {...props(done, { dirty: false })} />);
+    expect(field().readOnly).toBe(false);
+    expect(field().value).toBe("");
+  });
+
   it("keeps the message after a failed commit", () => {
     const git = fakeGit();
     const { rerender } = render(<CommitBox {...props(git)} />);
