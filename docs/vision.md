@@ -191,6 +191,8 @@ Prioritize the first version in this order:
 7. Quick-capture window and global shortcut.
 
 > **2026-11-21:** AI is no longer deferred: Ask is decided in [ADR 0013](adr/0013-ask-with-the-users-own-key.md).
+>
+> **2026-11-24:** Ask is removed; agents started from the Terminal panel replace it ([ADR 0014](adr/0014-agents-replace-ask.md)).
 
 Defer cloud synchronization, user accounts, collaboration, AI features, plugins, and advanced spreadsheet calculations until the core experience is reliable.
 

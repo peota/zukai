@@ -1,7 +1,7 @@
 # Zukai — Agents (replacing Ask)
 
 Date: 2026-11-24
-Status: Awaiting approval
+Status: Approved 2026-11-24
 
 Background reading: [`PRODUCT.md`](../../../PRODUCT.md), [`CONTEXT.md`](../../../CONTEXT.md) (**Terminal**, **Terminal panel**, **Ask**), the [Terminal design](2026-11-20-terminal-design.md) and [ADR 0013](../../adr/0013-ask-with-the-users-own-key.md) (Ask).
 

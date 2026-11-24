@@ -1,7 +1,7 @@
 # 13. Ask: AI with the user's own key
 
 Date: 2026-11-21
-Status: Accepted. This overrides the vision's "defer … AI features" (section 6) and adds a milestone ahead of the remaining v1 work (ADR 0010).
+Status: Superseded by ADR 0014 (2026-11-24)
 
 ## Context
 
