@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as storage from "../storage/api";
 import * as files from "../files/api";
 import * as lib from "../library/api";
+import * as git from "../git/api";
 import type { Entry, RootState } from "../library/api";
 import { useWorkspace } from "./useWorkspace";
 import { newTabState } from "../model/workspace";
@@ -89,6 +90,11 @@ vi.mock("../library/api", () => ({
   onLibraryChanged: vi.fn(),
   onLibraryDropped: vi.fn(),
   onDragDrop: vi.fn(),
+}));
+
+vi.mock("../git/api", async (orig) => ({
+  ...(await orig<typeof import("../git/api")>()),
+  gitClone: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -837,6 +843,110 @@ describe("useLibrary", () => {
     l.libraryLocateFolder.mockRejectedValue({ kind: "io", message: msg });
     await act(() => result.current.library.locateFolder(NEW));
     expect(result.current.notice).toBe(msg);
+  });
+
+  describe("cloneFolder", () => {
+    const g = vi.mocked(git);
+    const REQ = {
+      token: "t",
+      url: "git@h:me/notes.git",
+      name: "notes",
+      useAsLibrary: false,
+    };
+
+    it("clone_adds_a_folder_last_and_expanded", async () => {
+      const X = "D:\\work\\notes";
+      listings[X] = [file(`${X}\\n.md`)];
+      g.gitClone.mockResolvedValue({
+        root: R,
+        available: true,
+        added: [{ path: X, available: true }],
+      });
+      const { result } = await mount([fileTab("fa", A)]);
+      l.libraryWatch.mockClear();
+      let out: git.GitError | null | undefined;
+      await act(async () => {
+        out = await result.current.library.cloneFolder(REQ, "op1");
+      });
+      expect(out).toBeNull();
+      expect(g.gitClone).toHaveBeenCalledWith({
+        ...REQ,
+        opId: "op1",
+        openPaths: [A],
+      });
+      expect(result.current.library.added).toEqual([
+        { path: X, available: true },
+      ]);
+      expect(result.current.library.tree.expanded.has(X)).toBe(true);
+      await waitFor(() =>
+        expect(result.current.library.rows.map((x) => x.entry.path)).toContain(
+          `${X}\\n.md`,
+        ),
+      );
+      expect(l.libraryWatch).toHaveBeenCalledTimes(1);
+    });
+
+    it("clone_as_library_acts_like_choose_root", async () => {
+      const R2 = "D:\\Other";
+      listings[R2] = [file(`${R2}\\x.md`)];
+      l.libraryRoot.mockResolvedValue({
+        root: R,
+        available: true,
+        added: [{ path: `${R2}\\proj`, available: true }],
+      });
+      g.gitClone.mockResolvedValue({
+        root: R2,
+        available: true,
+        added: [],
+        removed: ["proj"],
+      });
+      const closed: ClosedEntry = {
+        tab: fileTab("fb", B),
+        index: 1,
+        closedAt: Date.now(),
+      };
+      const { result } = await mount([fileTab("fa", A)], [closed]);
+      l.libraryWatch.mockClear();
+      const req = { ...REQ, useAsLibrary: true };
+      await act(async () => {
+        await result.current.library.cloneFolder(req, "op2");
+      });
+      expect(g.gitClone).toHaveBeenCalledWith({
+        ...req,
+        opId: "op2",
+        openPaths: [A, B],
+      });
+      expect(result.current.library.root).toBe(R2);
+      expect(result.current.notice).toBe(
+        "Removed proj from the sidebar: it overlaps the new Library folder.",
+      );
+      await waitFor(() =>
+        expect(result.current.library.rows.map((x) => x.entry.path)).toEqual([
+          `${R2}\\x.md`,
+        ]),
+      );
+      expect(result.current.library.tree.expanded.size).toBe(0);
+      expect(l.libraryWatch).toHaveBeenCalledTimes(1);
+    });
+
+    it("clone_failure_returns_the_error", async () => {
+      const e: git.GitError = {
+        kind: "dest_exists",
+        detail: "",
+        conflicts: null,
+        committed: false,
+      };
+      g.gitClone.mockRejectedValue(e);
+      const { result } = await mount();
+      let out: git.GitError | null | undefined;
+      await act(async () => {
+        out = await result.current.library.cloneFolder(REQ, "op3");
+      });
+      expect(out).toEqual(e);
+      expect(result.current.notice).toBeNull();
+      expect(result.current.library.added).toEqual([]);
+      expect(result.current.library.root).toBe(R);
+    });
   });
 
   it("choose_root_notices_removed_folders", async () => {

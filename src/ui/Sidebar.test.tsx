@@ -1,10 +1,17 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as gitApi from "../git/api";
 import type { FolderGit, GitError } from "../git/api";
 import type { GitSyncApi } from "../git/useGitSync";
 import type { Entry } from "../library/api";
 import { filterRows, visibleRows, type TreeState } from "../library/tree";
 import { Sidebar, type SidebarProps } from "./Sidebar";
+
+vi.mock("../git/api", async (orig) => ({
+  ...(await orig<typeof import("../git/api")>()),
+  gitPickCloneParent: vi.fn(),
+  gitCancel: vi.fn(async () => {}),
+}));
 
 const ROOT = "C:\\Lib";
 const p = (...s: string[]) => [ROOT, ...s].join("\\");
@@ -116,6 +123,7 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     git: fakeGit(),
     unsavedUnder: vi.fn(() => 0),
     onSaveAll: vi.fn(),
+    onCloneFolder: vi.fn(async () => null),
     platform: "windows",
     ...over,
   };
@@ -1736,5 +1744,190 @@ describe("Sidebar git", () => {
     );
     fireEvent.click(actions("Notes"));
     expect(setUpItem()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("error_text_keeps_the_native_menu", () => {
+    setupGit(
+      fakeGit({
+        enabled: true,
+        statuses: { [ADDED]: REPO },
+        errors: {
+          [ADDED]: {
+            kind: "failed",
+            detail: "fatal: x",
+            conflicts: null,
+            committed: false,
+          },
+        },
+      }),
+    );
+    const alert = screen.getByRole("alert");
+    // Not prevented: the native menu (Copy) shows over the error text.
+    expect(fireEvent.contextMenu(within(alert).getByText("fatal: x"))).toBe(
+      true,
+    );
+    expect(screen.queryByRole("menu")).toBeNull();
+    // The git row itself still opens its heading's menu.
+    fireEvent.contextMenu(screen.getByRole("group", { name: "Notes git" }));
+    expect(screen.getByRole("menu")).toBeVisible();
+  });
+
+  describe("Add folder from git", () => {
+    const CLONE = "Add folder from git…";
+    const URL = "git@github.com:me/notes.git";
+    const PARENT = { token: "t", path: "D:\\work" };
+    const pick = vi.mocked(gitApi.gitPickCloneParent);
+    const cancel = vi.mocked(gitApi.gitCancel);
+    const err = (kind: GitError["kind"]): GitError => ({
+      kind,
+      detail: "",
+      conflicts: null,
+      committed: false,
+    });
+
+    /** A clone the test settles by hand. */
+    function pending() {
+      let finish: (e: GitError | null) => void = () => {};
+      const onCloneFolder = vi.fn<SidebarProps["onCloneFolder"]>(
+        () => new Promise<GitError | null>((r) => (finish = r)),
+      );
+      return {
+        onCloneFolder,
+        settle: (e: GitError | null) => act(async () => finish(e)),
+      };
+    }
+
+    async function fillAndClone(name?: string, asLibrary = false) {
+      fireEvent.click(actions("Library"));
+      fireEvent.click(screen.getByRole("menuitem", { name: CLONE }));
+      const d = within(
+        screen.getByRole("dialog", { name: "Add folder from git" }),
+      );
+      fireEvent.change(d.getByLabelText("Repo URL"), {
+        target: { value: URL },
+      });
+      if (name !== undefined) {
+        fireEvent.change(d.getByLabelText("Folder name"), {
+          target: { value: name },
+        });
+      }
+      if (asLibrary) fireEvent.click(d.getByLabelText("Use as my Library"));
+      await act(async () => {
+        fireEvent.click(d.getByRole("button", { name: "Choose location…" }));
+      });
+      fireEvent.click(d.getByRole("button", { name: "Clone" }));
+    }
+
+    beforeEach(() => {
+      pick.mockReset();
+      pick.mockResolvedValue(PARENT);
+      cancel.mockClear();
+    });
+
+    it("clone_item_follows_add_folder", () => {
+      setupGit(fakeGit({ enabled: true }));
+      fireEvent.click(actions("Library"));
+      let items = menuItems();
+      expect(items[items.indexOf("Add folder…") + 1]).toBe(CLONE);
+      closeMenu();
+      fireEvent.contextMenu(tree());
+      items = menuItems();
+      expect(items[items.indexOf("Add folder…") + 1]).toBe(CLONE);
+    });
+
+    it("clone_item_hidden_when_off", () => {
+      setupGit(fakeGit());
+      eachMenu((items) => expect(items).not.toContain(CLONE));
+    });
+
+    it("clone_item_disabled_without_git", () => {
+      setupGit(fakeGit({ enabled: true, available: false }));
+      fireEvent.click(actions("Library"));
+      expect(menuItems()).toContain(`${CLONE}Install git to sync folders.`);
+      fireEvent.click(
+        screen.getByRole("menuitem", { name: /^Add folder from/ }),
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("clone_shows_placeholder_and_cancels", async () => {
+      const c = pending();
+      setupGit(fakeGit({ enabled: true }), { onCloneFolder: c.onCloneFolder });
+      await fillAndClone();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(c.onCloneFolder).toHaveBeenCalledWith(
+        { token: "t", url: URL, name: "notes", useAsLibrary: false },
+        expect.any(String),
+      );
+      const opId = c.onCloneFolder.mock.calls[0][1];
+      const ph = screen.getByRole("button", { name: "Cloning notes…" });
+      // After the last added folder, inside the tree, not a tree item.
+      expect(tree().contains(ph)).toBe(true);
+      expect(follows(row("a.md"), ph)).toBe(true);
+      expect(ph.closest("[data-row]")).toBeNull();
+      expect(ph.querySelector('[data-icon="spinner"]')).not.toBeNull();
+      screen
+        .getAllByRole("treeitem")
+        .forEach((el, i) => expect(el).toHaveAttribute("data-row", String(i)));
+      // One clone at a time.
+      fireEvent.click(actions("Library"));
+      expect(screen.getByRole("menuitem", { name: CLONE })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      closeMenu();
+
+      fireEvent.click(ph);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Cancel" }));
+      expect(cancel).toHaveBeenCalledWith(opId);
+      await c.settle(err("cancelled"));
+      expect(screen.queryByRole("button", { name: /^Cloning/ })).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("successful_clone_clears_the_placeholder", async () => {
+      const c = pending();
+      setupGit(fakeGit({ enabled: true }), { onCloneFolder: c.onCloneFolder });
+      await fillAndClone();
+      await c.settle(null);
+      expect(screen.queryByRole("button", { name: /^Cloning/ })).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("failed_clone_reopens_dialog_with_fields_and_error", async () => {
+      const c = pending();
+      setupGit(fakeGit({ enabled: true }), { onCloneFolder: c.onCloneFolder });
+      await fillAndClone("mine", true);
+      expect(
+        screen.getByRole("button", { name: "Cloning mine…" }),
+      ).toBeVisible();
+      await c.settle(err("dest_exists"));
+      expect(screen.queryByRole("button", { name: /^Cloning/ })).toBeNull();
+      const d = within(screen.getByRole("dialog"));
+      expect(d.getByRole("alert")).toHaveTextContent(
+        "A folder with that name already exists there.",
+      );
+      expect(d.getByLabelText("Repo URL")).toHaveValue(URL);
+      expect(d.getByLabelText("Folder name")).toHaveValue("mine");
+      expect(d.getByLabelText("Use as my Library")).toBeChecked();
+      expect(d.getByLabelText("Destination")).toHaveValue("D:\\work\\mine");
+      // The same pick retries.
+      fireEvent.click(d.getByRole("button", { name: "Clone" }));
+      expect(c.onCloneFolder).toHaveBeenLastCalledWith(
+        { token: "t", url: URL, name: "mine", useAsLibrary: true },
+        expect.any(String),
+      );
+      expect(pick).toHaveBeenCalledTimes(1);
+    });
+
+    it("cancel_closes_the_dialog", () => {
+      const c = pending();
+      setupGit(fakeGit({ enabled: true }), { onCloneFolder: c.onCloneFolder });
+      fireEvent.click(actions("Library"));
+      fireEvent.click(screen.getByRole("menuitem", { name: CLONE }));
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(c.onCloneFolder).not.toHaveBeenCalled();
+    });
   });
 });

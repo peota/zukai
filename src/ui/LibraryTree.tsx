@@ -80,6 +80,8 @@ export interface LibraryTreeProps {
    * card). Not a tree item: it takes no `data-row` and no cursor.
    */
   underHeading?(path: string): ReactNode;
+  /** Shown after the last row (a clone's placeholder); not a tree item. */
+  footer?: ReactNode;
 }
 
 /** The Library tree (spec 5.2): rows, keyboard, inline rename and delete. */
@@ -115,6 +117,7 @@ export function LibraryTree({
   dragHandlers,
   swallowClick,
   underHeading,
+  footer,
 }: LibraryTreeProps) {
   const index = rows.findIndex((r) => r.entry.path === cursor);
   const focusTree = () => treeRef.current?.focus({ preventScroll: true });
@@ -237,7 +240,8 @@ export function LibraryTree({
   };
 
   const openMenu = (e: ReactMouseEvent, entry: Entry | null) => {
-    if ((e.target as Element).closest("input")) return; // native menu
+    // Fields and error text keep the native menu (Copy).
+    if ((e.target as Element).closest("input, [role=alert]")) return;
     e.preventDefault();
     e.stopPropagation();
     // The context-menu key targets the tree itself: use the cursor's row.
@@ -470,6 +474,7 @@ export function LibraryTree({
           </div>
         );
       })}
+      {footer}
     </div>
   );
 }

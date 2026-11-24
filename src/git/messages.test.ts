@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { asGitError, type GitError, type GitKind } from "./api";
-import { defaultCommitMessage, errorCopy } from "./messages";
+import { defaultCommitMessage, errorCopy, repoName } from "./messages";
 
 const err = (kind: GitKind, extra: Partial<GitError> = {}): GitError => ({
   kind,
@@ -67,5 +67,19 @@ describe("asGitError", () => {
   });
   it("wraps anything else as failed", () => {
     expect(asGitError("boom")).toEqual(err("failed", { detail: "boom" }));
+  });
+});
+
+describe("repoName", () => {
+  it("matches the Rust repo_name", () => {
+    expect(repoName("git@github.com:me/notes.git")).toBe("notes");
+    expect(repoName("https://h/a/b/")).toBe("b");
+    expect(repoName("host:repo")).toBe("repo");
+    expect(repoName("C:\\repos\\x.git")).toBe("x");
+  });
+  it("strips .git in any case, once", () => {
+    expect(repoName("https://h/me/Notes.GIT")).toBe("Notes");
+    expect(repoName("  https://h/me/a.git.git  ")).toBe("a.git");
+    expect(repoName("")).toBe("");
   });
 });

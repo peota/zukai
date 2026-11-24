@@ -41,7 +41,8 @@ export function SetupSyncCard({
           e.stopPropagation(); // keep app shortcuts and the tree out
           if (e.key === "Escape") {
             e.preventDefault();
-            onCancel();
+            // While setup runs the card stays, so its error can't be lost.
+            if (!running) onCancel();
           } else if (
             e.key === "Enter" &&
             e.target instanceof HTMLInputElement
@@ -84,8 +85,9 @@ export function SetupSyncCard({
           </button>
           <button
             type="button"
+            disabled={running}
             onClick={onCancel}
-            className="rounded-[6px] px-2.5 py-1 text-muted hover:bg-row-hover hover:text-text"
+            className="rounded-[6px] px-2.5 py-1 text-muted hover:bg-row-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted"
           >
             Cancel
           </button>
