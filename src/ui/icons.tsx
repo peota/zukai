@@ -52,7 +52,6 @@ import {
   GitBranch,
   ArrowDownToLine,
   ArrowUpFromLine,
-  GitCommitHorizontal,
   GitCompare,
   Loader2,
 } from "lucide-react";
@@ -110,10 +109,9 @@ export type IconName =
   | "quote"
   | "insertTable"
   | "rule"
-  // The library git row.
+  // The Git view.
   | "gitBranch"
   | "gitPull"
-  | "gitCommit"
   | "gitPush"
   // A diff Tab.
   | "gitCompare"
@@ -212,7 +210,6 @@ const ICONS: Record<IconName, LucideIcon> = {
   rule: Minus,
   gitBranch: GitBranch,
   gitPull: ArrowDownToLine,
-  gitCommit: GitCommitHorizontal,
   gitPush: ArrowUpFromLine,
   gitCompare: GitCompare,
   spinner: Loader2,

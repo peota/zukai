@@ -35,7 +35,9 @@ export type Command =
   /** Opens a new terminal. */
   | { type: "newTerminal" }
   /** Shows or hides the Ask panel (only once an AI provider is ready). */
-  | { type: "toggleAsk" };
+  | { type: "toggleAsk" }
+  /** The sidebar's Files | Git switch: to Git, or back to Files. */
+  | { type: "toggleGitView" };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -139,6 +141,8 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
       // Not Mod+Alt+M: Ctrl+Alt is AltGr on Windows/Linux and types letters.
       case "m":
         return { type: "toggleRichMarkdown" };
+      case "g":
+        return { type: "toggleGitView" };
     }
     return null;
   }

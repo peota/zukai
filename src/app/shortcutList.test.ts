@@ -30,6 +30,7 @@ const ALL: Record<Command["type"], true> = {
   toggleTerminal: true,
   newTerminal: true,
   toggleAsk: true,
+  toggleGitView: true,
 };
 
 describe("the shortcut list", () => {
@@ -59,6 +60,21 @@ describe("the shortcut list", () => {
       keys: [["Mod", "\\"]],
       command: "toggleSplit",
     });
+  });
+
+  it("lists the Git view toggle", () => {
+    expect(SHORTCUTS).toContainEqual({
+      group: "View",
+      action: "Show / hide Git view",
+      keys: [["Mod", "Shift", "G"]],
+      command: "toggleGitView",
+    });
+    const keys = (p: "windows" | "mac") =>
+      shortcutsFor(p)
+        .filter((s) => s.command === "toggleGitView")
+        .flatMap((s) => s.keys.map((k) => formatKeys(k, p)));
+    expect(keys("windows")).toEqual(["Ctrl+Shift+G"]);
+    expect(keys("mac")).toEqual(["⇧⌘G"]);
   });
 
   it("lists the rich editor's keys", () => {

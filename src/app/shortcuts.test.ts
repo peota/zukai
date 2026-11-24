@@ -159,6 +159,34 @@ describe.each(["mac", "other"] as Platform[])("matchShortcut (%s)", (p) => {
   });
 });
 
+describe("the Git view toggle", () => {
+  it("Ctrl+Shift+G on Windows", () => {
+    expect(
+      matchShortcut(
+        ev("KeyG", { key: "G", ctrlKey: true, shiftKey: true }),
+        "windows",
+      ),
+    ).toEqual({ type: "toggleGitView" });
+    expect(
+      matchShortcut(ev("KeyG", { key: "g", ctrlKey: true }), "windows"),
+    ).toBeNull();
+  });
+  it("Cmd+Shift+G on mac", () => {
+    expect(
+      matchShortcut(
+        ev("KeyG", { key: "G", metaKey: true, shiftKey: true }),
+        "mac",
+      ),
+    ).toEqual({ type: "toggleGitView" });
+    expect(
+      matchShortcut(
+        ev("KeyG", { key: "G", ctrlKey: true, shiftKey: true }),
+        "mac",
+      ),
+    ).toBeNull();
+  });
+});
+
 describe("platform differences", () => {
   it("replace: Ctrl+H on other", () =>
     expect(matchShortcut(ev("KeyH", { ctrlKey: true }), "other")).toEqual({

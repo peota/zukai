@@ -186,6 +186,12 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "View",
+    action: "Show / hide Git view",
+    keys: [["Mod", "Shift", "G"]],
+    command: "toggleGitView",
+  },
+  {
+    group: "View",
     action: "Collapse all folders in Library",
     keys: [["Mod", "Shift", "C"]],
     command: "collapseLibrary",

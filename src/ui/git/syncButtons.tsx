@@ -64,11 +64,11 @@ export function syncRules(
 }
 
 const BASE =
-  "relative flex shrink-0 items-center justify-center text-faint hover:bg-row-hover hover:text-muted aria-disabled:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:text-faint disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint";
+  "relative flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-muted aria-disabled:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:text-faint disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint";
 
 /**
- * A git icon button that spins while its op runs and shows a check for a
- * moment after. `compact` is the old 20px library row; the Git view's are 24px.
+ * A 24px git icon button that spins while its op runs and shows a check for
+ * a moment after.
  */
 export function GitButton({
   label,
@@ -77,9 +77,6 @@ export function GitButton({
   running,
   justDone,
   rule,
-  active,
-  compact,
-  buttonRef,
   onClick,
 }: {
   label: string;
@@ -88,17 +85,12 @@ export function GitButton({
   running: GitOp | null;
   justDone: GitOp | null;
   rule: ButtonRule;
-  active?: boolean;
-  compact?: boolean;
-  buttonRef?: React.Ref<HTMLButtonElement>;
   onClick(): void;
 }) {
   const spinning = running === op;
   const done = !spinning && justDone === op;
-  const size = compact ? 13 : 16;
   return (
     <button
-      ref={buttonRef}
       type="button"
       aria-label={label}
       title={rule.title}
@@ -107,22 +99,17 @@ export function GitButton({
       onClick={() => {
         if (!rule.inert) onClick();
       }}
-      className={
-        BASE +
-        (compact ? " size-5 rounded-[4px]" : " size-6 rounded-[5px]") +
-        (active ? " bg-accent-soft text-accent" : "")
-      }
+      className={BASE}
     >
       {spinning ? (
         <Icon
           name="spinner"
-          size={size}
           className="animate-spin motion-reduce:animate-none"
         />
       ) : done ? (
-        <Icon name="check" size={size} className="text-accent" />
+        <Icon name="check" className="text-accent" />
       ) : (
-        <Icon name={icon} size={size} />
+        <Icon name={icon} />
       )}
     </button>
   );

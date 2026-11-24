@@ -92,6 +92,26 @@ describe("GitView folder", () => {
   });
 });
 
+describe("GitView kept folder", () => {
+  it("reports a pick, and follows a new default", () => {
+    const onSelectFolder = vi.fn();
+    const { git, p, rerender } = setup(
+      repo(),
+      { folders: TWO, onSelectFolder },
+      { statuses: { [LIB]: repo(), [WORK]: repo() } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Library/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /work/ }));
+    expect(onSelectFolder).toHaveBeenCalledWith(WORK);
+    expect(git.select).toHaveBeenLastCalledWith(WORK);
+    // Shown for another folder (the status bar's chip): that one shows.
+    rerender(<GitView {...p} defaultFolder={WORK} />);
+    rerender(<GitView {...p} defaultFolder={LIB} />);
+    expect(git.select).toHaveBeenLastCalledWith(LIB);
+    expect(screen.getByRole("button", { name: /Library/ })).toBeTruthy();
+  });
+});
+
 describe("GitView states", () => {
   it("not a repo: the set up form", () => {
     const { git } = setup({ kind: "notRepo" });

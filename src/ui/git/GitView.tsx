@@ -26,8 +26,13 @@ export interface GitViewProps {
   git: GitSyncApi;
   /** The Library root first, then the added folders. */
   folders: GitFolder[];
-  /** Selected first (the active tab's folder, else the Library root). */
+  /**
+   * Selected first (the folder last picked this session, else the active
+   * tab's, else the Library root); a new value selects it.
+   */
   defaultFolder: string | null;
+  /** A folder picked in the view, to come back to next time. */
+  onSelectFolder?(folder: string): void;
   unsavedUnder(folder: string): number;
   onSaveAll(): void;
   onOpenDiff(target: DiffTarget): void;
@@ -63,6 +68,7 @@ export function GitView({
   git,
   folders,
   defaultFolder,
+  onSelectFolder,
   unsavedUnder,
   onSaveAll,
   onOpenDiff,
@@ -72,6 +78,17 @@ export function GitView({
   renderBranchMenu,
 }: GitViewProps) {
   const [chosen, setChosen] = useState(defaultFolder);
+  // A new default (another active tab's folder, or the status bar's chip)
+  // wins; none (a scratchpad active) keeps what shows.
+  const [seenDefault, setSeenDefault] = useState(defaultFolder);
+  if (defaultFolder !== seenDefault) {
+    setSeenDefault(defaultFolder);
+    if (defaultFolder !== null) setChosen(defaultFolder);
+  }
+  const choose = (f: string) => {
+    setChosen(f);
+    onSelectFolder?.(f);
+  };
   const has = (f: string | null) => folders.some((x) => x.path === f);
   const folder = has(chosen)
     ? chosen
@@ -176,7 +193,7 @@ export function GitView({
           folders={folders}
           selected={folder}
           statusOf={git.status}
-          onSelect={setChosen}
+          onSelect={choose}
         />
         <span className="flex-1" />
         <button
