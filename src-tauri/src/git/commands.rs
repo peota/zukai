@@ -12,7 +12,10 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 use super::state::GitState;
-use super::{FolderGit, Git, GitError, GitKind, check_name, clone_into, folder_git, ops};
+use super::{
+    Branches, Change, FolderGit, Git, GitError, GitKind, branches, changes, check_name, clone_into,
+    folder_git, ops,
+};
 use crate::files::FileError;
 use crate::files::grants::{Grants, key};
 use crate::library::added::{self, Refusal};
@@ -148,6 +151,33 @@ pub async fn git_status(app: AppHandle, folder: String) -> Result<FolderGit, Git
         status_of(&app.state::<GitState>(), &app.state::<Grants>(), &folder)
     })
     .await
+}
+
+/// Runs read-only git work on the root `folder` without the busy lock, like
+/// `git_status`.
+async fn read_folder<T, F>(app: AppHandle, folder: String, f: F) -> Result<T, GitError>
+where
+    T: Send + 'static,
+    F: FnOnce(&Git, &Path) -> Result<T, GitError> + Send + 'static,
+{
+    run(app, move |app| {
+        let st = app.state::<GitState>();
+        st.check_enabled()?;
+        let dir = root_folder(&app.state::<Grants>(), &folder)?;
+        let git = st.git()?;
+        f(&git, &dir)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_changes(app: AppHandle, folder: String) -> Result<Vec<Change>, GitError> {
+    read_folder(app, folder, changes).await
+}
+
+#[tauri::command]
+pub async fn git_branches(app: AppHandle, folder: String) -> Result<Branches, GitError> {
+    read_folder(app, folder, branches).await
 }
 
 #[tauri::command]
