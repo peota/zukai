@@ -67,7 +67,7 @@ This replaces ADR 0013. Zukai stops being an AI client. It no longer stores keys
   - a muted heading, **Start an agent**
   - one row per agent. Installed agents come first, in table order, with **1** to **9** shown at the right as in-menu keys. Agents that aren't installed come after them, dimmed and disabled, with **not installed** at the right.
 - In the menu, the arrow keys and Enter work as in the other menus, a digit starts that agent, and Escape closes it.
-- Each row has a small monochrome mark. *(Builder's call: no vendor logos are shipped. A neutral glyph per row, or the first letter in a rounded square, keeps the restrained look and avoids using other companies' marks.)*
+- Each row shows the agent's own logo at 16 px, as in Herdr's menu *(owner, 2026-11-24, replacing the earlier letter marks)*. The logos are inline SVGs from Simple Icons (CC0), bundled with the app. Claude Code keeps its brand orange, and the others follow the text colour, so they read on every theme. Codex has no mark there, so it keeps a letter in a rounded square. The Terminal row shows the terminal icon.
 
 **Opening the menu when the panel is hidden**
 
