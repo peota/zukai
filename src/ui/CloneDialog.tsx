@@ -8,7 +8,7 @@ import {
   type PickedParent,
 } from "../git/api";
 import { repoName } from "../git/messages";
-import { GitErrorBox } from "./GitRow";
+import { GitErrorBox } from "./git/GitErrorBox";
 
 /** What the dialog asks for; the caller adds the op id and held paths. */
 export type CloneForm = Omit<CloneRequest, "opId" | "openPaths">;

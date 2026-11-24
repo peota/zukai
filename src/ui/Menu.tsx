@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronRight } from "lucide-react";
-import type { CSSProperties, KeyboardEvent } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 
 export interface MenuItem {
   label: string;
@@ -12,6 +12,8 @@ export interface MenuItem {
   /** Why it is disabled, shown muted under the label. */
   reason?: string;
   checked?: boolean;
+  /** A small mark at the row's end, e.g. a status dot. */
+  trailing?: ReactNode;
   /** A thin rule above this item. */
   separated?: boolean;
   onSelect?(): void;
@@ -238,6 +240,9 @@ function MenuList({
               <span className="self-center text-accent" aria-hidden>
                 <Check size={15} strokeWidth={2} />
               </span>
+            )}
+            {item.trailing && (
+              <span className="flex shrink-0 self-center">{item.trailing}</span>
             )}
             {item.hint && (
               <span className="shrink-0 text-ui-sm text-faint">
