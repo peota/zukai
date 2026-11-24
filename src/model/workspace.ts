@@ -7,7 +7,7 @@ import {
   pinnedFirst,
   splitOf,
 } from "./split";
-import type { TabState, WorkspaceState } from "./types";
+import type { DiffTarget, TabState, WorkspaceState } from "./types";
 
 export function newTabState(id: string, kind: Kind = "text"): TabState {
   return {
@@ -67,7 +67,8 @@ export function setPinned(
     );
     return { ...s, closed };
   }
-  if (!!tab.pinned === pinned) return s;
+  // A diff Tab is never kept, so never pinned.
+  if (!!tab.pinned === pinned || tab.kind === "diff") return s;
   // A Split is pinned as a whole.
   const sp = splitOf(s, id);
   const moving = new Set(sp ? [sp.a, sp.b] : [id]);
@@ -114,6 +115,31 @@ export function openFileTab(
   return settle({ ...s, tabs, activeId: tab.id, closed });
 }
 
+/**
+ * Focuses the diff Tab already open for `target`'s File (same folder and
+ * path), or opens a new one after the active Tab.
+ */
+export function openDiffTab(
+  s: WorkspaceState,
+  id: string,
+  target: DiffTarget,
+): WorkspaceState {
+  const open = s.tabs.find(
+    (t) => t.diff?.folder === target.folder && t.diff.path === target.path,
+  );
+  // Its change may be another by now (modified, then deleted).
+  if (open) return activate(updateTab(s, open.id, { diff: target }), open.id);
+  const tab: TabState = {
+    ...newTabState(id, "diff"),
+    title: lastName(target.path),
+    language: languageOf(target.path),
+    diff: target,
+  };
+  const at = insertAt(s);
+  const tabs = [...s.tabs.slice(0, at), tab, ...s.tabs.slice(at)];
+  return settle({ ...s, tabs, activeId: id });
+}
+
 export function closeTab(
   s: WorkspaceState,
   id: string,
@@ -138,8 +164,9 @@ export function closeTab(
     key === null
       ? s.closed
       : s.closed.filter((e) => !e.tab.file || keyOf(e.tab.file.path) !== key);
-  // A pinned Tab is kept even empty: it stays in the Pinned list.
-  const drop = isEmpty && !tab.pinned;
+  // A pinned Tab is kept even empty: it stays in the Pinned list. A diff
+  // Tab is never kept: it has nothing of its own to reopen.
+  const drop = (isEmpty && !tab.pinned) || tab.kind === "diff";
   const closed = drop ? s.closed : [{ tab, index, closedAt: now }, ...older];
   return {
     state: normalizeSplits({ ...s, tabs, activeId, closed }),

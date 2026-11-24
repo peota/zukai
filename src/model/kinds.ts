@@ -1,5 +1,8 @@
-/** What a Tab edits: text, an Excalidraw drawing, or a read-only image. */
-export type Kind = "text" | "canvas" | "image";
+/**
+ * What a Tab edits: text, an Excalidraw drawing, or a read-only image; or
+ * what it shows: a read-only diff of a File against its last commit.
+ */
+export type Kind = "text" | "canvas" | "image" | "diff";
 
 export const CANVAS_EXT = ".excalidraw";
 export const IMAGE_EXTS: readonly string[] = [

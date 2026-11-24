@@ -179,6 +179,42 @@ describe("session file", () => {
   });
 });
 
+describe("diff tabs in the session", () => {
+  const diff: TabState = {
+    ...newTabState("d", "diff"),
+    title: "a.md",
+    diff: { folder: "C:/L", path: "a.md", status: "modified" },
+  };
+
+  it("toSessionFile drops diff tabs", () => {
+    const s: WorkspaceState = {
+      tabs: [newTabState("a"), diff, newTabState("b")],
+      activeId: "d",
+      closed: [],
+      splits: [{ a: "a", b: "d", orientation: "row", ratio: 0.5, focus: "b" }],
+    };
+    const f = toSessionFile(s);
+    expect(f.tabs.map((t) => t.id)).toEqual(["a", "b"]);
+    expect(f.activeId).toBe("a");
+    expect(f.splits).toEqual([]);
+    // An active Tab that isn't a diff stays active.
+    expect(toSessionFile({ ...s, activeId: "b" }).activeId).toBe("b");
+  });
+
+  it("parseSessionFile rejects diff entries", () => {
+    const r = parseSessionFile(
+      JSON.stringify({
+        ...toSessionFile(ws),
+        tabs: [newTabState("a"), diff],
+        closed: [{ tab: diff, index: 0, closedAt: 1 }],
+        activeId: "a",
+      }),
+    )!;
+    expect(r.tabs.map((t) => t.id)).toEqual(["a"]);
+    expect(r.closed).toEqual([]);
+  });
+});
+
 describe("purgeExpired", () => {
   const entry = (closedAt: number): ClosedEntry => ({
     tab: newTabState("z"),

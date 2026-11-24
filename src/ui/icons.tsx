@@ -52,6 +52,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   GitCommitHorizontal,
+  GitCompare,
   Loader2,
 } from "lucide-react";
 import { CANVAS_EXT, IMAGE_EXTS } from "../model/kinds";
@@ -112,6 +113,8 @@ export type IconName =
   | "gitPull"
   | "gitCommit"
   | "gitPush"
+  // A diff Tab.
+  | "gitCompare"
   | "spinner";
 
 const DATA_EXTS = [".json", ".jsonc", ".yaml", ".yml", ".xml", ".toml"];
@@ -208,6 +211,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   gitPull: ArrowDownToLine,
   gitCommit: GitCommitHorizontal,
   gitPush: ArrowUpFromLine,
+  gitCompare: GitCompare,
   spinner: Loader2,
 };
 

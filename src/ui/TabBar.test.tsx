@@ -107,6 +107,13 @@ describe("TabBar", () => {
     );
   });
 
+  it("a diff Tab shows the git-compare icon and says what it shows", () => {
+    setup([{ id: "d", title: "a.md", active: true, kind: "diff" }]);
+    const tab = screen.getByRole("tab");
+    expect(tab).toHaveAttribute("title", "Changes since last commit");
+    expect(tab.querySelector("svg.lucide-git-compare")).not.toBeNull();
+  });
+
   it("a pinned unsaved Tab shows the dot beside the pin", () => {
     setup([
       {

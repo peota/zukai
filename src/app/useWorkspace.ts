@@ -24,6 +24,7 @@ import {
   useWindowTitle,
 } from "./workspaceEffects";
 import type {
+  DiffTarget,
   FileFormat,
   SidebarState,
   SplitOrientation,
@@ -160,6 +161,8 @@ export interface Workspace extends FilesApi {
   focusSidebar(): void;
   /** A new Canvas Scratchpad (Mod+Shift+N). */
   newCanvas(): void;
+  /** Opens (or focuses) the read-only diff Tab of a changed File. */
+  openDiff(target: DiffTarget): void;
   /** The editor's text size in px, for every text Tab; saved in the Session. */
   fontSize: number;
   /** 1 bigger, -1 smaller, 0 back to the default (Mod+wheel, Mod+=/-/0). */
@@ -498,14 +501,16 @@ export function useWorkspace(): Workspace {
 
   const rename = useCallback(
     async (id: string, name: string) => {
+      const tab = stateRef.current.tabs.find((t) => t.id === id);
       // A File's name is its filename on disk.
-      if (stateRef.current.tabs.find((t) => t.id === id)?.file) {
+      if (tab?.file) {
         await renameFile(id, name);
         return;
       }
+      // A diff Tab is named after its File.
+      if (tab?.kind === "diff") return;
       // An empty name falls back to the automatic Title, which needs the
       // text (a Canvas has none: it's "Untitled").
-      const tab = stateRef.current.tabs.find((t) => t.id === id);
       const derived =
         tab?.kind === "text" ? deriveTitle(await loadContent(id)) : "Untitled";
       commit(ws.rename(stateRef.current, id, name, derived));
@@ -526,6 +531,12 @@ export function useWorkspace(): Workspace {
     contents.set(id, "");
     commit(ws.newTab(stateRef.current, id, "canvas"));
   }, [commit, contents]);
+
+  const openDiff = useCallback(
+    (target: DiffTarget) =>
+      commit(ws.openDiffTab(stateRef.current, freshId(), target)),
+    [commit],
+  );
 
   // --- The Library sidebar -------------------------------------------------
 
@@ -775,6 +786,18 @@ export function useWorkspace(): Workspace {
       if (closing.current.has(id)) return true;
       const tab = stateRef.current.tabs.find((t) => t.id === id);
       if (!tab) return true;
+      // A diff Tab has nothing to write or keep: it just goes.
+      if (tab.kind === "diff") {
+        const { state: next } = ws.closeTab(
+          stateRef.current,
+          id,
+          true,
+          Date.now(),
+          keyOf,
+        );
+        commit(ws.ensureOneTab(next, freshId()));
+        return true;
+      }
       // While the Tab still takes edits (closing makes it read-only).
       flushRich(id);
       if (tab.file) {
@@ -958,12 +981,13 @@ export function useWorkspace(): Workspace {
           if (!tab || !mode) return;
           return setMarkdownMode(tab.id, mode === "rich" ? "markdown" : "rich");
         }
-        case "zoom":
-          // A canvas or an image zooms itself (Excalidraw, the viewer).
-          if (s.tabs.find((t) => t.id === s.activeId)?.kind === "text") {
-            zoomEditor(cmd.dir);
-          }
+        case "zoom": {
+          // A canvas or an image zooms itself (Excalidraw, the viewer); a
+          // diff shows text at the editor's size.
+          const kind = s.tabs.find((t) => t.id === s.activeId)?.kind;
+          if (kind === "text" || kind === "diff") zoomEditor(cmd.dir);
           return;
+        }
       }
     },
     [
@@ -1184,6 +1208,7 @@ export function useWorkspace(): Workspace {
     toggleSidebar,
     focusSidebar,
     newCanvas,
+    openDiff,
     fontSize,
     zoomEditor,
     setPinned,

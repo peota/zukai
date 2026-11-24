@@ -131,6 +131,8 @@ export function useLoading(c: FilesContext) {
     (id: string): Promise<string> => {
       const have = contents.get(id);
       if (have !== undefined) return Promise.resolve(have);
+      // A diff Tab has no text of its own (its pane reads both sides).
+      if (tabOf(id)?.kind === "diff") return Promise.resolve("");
       let p = loadsRef.current.get(id);
       if (!p) {
         const file = tabOf(id)?.file;
