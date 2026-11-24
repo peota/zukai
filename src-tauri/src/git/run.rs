@@ -191,6 +191,20 @@ impl Git {
         finish(run_with_timeout(self.command(cwd, args), timeout))
     }
 
+    /// `run`, returning stdout as the raw bytes git wrote.
+    pub fn run_bytes(
+        &self,
+        cwd: &Path,
+        args: &[&str],
+        timeout: Duration,
+    ) -> Result<Vec<u8>, GitError> {
+        let out = match run_with_timeout(self.command(cwd, args), timeout) {
+            Ok(out) if out.status.success() => return Ok(out.stdout),
+            other => other,
+        };
+        finish(out).map(|d| d.stdout.into_bytes())
+    }
+
     /// `run`, which gives up with `Cancelled` once `cancel` is set.
     pub fn run_cancellable(
         &self,
