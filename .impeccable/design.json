@@ -996,6 +996,38 @@
           "#fee9e7"
         ]
       },
+      "warn": {
+        "role": "status",
+        "displayName": "Warn",
+        "canonical": "#b45309",
+        "oklch": "oklch(55.5% 0.146 49.0)",
+        "tonalRamp": [
+          "#230400",
+          "#4d1e00",
+          "#7f3804",
+          "#b6540c",
+          "#e27c41",
+          "#ffa573",
+          "#ffd4bd",
+          "#ffeee5"
+        ]
+      },
+      "warn-dark": {
+        "role": "status",
+        "displayName": "Warn Dark",
+        "canonical": "#d97706",
+        "oklch": "oklch(66.6% 0.157 58.3)",
+        "tonalRamp": [
+          "#200700",
+          "#482300",
+          "#793e00",
+          "#aa5e0f",
+          "#e17f1a",
+          "#fea760",
+          "#ffd5b6",
+          "#ffeee3"
+        ]
+      },
       "warn-bg": {
         "role": "status",
         "displayName": "Warn Bg",
@@ -1609,6 +1641,22 @@
       "description": "Rows, not boxes: hairline outline, sunken header, hairline rules, no cell grid.",
       "html": "<table class=\"ds-table\"><thead><tr><th>Time</th><th>Event</th><th>Owner</th></tr></thead><tbody><tr><td>14:02</td><td>p99 on /checkout jumps to 4.1s</td><td>alert</td></tr><tr><td>14:09</td><td>Workers restarted</td><td>Dana</td></tr></tbody></table>",
       "css": ".ds-table { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); border-collapse: separate; border-spacing: 0; width: 480px; font-size: 14px; line-height: 1.45; border: 1px solid var(--z-hairline, #e4e4e7); border-radius: 8px; font-variant-numeric: tabular-nums; color: var(--z-text, #18181b); } .ds-table th, .ds-table td { padding: 7px 14px; text-align: left; border-bottom: 1px solid var(--z-hairline, #e4e4e7); } .ds-table tr:last-child > td { border-bottom: 0; } .ds-table th { background: var(--z-sunken, #f4f4f5); color: var(--z-muted, #52525b); font-weight: 600; } .ds-table th:first-child { border-top-left-radius: 7px; } .ds-table th:last-child { border-top-right-radius: 7px; } .ds-table tbody tr:hover > td { background: var(--z-row-hover, rgb(24 24 27 / 0.05)); }"
+    },
+    {
+      "name": "Git Row",
+      "kind": "nav",
+      "refersTo": "tree-row",
+      "description": "A 22px row under a library heading: branch icon and faint branch name, a 5px warn dot for uncommitted changes, and 20px Pull, Commit and Push icon buttons.",
+      "html": "<div class=\"ds-git\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"6\" cy=\"6\" r=\"2\"/><circle cx=\"6\" cy=\"18\" r=\"2\"/><circle cx=\"18\" cy=\"8\" r=\"2\"/><path d=\"M6 8v8M18 10c0 4-6 3-12 6\"/></svg><span class=\"ds-git-branch\">main</span><span class=\"ds-git-dot\" title=\"Uncommitted changes\"></span><span class=\"ds-git-btns\"><button aria-label=\"Pull\">&#8595;</button><button aria-label=\"Commit\">&#10003;</button><button aria-label=\"Push\">&#8593;</button></span></div>",
+      "css": ".ds-git { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); display: flex; align-items: center; gap: 4px; width: 250px; height: 22px; padding: 0 6px 0 28px; background: var(--z-side, #f4f4f5); white-space: nowrap; color: var(--z-faint, #71717a); } .ds-git svg { opacity: 0.75; flex-shrink: 0; } .ds-git-branch { font-size: 11px; overflow: hidden; text-overflow: ellipsis; } .ds-git-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--z-warn, #b45309); flex-shrink: 0; } .ds-git-btns { margin-left: auto; display: flex; gap: 1px; } .ds-git-btns button { font: inherit; font-size: 11px; width: 20px; height: 20px; border: 0; border-radius: 4px; background: transparent; color: var(--z-faint, #71717a); } .ds-git-btns button:hover { background: var(--z-row-hover, rgb(24 24 27 / 0.05)); color: var(--z-muted, #52525b); }"
+    },
+    {
+      "name": "Setup Sync Card",
+      "kind": "card",
+      "refersTo": null,
+      "description": "An inline float under a folder heading: a remote URL field, a hint, and a primary Set up with a ghost Cancel.",
+      "html": "<div class=\"ds-sync\"><label>Remote URL</label><input placeholder=\"git@github.com:you/notes.git\"><p>Paste a URL from GitHub, GitLab or any git host.</p><div class=\"ds-sync-btns\"><button class=\"ds-sync-go\">Set up</button><button class=\"ds-sync-no\">Cancel</button></div></div>",
+      "css": ".ds-sync { font-family: var(--z-font-ui, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif); width: 230px; padding: 10px; border-radius: 10px; background: var(--z-surface, #fff); color: var(--z-text, #18181b); font-size: 13px; box-shadow: var(--z-shadow-float, 0 0 0 1px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.12)); } .ds-sync label { font-size: 12px; color: var(--z-muted, #52525b); } .ds-sync input { display: block; box-sizing: border-box; width: 100%; height: 26px; margin-top: 4px; padding: 0 8px; border: 0; border-radius: 5px; background: var(--z-sunken, #f4f4f5); box-shadow: 0 0 0 1px var(--z-hairline, #e4e4e7); font: 12px ui-monospace, monospace; color: inherit; outline: none; } .ds-sync p { margin: 6px 0 0; font-size: 12px; color: var(--z-faint, #71717a); } .ds-sync-btns { display: flex; gap: 6px; margin-top: 8px; } .ds-sync-btns button { font: inherit; border: 0; border-radius: 6px; padding: 4px 10px; } .ds-sync-go { background: var(--z-accent, #2563eb); color: var(--z-accent-fg, #fff); font-weight: 500; } .ds-sync-no { background: transparent; color: var(--z-muted, #52525b); }"
     }
   ],
   "narrative": {

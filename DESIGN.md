@@ -64,6 +64,8 @@ colors:
   solar-dark-faint: "#938a7a"
   danger: "#be123c"
   danger-dark: "#f87171"
+  warn: "#b45309"
+  warn-dark: "#d97706"
   warn-bg: "#fdf3d8"
   warn-fg: "#7a5208"
   err-bg: "#fde6e4"
@@ -204,6 +206,11 @@ components:
     typography: "{typography.sidebar}"
     rounded: "{rounded.md}"
     height: "{spacing.row}"
+  git-row:
+    backgroundColor: "transparent"
+    textColor: "{colors.paper-faint}"
+    rounded: "{rounded.sm}"
+    height: "22px"
   menu:
     backgroundColor: "{colors.paper-surface}"
     textColor: "{colors.paper-text}"
@@ -272,6 +279,7 @@ Palette character: Paper is cool zinc; Solar Light is warm parchment (`#fbf8f2` 
 ### Status and Syntax
 
 - **Danger** (`#be123c` light, `#f87171` dark; text on a danger fill is `danger-fg`: white on light, `#2a0707` on dark): "Not saved", a refused rename, invalid regex, the delete confirmation.
+- **Warn** (`#b45309` light, `#d97706` dark; at least 4.26:1 against the sidebar ground in every theme): the 5px "Uncommitted changes" dot on a Git row, and nothing else. A status color, allowed under the One Accent Rule like Danger.
 - **Warn and Error bars** (amber and rose grounds with deep inks): the file bar for conflicts, missing files and unencodable text. Info bars use the chrome ground and muted ink.
 - **Syntax** (keyword violet, string green, number and type amber-brown, function blue, comment gray): CodeMirror highlighting only, with lighter dark-scheme variants; Solar and Midnight retune only the comment gray.
 
@@ -371,6 +379,8 @@ Small and unobtrusive; never oversized.
 - **Tab bar:** tabs sit on the chrome in muted ink with a 15px faint icon; hover takes the row-hover fill; the active tab takes the editor ground, text ink and an accent icon, with 8px top corners and an 8px concave flare at each bottom corner in the editor ground, so it joins the page as one shape (the flares drop while the tab is dragged). A Split shows as one tab with a hairline between its two titles. Dragging lifts the tab with the float shadow.
 - **Library tree:** 30px rows, 6px corners, 14px chevrons that rotate 90 degrees in 150ms, 16px Lucide icons; the active file gets the row-selected fill and an accent icon; folders read in muted ink, files in text ink. Drop targets get a row-selected fill and a 1px inset accent ring. Nested rows carry 1px hairline indent guides under each ancestor's chevron. The heading's New file, New folder, New canvas, Collapse all and ⋯ buttons fade in (150ms) while the sidebar is hovered or holds focus, and stay up while the Library is empty or unavailable.
 - **Recent, Pinned and Scratchpads:** the same row grammar; open items read muted, closed ones faint. The row-selected fill marks the active Tab only at its home (its tree row, or its Scratchpads row); in Recent and Pinned the active item takes text ink and an accent icon without a fill, so one Tab never shows two selected rows. Scratchpads dock at the sidebar's foot under a full-width hairline.
+- **Git row:** a 22px row under a library heading, quieter than the heading: a 12px branch icon at 75% and the branch name in 11px faint ink. A 5px warn dot marks uncommitted changes; the state "rebasing" is appended to the branch text. At the end sit 20px Pull, Commit and Push icon buttons (13px icons, 4px corners, faint at rest, row-hover fill on hover, 40% opacity when disabled); a running button shows a spinner, and a finished one a brief accent check. Commit opens an inline card, a Float with a message field and a primary submit; errors appear in a danger-text float under the row, dismissed with its close button. Rows appear only while Git sync is on.
+- **Setup sync card:** the inline float under a folder heading that has no remote: 10px corners on the surface ground with the Float shadow, a muted label, a sunken mono URL field (26px, 5px corners), a faint hint, then a primary Set up and a ghost Cancel (6px corners). The Add folder from git dialog uses the same field and button grammar in a 440px, 12px-cornered dialog over a 40% scrim.
 - **Settings tabs:** text tabs with a 2px accent underline when selected.
 
 ### Menus and pickers
