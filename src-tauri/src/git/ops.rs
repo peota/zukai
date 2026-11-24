@@ -10,7 +10,7 @@ use super::{FolderGit, Git, GitError, GitKind, RepoState, RepoStatus, folder_git
 /// Network calls (pull, push).
 const NET: Duration = Duration::from_secs(60);
 /// Local calls (init, add, commit, remote).
-const LOCAL: Duration = Duration::from_secs(60);
+pub(super) const LOCAL: Duration = Duration::from_secs(60);
 /// The first push of a whole library can be large.
 const SETUP_PUSH: Duration = Duration::from_secs(300);
 

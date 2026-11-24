@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-use super::ops::{refuse_in_progress, repo_status};
+use super::ops::{LOCAL, refuse_in_progress, repo_status};
 use super::{Git, GitError, GitKind};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -98,11 +98,22 @@ pub fn switch(git: &Git, dir: &Path, branch: &str, from_remote: bool) -> Result<
     }
     if from_remote {
         let remote = format!("origin/{branch}");
-        git.run(dir, &["switch", "--track", &remote], TIMEOUT)?;
+        git.run(
+            dir,
+            &["switch", "--no-overwrite-ignore", "--track", &remote],
+            LOCAL,
+        )
     } else {
-        git.run(dir, &["switch", branch], TIMEOUT)?;
+        git.run(dir, &["switch", "--no-overwrite-ignore", branch], LOCAL)
     }
-    Ok(())
+    .map(|_| ())
+    .map_err(|e| {
+        if e.detail.contains("would be overwritten") {
+            refused("Switching would overwrite files git ignores here. Move them aside first.")
+        } else {
+            e
+        }
+    })
 }
 
 /// Creates `name` at the current commit and switches to it, keeping any
@@ -123,7 +134,7 @@ pub fn create_branch(git: &Git, dir: &Path, name: &str) -> Result<(), GitError> 
     if branches(git, dir)?.local.iter().any(|b| b.name == name) {
         return Err(refused("That branch already exists"));
     }
-    git.run(dir, &["switch", "-c", name], TIMEOUT)?;
+    git.run(dir, &["switch", "-c", name], LOCAL)?;
     Ok(())
 }
 
@@ -254,6 +265,47 @@ mod tests {
         testutil::git(&work, &["commit", "-m", "only main"]);
         switch(&g(), &work, "draft", false).unwrap();
         assert!(!work.join("only-main.md").exists());
+    }
+
+    #[test]
+    fn switch_refuses_to_overwrite_ignored_files() {
+        let (_t, work, _b) = testutil::repo_with_remote();
+        testutil::git(&work, &["checkout", "-b", "draft"]);
+        std::fs::write(
+            work.join("private.md"),
+            "draft's
+",
+        )
+        .unwrap();
+        testutil::git(&work, &["add", "private.md"]);
+        testutil::git(&work, &["commit", "-m", "private on draft"]);
+        testutil::git(&work, &["checkout", "main"]);
+        std::fs::write(
+            work.join(".gitignore"),
+            "private.md
+",
+        )
+        .unwrap();
+        testutil::git(&work, &["add", ".gitignore"]);
+        testutil::git(&work, &["commit", "-m", "ignore"]);
+        std::fs::write(
+            work.join("private.md"),
+            "mine
+",
+        )
+        .unwrap();
+        let e = switch(&g(), &work, "draft", false).unwrap_err();
+        assert_eq!(e.kind, GitKind::Refused);
+        assert_eq!(
+            e.detail,
+            "Switching would overwrite files git ignores here. Move them aside first."
+        );
+        assert_eq!(
+            std::fs::read_to_string(work.join("private.md")).unwrap(),
+            "mine
+"
+        );
+        assert_eq!(current(&work).as_deref(), Some("main"));
     }
 
     #[test]

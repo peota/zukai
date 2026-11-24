@@ -29,17 +29,22 @@ const fmt = { encoding: "utf-8", bom: false, lineEnding: "lf", mixed: false };
 
 /** What each side reads as: disk `null` is a missing file. */
 let head: HeadFile;
+/** When set, HEAD answers per path (missing for the others). */
+let headAt: Record<string, HeadFile> | null;
 let disk: string | null | { error: string } | { unreadable: string };
 
 beforeEach(() => {
   listeners.clear();
   invoke.mockReset();
   head = { kind: "text", text: "" };
+  headAt = null;
   disk = "";
-  invoke.mockImplementation((cmd: string) => {
+  invoke.mockImplementation((cmd: string, args?: { path: string }) => {
     switch (cmd) {
       case "git_head_file":
-        return Promise.resolve(head);
+        return Promise.resolve(
+          headAt ? (headAt[args!.path] ?? { kind: "missing" }) : head,
+        );
       case "file_read":
         if (disk === null) {
           return Promise.reject({ kind: "io", message: "not found" });
@@ -209,6 +214,47 @@ describe("DiffPane", () => {
       ]),
     );
     expect(calls("file_read")).toEqual([{ path: "C:\\L\\new.md" }]);
+  });
+
+  it("reads HEAD at the new path once the rename is committed", async () => {
+    headAt = { "new.md": { kind: "text", text: "x\n" } };
+    disk = "x\ny\n";
+    const { container } = show({
+      status: "renamed",
+      path: "new.md",
+      oldPath: "old.md",
+    });
+    await waitFor(() =>
+      expect(lines(container, ".cm-changedLine")).toEqual(["y"]),
+    );
+    expect(lines(container, ".cm-deletedLine")).toEqual([]);
+    expect(calls("git_head_file")).toEqual([
+      { folder: FOLDER, path: "old.md" },
+      { folder: FOLDER, path: "new.md" },
+    ]);
+  });
+
+  it("shows Open file once a deleted file is back on disk", async () => {
+    head = { kind: "text", text: "a\n" };
+    disk = null;
+    const { rerender, target, onOpenFile } = show(
+      { status: "deleted" },
+      { refreshKey: 1 },
+    );
+    await waitFor(() => expect(calls("file_read")).toHaveLength(1));
+    expect(screen.queryByRole("button", { name: "Open file" })).toBeNull();
+    disk = "b\n";
+    rerender(
+      <DiffPane
+        target={target}
+        fontSize={14}
+        onOpenFile={onOpenFile}
+        refreshKey={2}
+      />,
+    );
+    expect(
+      await screen.findByRole("button", { name: "Open file" }),
+    ).toBeTruthy();
   });
 
   it("passes an odd file name through unchanged", async () => {
