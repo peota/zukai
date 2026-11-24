@@ -1102,4 +1102,40 @@ describe("the agent menu", () => {
     );
     expect(tm.terminalAgents).toHaveBeenCalledTimes(1);
   });
+
+  it("from the chevron, an agent falls back to the default folder when the terminal's folder won't open", async () => {
+    docsNote();
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    act(() => modB());
+    const zukai = await r.findByRole("treeitem", { name: "zukai" });
+    fireEvent.contextMenu(zukai);
+    fireEvent.click(r.getByRole("menuitem", { name: "Open in terminal" }));
+    await waitFor(() => expect(tm.terminalOpen).toHaveBeenCalledTimes(1));
+    // The active terminal's folder is gone now.
+    tm.terminalOpen.mockImplementation(async (cwd: string) => {
+      if (cwd === "/lib/zukai") throw new Error("gone");
+      return 2;
+    });
+    fireEvent.click(
+      await r.findByRole("button", { name: "New terminal menu" }),
+    );
+    fireEvent.click(await installed(r));
+    await waitFor(() => expect(tm.terminalOpen).toHaveBeenCalledTimes(3));
+    expect(tm.terminalOpen).toHaveBeenNthCalledWith(
+      2,
+      "/lib/zukai",
+      80,
+      24,
+      expect.any(Function),
+      "claude-code",
+    );
+    expect(tm.terminalOpen).toHaveBeenLastCalledWith(
+      "/lib/docs",
+      80,
+      24,
+      expect.any(Function),
+      "claude-code",
+    );
+  });
 });
