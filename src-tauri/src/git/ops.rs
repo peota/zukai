@@ -14,15 +14,19 @@ const LOCAL: Duration = Duration::from_secs(60);
 /// The first push of a whole library can be large.
 const SETUP_PUSH: Duration = Duration::from_secs(300);
 
+/// `-c` options that disable git's command-running `ext::` and `fd::`
+/// transports; put them before the subcommand of anything that reaches a remote.
+pub(super) const NO_EXEC_TRANSPORTS: [&str; 4] = [
+    "-c",
+    "protocol.ext.allow=never",
+    "-c",
+    "protocol.fd.allow=never",
+];
+
 /// Runs a network subcommand with git's command-running `ext::` and `fd::`
 /// transports disabled. Plain local paths stay allowed.
 fn net(git: &Git, dir: &Path, args: &[&str], timeout: Duration) -> Result<(), GitError> {
-    let mut full = vec![
-        "-c",
-        "protocol.ext.allow=never",
-        "-c",
-        "protocol.fd.allow=never",
-    ];
+    let mut full = NO_EXEC_TRANSPORTS.to_vec();
     full.extend_from_slice(args);
     git.run(dir, &full, timeout).map(|_| ())
 }
