@@ -43,8 +43,13 @@ export interface MenuProps {
 /** The menu's panel and its rows, for lists that look like a Menu. */
 export const MENU_PANEL =
   "z-fade-in min-w-48 max-w-[360px] select-none rounded-float bg-surface p-1.5 text-ui text-text shadow-float outline-none";
-export const menuRow = (active: boolean, disabled = false) =>
-  "flex cursor-default items-start gap-3 rounded-[6px] px-2.5 py-[6px] " +
+export const menuRow = (
+  active: boolean,
+  disabled = false,
+  align: "start" | "center" = "start",
+) =>
+  "flex cursor-default gap-3 rounded-[6px] px-2.5 py-[6px] " +
+  (align === "center" ? "items-center " : "items-start ") +
   (disabled ? "text-faint" : active ? "bg-row-sel text-text" : "");
 
 /** Zukai's floating menu in the Paper style (spec section 6). */

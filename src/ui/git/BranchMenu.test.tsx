@@ -36,17 +36,23 @@ function setup({
   });
   const onClose = vi.fn();
   const onSaveAll = vi.fn();
-  render(
+  const el = (n: number, g = git) => (
     <BranchMenu
       folder={LIB}
       anchor={ANCHOR}
-      git={git}
-      unsaved={unsaved}
+      git={g}
+      unsaved={n}
       onSaveAll={onSaveAll}
       onClose={onClose}
-    />,
+    />
   );
-  return { git, onClose, onSaveAll };
+  const { rerender } = render(el(unsaved));
+  return {
+    git,
+    onClose,
+    onSaveAll,
+    rerender: (n: number, g?: GitSyncApi) => rerender(el(n, g)),
+  };
 }
 
 const menu = () => screen.getByRole("menu", { name: "Branches" });
@@ -165,6 +171,13 @@ describe("BranchMenu new branch", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("Tab in the name field closes the menu", () => {
+    const { onClose } = setup();
+    fireEvent.click(newBranch());
+    fireEvent.keyDown(nameField(), { key: "Tab" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("Esc in the name field goes back to the list", () => {
     const { onClose } = setup();
     fireEvent.click(newBranch());
@@ -172,6 +185,33 @@ describe("BranchMenu new branch", () => {
     expect(screen.queryByRole("textbox", { name: "Branch name" })).toBeNull();
     expect(newBranch()).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("BranchMenu placement", () => {
+  it("moves up to stay on screen once the branches arrive", () => {
+    // The panel is 40px tall until it lists branches, then 700px.
+    const box = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const tall = this.querySelector('[role="menuitemradio"]') !== null;
+        const top = parseFloat(this.style.top || "0");
+        return new DOMRect(10, top, 256, tall ? 700 : 40);
+      });
+    try {
+      const git = fakeGit({
+        statuses: { [LIB]: repo() },
+        branches: () => undefined,
+      });
+      const { rerender } = setup({ gitOver: { branches: () => undefined } });
+      const root = () => menu().parentElement as HTMLElement;
+      expect(root().style.top).toBe(`${ANCHOR.bottom + 4}px`);
+      rerender(0, { ...git, branches: () => BRANCHES });
+      // Its bottom sits 8px above the window's.
+      expect(parseFloat(root().style.top) + 700).toBe(window.innerHeight - 8);
+    } finally {
+      box.mockRestore();
+    }
   });
 });
 
@@ -243,6 +283,37 @@ describe("BranchMenu switching", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save all" }));
     expect(onSaveAll).toHaveBeenCalled();
     expect(git.switchBranch).not.toHaveBeenCalled();
+  });
+
+  it("from the keyboard, the refusal takes focus to Save all", () => {
+    const { onSaveAll } = setup({ unsaved: 1 });
+    const m = menu();
+    fireEvent.keyDown(m, { key: "ArrowDown" }); // New branch…
+    fireEvent.keyDown(m, { key: "ArrowDown" }); // main
+    fireEvent.keyDown(m, { key: "ArrowDown" }); // reorg-2026
+    fireEvent.keyDown(m, { key: "Enter" });
+    const save = screen.getByRole("button", { name: "Save all" });
+    expect(document.activeElement).toBe(save);
+    // Enter on it is the button's own (its click), not the menu's.
+    const enterKey = fireEvent.keyDown(save, { key: "Enter" });
+    expect(enterKey).toBe(true);
+    fireEvent.click(save);
+    expect(onSaveAll).toHaveBeenCalledOnce();
+  });
+
+  it("the unsaved refusal goes once they're saved", () => {
+    const { rerender } = setup({ unsaved: 2 });
+    fireEvent.click(branch("reorg-2026"));
+    expect(
+      screen.getByText("Save or close 2 unsaved files first."),
+    ).toBeTruthy();
+    rerender(1);
+    expect(
+      screen.getByText("Save or close 1 unsaved file first."),
+    ).toBeTruthy();
+    rerender(0);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.activeElement).toBe(menu());
   });
 
   it("says file, singular, for one unsaved file", () => {

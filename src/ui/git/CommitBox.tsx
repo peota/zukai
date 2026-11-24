@@ -72,6 +72,8 @@ export function CommitBox({
         rows={1}
         value={message}
         placeholder={placeholder}
+        // While the commit runs: it clears when it lands, so typing waits.
+        readOnly={running === "commit"}
         spellCheck={false}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => {
@@ -81,7 +83,7 @@ export function CommitBox({
             submit();
           }
         }}
-        className="block max-h-[calc(4lh+12px)] min-h-[30px] w-full resize-none overflow-y-auto rounded-[6px] bg-sunken px-2 py-1.5 text-ui leading-[1.4] text-text shadow-[0_0_0_1px_var(--z-hairline)] outline-none placeholder:text-faint focus:shadow-[0_0_0_1px_var(--z-accent)]"
+        className="block max-h-[calc(4lh+12px)] min-h-[30px] w-full resize-none overflow-y-auto rounded-[6px] bg-sunken px-2 py-1.5 text-ui leading-[1.4] text-text shadow-[0_0_0_1px_var(--z-hairline)] outline-none placeholder:text-faint read-only:text-muted focus:shadow-[0_0_0_1px_var(--z-accent)]"
       />
       <button
         type="button"

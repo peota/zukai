@@ -153,14 +153,14 @@ export function StatusBar({
           type="button"
           tabIndex={-1}
           data-git-chip
-          title="Show in Git"
+          title={`${git.branch}: show in Git`}
           onClick={git.onClick}
           className={`${CHIP} flex min-w-0 items-center gap-1.5`}
         >
           <Icon name="gitBranch" size={13} className="shrink-0 text-faint" />
           <span className="truncate">{git.branch}</span>
           {git.state !== "none" && (
-            <span className="shrink-0 text-danger">{git.state}</span>
+            <span className="shrink-0">{git.state}</span>
           )}
         </button>
       )}

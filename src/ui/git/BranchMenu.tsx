@@ -71,7 +71,10 @@ export function BranchMenu({
   const [active, setActive] = useState(-1);
   /** The new branch's name while the inline field shows, else null. */
   const [naming, setNaming] = useState<string | null>(null);
-  const [refusal, setRefusal] = useState<ReactNode>(null);
+  /** Why the last switch was refused; the unsaved one goes once they're saved. */
+  const [refused, setRefused] = useState<"unsaved" | "dirty" | null>(null);
+  const showUnsaved = refused === "unsaved" && unsaved > 0;
+  const saveAllRef = useRef<HTMLButtonElement>(null);
   const [shift, setShift] = useState(0);
 
   const status = git.status(folder);
@@ -117,39 +120,48 @@ export function BranchMenu({
     (filterRef.current ?? panel.current)?.focus({ preventScroll: true });
   }, [named]);
 
-  // Keep it on screen.
+  // Keep it on screen, again whenever its height can change.
+  const shiftRef = useRef(0);
   useLayoutEffect(() => {
     const r = root.current?.getBoundingClientRect();
-    if (r && r.bottom > window.innerHeight - 8) {
-      setShift(window.innerHeight - 8 - r.bottom);
+    if (!r) return;
+    const bottom = r.bottom - shiftRef.current;
+    const next = Math.min(0, window.innerHeight - 8 - bottom);
+    if (next !== shiftRef.current) {
+      shiftRef.current = next;
+      setShift(next);
     }
-  }, []);
+  }, [branches, named, refused, filter]);
+
+  // The unsaved refusal hands focus to its Save all, and takes it back to
+  // the menu once that's done.
+  const hadSaveAll = useRef(false);
+  useEffect(() => {
+    if (showUnsaved) {
+      hadSaveAll.current = true;
+      saveAllRef.current?.focus({ preventScroll: true });
+    } else if (hadSaveAll.current) {
+      hadSaveAll.current = false;
+      if (!root.current?.contains(document.activeElement)) {
+        panel.current?.focus({ preventScroll: true });
+      }
+    }
+  }, [showUnsaved]);
 
   const choose = (o: Option | undefined) => {
     if (!o || off) return;
-    setRefusal(null);
+    setRefused(null);
     if (o.kind === "new") {
       setNaming(filter.trim());
       return;
     }
     if (o.kind === "local" && o.name === current) return onClose();
     if (unsaved > 0) {
-      setRefusal(
-        <>
-          {unsavedCopy(unsaved)}{" "}
-          <button
-            type="button"
-            onClick={onSaveAll}
-            className="text-accent hover:underline"
-          >
-            Save all
-          </button>
-        </>,
-      );
+      setRefused("unsaved");
       return;
     }
     if (repo?.dirty) {
-      setRefusal(DIRTY);
+      setRefused("dirty");
       return;
     }
     onClose();
@@ -191,15 +203,17 @@ export function BranchMenu({
       onMouseEnter={() => !off && setActive(i)}
       onMouseDown={(e) => e.preventDefault()}
       onClick={() => choose(o)}
-      className={menuRow(i === active, off).replace(
-        "items-start",
-        "items-center",
-      )}
+      className={menuRow(i === active, off, "center")}
     >
       <span className="flex size-4 shrink-0 items-center justify-center text-accent">
         {lead}
       </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span
+        className="min-w-0 flex-1 truncate"
+        title={o.kind === "new" ? undefined : o.name}
+      >
+        {label}
+      </span>
     </div>
   );
 
@@ -234,6 +248,7 @@ export function BranchMenu({
               void git.createBranch(folder, name);
             }}
             onBack={() => setNaming(null)}
+            onLeave={onClose}
           />
         ) : (
           <>
@@ -291,9 +306,27 @@ export function BranchMenu({
             {REBASE_FIRST}
           </p>
         )}
-        {refusal && (
+        {(showUnsaved || refused === "dirty") && (
           <p role="alert" className="m-0 px-2.5 py-1.5 text-ui-sm text-muted">
-            {refusal}
+            {refused === "dirty" ? (
+              DIRTY
+            ) : (
+              <>
+                {unsavedCopy(unsaved)}{" "}
+                <button
+                  ref={saveAllRef}
+                  type="button"
+                  onClick={onSaveAll}
+                  onKeyDown={(e) => {
+                    // Enter and Space press the button, not the menu's row.
+                    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+                  }}
+                  className="rounded-[4px] text-accent underline-offset-2 hover:underline"
+                >
+                  Save all
+                </button>
+              </>
+            )}
           </p>
         )}
         <div className="max-h-[min(360px,60vh)] overflow-y-auto">
@@ -350,12 +383,16 @@ function NameField({
   onChange,
   onCreate,
   onBack,
+  onLeave,
 }: {
   value: string;
   taken: boolean;
   onChange(v: string): void;
   onCreate(name: string): void;
+  /** Esc: back to the list. */
   onBack(): void;
+  /** Tab: close the menu. */
+  onLeave(): void;
 }) {
   const name = value.trim();
   const problem =
@@ -385,6 +422,10 @@ function NameField({
           } else if (e.key === "Escape") {
             e.preventDefault();
             onBack();
+          } else if (e.key === "Tab") {
+            // Like the menu itself: Tab leaves and closes it.
+            e.preventDefault();
+            onLeave();
           }
         }}
         className="h-8 w-full rounded-[6px] border border-hairline bg-sunken px-2.5 text-text outline-none placeholder:text-faint focus:border-accent aria-invalid:border-danger"

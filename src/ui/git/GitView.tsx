@@ -279,11 +279,16 @@ function BranchRow({
     }
   }, [menu]);
 
+  const name = status.branch ?? status.head;
+  const inProgress = status.state !== "none";
   return (
-    <div className="flex h-[30px] shrink-0 items-center gap-1 pr-0.5 whitespace-nowrap">
+    // A narrow sidebar drops the button's icon and chevron, so the name
+    // keeps room next to the counts and buttons.
+    <div className="@container flex h-[30px] shrink-0 items-center gap-1 pr-0.5 whitespace-nowrap">
       <button
         ref={branchRef}
         type="button"
+        title={name}
         aria-haspopup="menu"
         aria-expanded={menu !== null}
         data-z-git-branch=""
@@ -292,40 +297,49 @@ function BranchRow({
           const b = branchRef.current?.getBoundingClientRect();
           if (b) setMenu(b);
         }}
-        className="flex h-[26px] min-w-0 items-center gap-1.5 rounded-[6px] px-2 text-muted hover:bg-row-hover hover:text-text"
+        className="flex h-[26px] min-w-0 items-center gap-1.5 rounded-[6px] px-2 text-muted hover:bg-row-hover hover:text-text aria-expanded:bg-row-sel aria-expanded:text-text @max-[220px]:px-1.5"
       >
-        <Icon name="gitBranch" className="text-faint" />
-        <span className="min-w-0 truncate">{status.branch ?? status.head}</span>
-        <Icon name="chevronDown" size={14} className="text-faint" />
+        <Icon
+          name="gitBranch"
+          className="shrink-0 text-faint @max-[220px]:hidden"
+        />
+        <span className="min-w-0 truncate">{name}</span>
+        <Icon
+          name="chevronDown"
+          size={14}
+          className="shrink-0 text-faint @max-[220px]:hidden"
+        />
       </button>
-      {status.state !== "none" && (
+      {inProgress && (
         <span className="shrink-0 text-ui-sm text-muted">{status.state}</span>
       )}
-      <span className="flex-1" />
-      {status.behind > 0 && (
-        <Count icon="arrowDown" n={status.behind} label="behind" />
-      )}
-      {status.ahead > 0 && (
-        <Count icon="arrowUp" n={status.ahead} label="ahead" />
-      )}
-      <GitButton
-        label="Pull"
-        icon="gitPull"
-        op="pull"
-        running={running}
-        justDone={justDone}
-        rule={rules.pull}
-        onClick={() => void git.pull(folder)}
-      />
-      <GitButton
-        label="Push"
-        icon="gitPush"
-        op="push"
-        running={running}
-        justDone={justDone}
-        rule={rules.push}
-        onClick={() => void git.push(folder)}
-      />
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {/* Mid-rebase the counts aren't the branch's: they make room. */}
+        {!inProgress && status.behind > 0 && (
+          <Count icon="arrowDown" n={status.behind} label="behind" />
+        )}
+        {!inProgress && status.ahead > 0 && (
+          <Count icon="arrowUp" n={status.ahead} label="ahead" />
+        )}
+        <GitButton
+          label="Pull"
+          icon="gitPull"
+          op="pull"
+          running={running}
+          justDone={justDone}
+          rule={rules.pull}
+          onClick={() => void git.pull(folder)}
+        />
+        <GitButton
+          label="Push"
+          icon="gitPush"
+          op="push"
+          running={running}
+          justDone={justDone}
+          rule={rules.push}
+          onClick={() => void git.push(folder)}
+        />
+      </div>
       {menu && renderBranchMenu?.({ folder, anchor: menu, close })}
     </div>
   );
