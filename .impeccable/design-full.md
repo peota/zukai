@@ -74,6 +74,10 @@ colors:
   warn-fg-dark: "#f2c86b"
   err-bg-dark: "#3d2020"
   err-fg-dark: "#f5a3a3"
+  diff-insert: "#1a7f37"
+  diff-insert-dark: "#3fb950"
+  diff-delete: "#cf222e"
+  diff-delete-dark: "#f85149"
   syn-keyword: "#8b3fd9"
   syn-string: "#2f7d4f"
   syn-number: "#b4580f"
@@ -206,11 +210,28 @@ components:
     typography: "{typography.sidebar}"
     rounded: "{rounded.md}"
     height: "{spacing.row}"
-  git-row:
+  view-switch:
     backgroundColor: "transparent"
-    textColor: "{colors.paper-faint}"
-    rounded: "{rounded.sm}"
-    height: "22px"
+    textColor: "{colors.paper-muted}"
+    rounded: "{rounded.track}"
+    padding: "2px"
+    height: "30px"
+  git-view:
+    backgroundColor: "transparent"
+    textColor: "{colors.paper-text}"
+    typography: "{typography.sidebar}"
+    rounded: "{rounded.md}"
+    height: "{spacing.row}"
+  branch-menu:
+    backgroundColor: "{colors.paper-surface}"
+    textColor: "{colors.paper-text}"
+    rounded: "{rounded.float}"
+    padding: "6px"
+    width: "256px"
+  diff-tab:
+    backgroundColor: "{colors.paper-editor}"
+    textColor: "{colors.paper-text}"
+    typography: "{typography.code}"
   menu:
     backgroundColor: "{colors.paper-surface}"
     textColor: "{colors.paper-text}"
@@ -279,7 +300,8 @@ Palette character: Paper is cool zinc; Solar Light is warm parchment (`#fbf8f2` 
 ### Status and Syntax
 
 - **Danger** (`#be123c` light, `#f87171` dark; text on a danger fill is `danger-fg`: white on light, `#2a0707` on dark): "Not saved", a refused rename, invalid regex, the delete confirmation.
-- **Warn** (`#b45309` light, `#d97706` dark; at least 4.26:1 against the sidebar ground in every theme): the 5px "Uncommitted changes" dot on a Git row, and nothing else. A status color, allowed under the One Accent Rule like Danger.
+- **Warn** (`#b45309` light, `#d97706` dark; at least 4.26:1 against the sidebar ground in every theme): the 5px "Uncommitted changes" dot, on the Git segment of the Files | Git switch and beside a folder in the Git view's folder picker, and nothing else. A status color, allowed under the One Accent Rule like Danger.
+- **Diff** (insert `#1a7f37` light, `#3fb950` dark; delete `#cf222e` light, `#f85149` dark): the diff tab only. Line grounds mix them at 10% (insert) and 9% (delete), changed words at 20%, and the 3px change gutter takes them at full strength; tokens `--z-diff-insert`, `--z-diff-delete` and their `-line` / `-text` mixes. Never in the chrome: a change's status letter in the Git view stays muted ink.
 - **Warn and Error bars** (amber and rose grounds with deep inks): the file bar for conflicts, missing files and unencodable text. Info bars use the chrome ground and muted ink.
 - **Syntax** (keyword violet, string green, number and type amber-brown, function blue, comment gray): CodeMirror highlighting only, with lighter dark-scheme variants; Solar and Midnight retune only the comment gray.
 
@@ -319,7 +341,7 @@ Palette character: Paper is cool zinc; Solar Light is warm parchment (`#fbf8f2` 
 
 A fixed desktop shell, not a responsive page. Left to right: the Library sidebar (260px default, resizable from 180px to 480px by a 6px handle on its right edge, 16px per arrow-key step), then the main column. Top to bottom in the main column: a 40px tab bar, an optional file bar (8px by 16px), the rich toolbar (at least 36px, wrapping its hairline-separated groups in a narrow Split, its first tool inset 50px to align with the text), the editor, and a 32px status bar with 16px sides.
 
-The tab bar holds tabs 34px tall, 120px to 220px wide (380px for a joined Split tab), 2px apart, rising from 6px top padding so the active tab meets the editor. The sidebar stacks a 32px search field, Pinned (up to 35% of the height), the Library tree, and Scratchpads (up to 40%), with 8px side padding and rows 30px tall. Note content gets 56px side padding, 32px top and 64px bottom; the text editor's lines get 14px left and 32px right padding inside a 14px vertical content inset.
+The tab bar holds tabs 34px tall, 120px to 220px wide (380px for a joined Split tab), 2px apart, rising from 6px top padding so the active tab meets the editor. The sidebar stacks the Files | Git view switch (while Git sync is on; Git swaps everything below it for the Git view), a 32px search field, Pinned (up to 35% of the height), the Library tree, and Scratchpads (up to 40%), with 8px side padding and rows 30px tall. Note content gets 56px side padding, 32px top and 64px bottom; the text editor's lines get 14px left and 32px right padding inside a 14px vertical content inset.
 
 Rhythm is a 4px base with 6px and 10px steps in dense controls: menu rows 6px by 10px inside a 6px panel inset, icon buttons 24px or 28px, settings rows at least 44px. Long content scrolls inside its region; the window itself never scrolls.
 
@@ -364,7 +386,9 @@ Small and unobtrusive; never oversized.
 ### Segmented controls and chips
 
 - **Segmented:** a row-hover track (7px corners, 2px inset; 6px and 1px in the status bar) holding text segments; the chosen one takes the surface ground, text ink and the Tab shadow. Used for Mode, Markdown default, Rich/Markdown and Edit/Split/Preview.
+- **View switch:** the Files | Git segmented control at the top of the sidebar, above the search field, while Git sync is on: a full-width row-hover track (7px corners, 2px inset, 6px below it) with two equal 26px segments (5px corners), each a 16px Lucide icon (`folder`, `git-branch`) and its label; the chosen one takes the surface ground, text ink, a muted icon and the Tab shadow, the other muted ink with a faint icon. The Git segment carries the 5px warn dot after its label while any repo folder has uncommitted changes. Arrow keys move the choice (a radio group).
 - **Status chips:** 12px muted text, 3px by 8px, 5px corners; row-hover on hover, row-selected while their menu is open.
+- **Branch chip:** a status chip at the left of the status bar, after the gear, for the active File's repo: a 13px faint `git-branch` icon, the branch (short hash when detached) truncating, then "rebasing" or "merging" in the same muted ink, never danger: a rebase isn't an error. Its tooltip names the branch ("main: show in Git"); a click opens the Git view on that folder.
 - **Accent picker:** 18px filled dots in 28px hit targets; the chosen one gets a 2px ring in the text ink.
 - **Theme swatches:** 84px tiles with a 48px miniature of the theme (chrome strip, page with two ink bars and an accent bar), 6px corners, a strong-hairline ring that becomes a 2px accent ring when chosen.
 
@@ -379,8 +403,15 @@ Small and unobtrusive; never oversized.
 - **Tab bar:** tabs sit on the chrome in muted ink with a 15px faint icon; hover takes the row-hover fill; the active tab takes the editor ground, text ink and an accent icon, with 8px top corners and an 8px concave flare at each bottom corner in the editor ground, so it joins the page as one shape (the flares drop while the tab is dragged). A Split shows as one tab with a hairline between its two titles. Dragging lifts the tab with the float shadow.
 - **Library tree:** 30px rows, 6px corners, 14px chevrons that rotate 90 degrees in 150ms, 16px Lucide icons; the active file gets the row-selected fill and an accent icon; folders read in muted ink, files in text ink. Drop targets get a row-selected fill and a 1px inset accent ring. Nested rows carry 1px hairline indent guides under each ancestor's chevron. The heading's New file, New folder, New canvas, Collapse all and ⋯ buttons fade in (150ms) while the sidebar is hovered or holds focus, and stay up while the Library is empty or unavailable.
 - **Recent, Pinned and Scratchpads:** the same row grammar; open items read muted, closed ones faint. The row-selected fill marks the active Tab only at its home (its tree row, or its Scratchpads row); in Recent and Pinned the active item takes text ink and an accent icon without a fill, so one Tab never shows two selected rows. Scratchpads dock at the sidebar's foot under a full-width hairline.
-- **Git row:** a 22px row under a library heading, quieter than the heading: a 12px branch icon at 75% and the branch name in 11px faint ink. A 5px warn dot marks uncommitted changes; the state "rebasing" is appended to the branch text. At the end sit 20px Pull, Commit and Push icon buttons (13px icons, 4px corners, faint at rest, row-hover fill on hover, 40% opacity when disabled); a running button shows a spinner, and a finished one a brief accent check. Commit opens an inline card, a Float with a message field and a primary submit; errors appear in a danger-text float under the row, dismissed with its close button. Rows appear only while Git sync is on.
-- **Setup sync card:** the inline float under a folder heading that has no remote: 10px corners on the surface ground with the Float shadow, a muted label, a sunken mono URL field (26px, 5px corners), a faint hint, then a primary Set up and a ghost Cancel (6px corners). The Add folder from git dialog uses the same field and button grammar in a 440px, 12px-cornered dialog over a 40% scrim.
+- **Git view:** replaces everything below the view switch, docked on the chrome like the tree (no card, no shadow). Top to bottom:
+  - A 30px header: the folder name in 600 text ink, one step above UI size (a ghost button with a chevron opening a Menu of library folders, the chosen one checked, each with the warn dot or a faint "not synced" hint; plain text with one folder) and a 24px faint ⋯ button (Add folder from git…, Refresh).
+  - A 30px branch row: a 26px ghost button (6px corners, muted ink, row-selected while its menu is open) holding a faint 16px `git-branch` icon, the branch name truncating (tooltip: the full name) and a 14px chevron; then "rebasing" or "merging" in muted ink; then, at the end, the behind and ahead counts (13px Lucide arrows and tabular numerals in faint ink, only when non-zero, hidden mid-rebase) and 24px Pull and Push icon buttons (faint, row-hover on hover, 40% when disabled; a spinner while running, a brief accent check when done). Where the view is under 220px wide the button drops its icon and chevron and tightens to 6px sides, so the name keeps room.
+  - The inline error box, then a full-width hairline.
+  - The commit box: a sunken message field (6px corners, a hairline ring that turns accent on focus, 30px growing to four lines, faint `Sync YYYY-MM-DD` placeholder, read-only in muted ink while its commit runs), then an 8px gap and a 28px primary button, Commit & push (Commit without a remote), 40% when there's nothing to commit. An unsaved-files note in caption muted ink with a Save all text button sits under it when needed.
+  - CHANGES in the Label style with the count at its end, then 30px rows (6px corners, row-hover, the inset accent-soft ring for keyboard position): a 14px fixed column for the status letter (M A D R U, 600 weight, muted ink; only U takes danger), the file name in text ink, and its folder in faint caption ink, right-aligned and truncated from the left (never narrower than 32px; hidden under 220px, where the tooltip has it). "No changes" and "and N more files" in faint ink.
+  - Empty states are one calm muted line: "Install git to sync folders.", "This folder is inside the git repo at …", or "This folder isn't synced yet." over the Set up sync form (a muted Remote URL label, a 28px sunken field, a faint hint, a muted note, a primary Set up). A first read slower than 300ms shows a faint spinner line.
+- **Branch menu:** a Menu-styled float (surface, Float shadow, 10px corners, 6px inset, 256px wide) hung 4px under the branch button and nudged up to stay 8px inside the window. Past 8 branches it opens with a 32px sunken filter field (search icon, "Find or create a branch", accent border on focus). Rows are the menu's 6px pills, centered, with a 16px lead column: a faint plus for New branch…, an accent check on the current branch. LOCAL and ON REMOTE headings use the menu heading style; remote rows show a faint `origin/` before the name; long names truncate with the full name in a tooltip. The list scrolls past min(360px, 60vh). New branch… turns the top into a 32px name field with a faint hint, or a danger border and danger caption for an invalid or taken name. A refused switch shows one muted caption line under the top ("You have uncommitted changes…" or "Save or close N unsaved files first." with an accent Save all that takes keyboard focus); mid-rebase every row is faint and a faint line says why.
+- **Add folder from git dialog:** a sunken URL field and primary/ghost buttons (6px corners) in a 440px, 12px-cornered dialog over a 40% scrim.
 - **Settings tabs:** text tabs with a 2px accent underline when selected.
 
 ### Menus and pickers
@@ -390,6 +421,10 @@ The Float shadow on the surface ground, 10px corners, 6px inset, 13px text, 192p
 ### Rich toolbar
 
 A slim strip on the editor ground under a hairline: 28px icon tools in groups separated by a hairline and 6px, muted at rest; pressed tools take the accent tint and accent ink. Inside a table, an accent-tint pill (28px, 6px corners) offers table controls.
+
+### Diff tab
+
+A read-only tab with a 16px `git-compare` icon and the tooltip "Changes since last commit". Under the tab bar, a 36px bar on the editor ground with a hairline below: the file's path in muted UI ink, truncating, and an Open file secondary button (the file bar's) at the end, hidden for a deleted file. Below it, CodeMirror's unified merge view in the text editor's theme, mono face and zoom, with the file's own syntax highlighting: deleted lines in place above the new ones on the delete ground, inserted lines on the insert ground, changed words marked at 20% with 2px corners (not for a whole file added or deleted, where the line ground says it), and a 3px change bar in the gutter. Deleted lines align with the editor's own (14px in). Unchanged stretches collapse to a full-width "N unchanged lines" row in faint caption UI text on the active-line ground (row-hover on hover), with no glyphs. Binary, over-1MB and unchanged files show one centered muted line instead. The status bar shows "Diff" at its end and nothing editor-specific.
 
 ### Notes: tables, checklists, code
 

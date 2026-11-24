@@ -74,6 +74,10 @@ colors:
   warn-fg-dark: "#f2c86b"
   err-bg-dark: "#3d2020"
   err-fg-dark: "#f5a3a3"
+  diff-insert: "#1a7f37"
+  diff-insert-dark: "#3fb950"
+  diff-delete: "#cf222e"
+  diff-delete-dark: "#f85149"
   syn-keyword: "#8b3fd9"
   syn-string: "#2f7d4f"
   syn-number: "#b4580f"
@@ -206,11 +210,28 @@ components:
     typography: "{typography.sidebar}"
     rounded: "{rounded.md}"
     height: "{spacing.row}"
-  git-row:
+  view-switch:
     backgroundColor: "transparent"
-    textColor: "{colors.paper-faint}"
-    rounded: "{rounded.sm}"
-    height: "22px"
+    textColor: "{colors.paper-muted}"
+    rounded: "{rounded.track}"
+    padding: "2px"
+    height: "30px"
+  git-view:
+    backgroundColor: "transparent"
+    textColor: "{colors.paper-text}"
+    typography: "{typography.sidebar}"
+    rounded: "{rounded.md}"
+    height: "{spacing.row}"
+  branch-menu:
+    backgroundColor: "{colors.paper-surface}"
+    textColor: "{colors.paper-text}"
+    rounded: "{rounded.float}"
+    padding: "6px"
+    width: "256px"
+  diff-tab:
+    backgroundColor: "{colors.paper-editor}"
+    textColor: "{colors.paper-text}"
+    typography: "{typography.code}"
   menu:
     backgroundColor: "{colors.paper-surface}"
     textColor: "{colors.paper-text}"
@@ -236,13 +257,15 @@ components:
 # Design System: Zukai
 
 <!-- impeccable:design-map -->
+
 Name: Zukai
-Colors: primary: accent-blue #2563eb; neutral: paper-chrome #f4f4f5; status: danger #be123c; syntax: syn-keyword #8b3fd9; primary: accent-blue-dark #5b8def; primary: accent-violet #7c3aed (+78 more in the sidecar)
+Colors: primary: accent-blue #2563eb; neutral: paper-chrome #f4f4f5; status: danger #be123c; syntax: syn-keyword #8b3fd9; primary: accent-blue-dark #5b8def; primary: accent-violet #7c3aed (+82 more in the sidecar)
 Fonts: Segoe UI Variable Text (display, headline, title, body, ui, sidebar, caption, label); JetBrains Mono (code)
 Spacing: hair 1px, xs 4px, sm 6px, md 10px, lg 16px, row 30px, tabbar 40px, statusbar 32px, sidebar 260px, column 720px
 Radius: xs 4px, sm 5px, md 6px, track 7px, lg 8px, float 10px, dialog 12px, full 999px
 North Star: "The Receding Frame"
 Rules:
+
 - The One Accent Rule. The accent is the only hue in the chrome.
 - The Three Grounds Rule. Chrome sits below the editor, which sits below raised surfaces.
 - The Palette Swap Rule. Every color comes from a `--z-*` token.
@@ -250,15 +273,20 @@ Rules:
 - The Reading Column Rule. Notes read at 15px/1.65 in a 720px column with prose at 70ch, identically in the preview and the rich editor, set 56px in from the editor's left edge.
 - The Float-Only Shadow Rule. If it is docked, it gets a hairline; if it floats, it gets the float shadow.
 - The Nested Radius Rule. A shape inside another takes a smaller radius: a 10px menu holds 6px rows, a 7px track holds 5px thumbs, an 8px table's header corners are 7px.
+
 Elevation:
+
 - Float: 0 0 0 1px rgb(0 0 0 / 0.06), 0 2px 4px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.1)
 - Tab: 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.06)
 - Scrim: rgb(0 0 0 / 0.4)
+
 Don't:
+
 - Don't add a second chrome hue; status and syntax colors appear only where they carry meaning.
 - Don't put shadows on docked surfaces; the float shadow is for menus, pickers, the find bar, dialogs and a dragged tab.
 - Don't use text glyphs as icons (check marks, triangles, warning signs, brace pairs); draw them or use Lucide.
 - Don't set chrome in JetBrains Mono; mono is for code and code-search fields.
 - Don't draw a cell grid in tables or glyph checkboxes in checklists.
 - Don't build dashboard layouts, oversized buttons or extra sidebars; toolbars stay small and the editor area stays the largest thing on screen.
+
 Full: .impeccable/design-full.md (read a section when you need its detail)
