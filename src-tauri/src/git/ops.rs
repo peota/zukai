@@ -46,7 +46,7 @@ pub(super) fn repo_status(git: &Git, dir: &Path) -> Result<RepoStatus, GitError>
     }
 }
 
-fn refuse_in_progress(s: &RepoStatus) -> Result<(), GitError> {
+pub(super) fn refuse_in_progress(s: &RepoStatus) -> Result<(), GitError> {
     if s.state == RepoState::Clean {
         Ok(())
     } else {

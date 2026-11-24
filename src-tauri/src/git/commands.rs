@@ -13,8 +13,8 @@ use tauri_plugin_dialog::DialogExt;
 
 use super::state::GitState;
 use super::{
-    Branches, Change, FolderGit, Git, GitError, GitKind, branches, changes, check_name, clone_into,
-    folder_git, ops,
+    Branches, Change, FolderGit, Git, GitError, GitKind, HeadFile, branches, changes, check_name,
+    clone_into, create_branch, folder_git, head_file, ops, switch,
 };
 use crate::files::FileError;
 use crate::files::grants::{Grants, key};
@@ -178,6 +178,37 @@ pub async fn git_changes(app: AppHandle, folder: String) -> Result<Vec<Change>, 
 #[tauri::command]
 pub async fn git_branches(app: AppHandle, folder: String) -> Result<Branches, GitError> {
     read_folder(app, folder, branches).await
+}
+
+#[tauri::command]
+pub async fn git_head_file(
+    app: AppHandle,
+    folder: String,
+    path: String,
+) -> Result<HeadFile, GitError> {
+    read_folder(app, folder, move |git, dir| head_file(git, dir, &path)).await
+}
+
+#[tauri::command]
+pub async fn git_switch(
+    app: AppHandle,
+    folder: String,
+    branch: String,
+    from_remote: bool,
+) -> Result<(), GitError> {
+    on_folder(app, folder, move |git, dir| {
+        switch(git, dir, &branch, from_remote)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_create_branch(
+    app: AppHandle,
+    folder: String,
+    name: String,
+) -> Result<(), GitError> {
+    on_folder(app, folder, move |git, dir| create_branch(git, dir, &name)).await
 }
 
 #[tauri::command]
