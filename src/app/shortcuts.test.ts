@@ -199,9 +199,16 @@ describe("platform differences", () => {
       ),
     ).toBeNull();
   });
-  it("Mod+J maps to no command until agents take it", () => {
-    expect(matchShortcut(ev("KeyJ", { ctrlKey: true }), "windows")).toBeNull();
-    expect(matchShortcut(ev("KeyJ", { metaKey: true }), "mac")).toBeNull();
+  it("Mod+J opens the agent menu", () => {
+    expect(matchShortcut(ev("KeyJ", { ctrlKey: true }), "windows")).toEqual({
+      type: "agentMenu",
+    });
+    expect(matchShortcut(ev("KeyJ", { metaKey: true }), "mac")).toEqual({
+      type: "agentMenu",
+    });
+    expect(
+      matchShortcut(ev("KeyJ", { ctrlKey: true, shiftKey: true }), "windows"),
+    ).toBeNull();
   });
   it("plain Ctrl+M is not the rich switch", () =>
     expect(matchShortcut(ev("KeyM", { ctrlKey: true }), "windows")).toBeNull());

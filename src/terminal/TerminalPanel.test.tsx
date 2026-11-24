@@ -71,6 +71,7 @@ function props(over: Partial<TerminalPanelProps> = {}): TerminalPanelProps {
     onSize: vi.fn(),
     onPosition: vi.fn(),
     onNew: vi.fn(),
+    onNewMenu: vi.fn(),
     fontSize: 14,
     palette: "paper",
     platform: "windows",
@@ -124,6 +125,21 @@ describe("TerminalPanel", () => {
     expect(p.onFocusEditor).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
     expect(p.onNew).toHaveBeenCalled();
+  });
+
+  it("the chevron beside + opens the New terminal menu", () => {
+    const p = props();
+    render(<TerminalPanel {...p} />);
+    const chevron = screen.getByRole("button", { name: "New terminal menu" });
+    expect(chevron).toHaveAttribute("aria-haspopup", "menu");
+    expect(chevron).toHaveAttribute("data-z-agent-menu");
+    fireEvent.click(chevron);
+    expect(p.onNewMenu).toHaveBeenCalledWith(
+      expect.objectContaining({ bottom: expect.any(Number) }),
+    );
+    expect(p.onNew).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+    expect(p.onNew).toHaveBeenCalledTimes(1);
   });
 
   it("tabs activate, and × or middle-click kills", () => {

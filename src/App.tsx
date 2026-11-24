@@ -11,7 +11,11 @@ import { useWorkspace } from "./app/useWorkspace";
 import { isTerminalTarget, routeKey } from "./terminal/keys";
 import { defaultFolder, plusFolder } from "./terminal/defaultFolder";
 import { useTerminals } from "./terminal/useTerminals";
+import { useAgents } from "./terminal/useAgents";
+import { NewTerminalMenu } from "./terminal/NewTerminalMenu";
+import type { AgentInfo } from "./terminal/api";
 import { detectPlatform, matchShortcut, type Command } from "./app/shortcuts";
+import { formatKeys } from "./app/shortcutList";
 import {
   allowsContextMenu,
   blocksBrowserKey,
@@ -73,6 +77,33 @@ const SETTINGS_HINT = platform === "mac" ? "⌘," : "Ctrl+,";
 const PREVIEW_HINT = platform === "mac" ? "⇧⌘V" : "Ctrl+Shift+V";
 const RICH_HINT = platform === "mac" ? "⇧⌘M" : "Ctrl+Shift+M";
 const NO_TERMINAL_FOLDER = "Choose a Library folder to open a terminal";
+const NEW_TERMINAL_HINT = formatKeys(["Ctrl", "Shift", "`"], platform);
+const AGENT_MENU_HINT = formatKeys(["Mod", "J"], platform);
+
+/** Where the New terminal menu hangs, and which button opened it. */
+interface AgentMenuAt {
+  x: number;
+  y: number;
+  side: "below" | "above";
+  align: "start" | "end";
+  from: "panel" | "status";
+}
+
+/** Above the status bar's Agent button, right-aligned with it. */
+function statusAnchor(box?: DOMRect): AgentMenuAt {
+  const r =
+    box ??
+    document
+      .querySelector('[data-z-agent-menu="status"]')
+      ?.getBoundingClientRect();
+  return {
+    x: r ? r.right : window.innerWidth,
+    y: r ? r.top - 4 : window.innerHeight - 36,
+    side: "above",
+    align: "end",
+    from: "status",
+  };
+}
 
 // xterm loads with the first terminal, never at startup.
 const TerminalPanel = lazy(() =>
@@ -136,12 +167,22 @@ export default function App() {
     },
     [openTerm, showNotice],
   );
-  /**
-   * The panel's +: the active terminal's folder while it's still granted.
-   * If that folder no longer exists, the default folder instead.
-   */
-  const plusTerminal = () => {
-    const cwd = plusFolder(
+  /** An agent in a new terminal in `cwd`, as `openTerminal` opens one. */
+  const openAgent = useCallback(
+    (agent: AgentInfo, cwd: string | null) => {
+      if (cwd === null) {
+        showNotice(NO_TERMINAL_FOLDER);
+        return;
+      }
+      openTerm(cwd, agent).catch((err) =>
+        showNotice(`Can't open a terminal: ${asFileError(err).message}`),
+      );
+    },
+    [openTerm, showNotice],
+  );
+  /** The panel's folder: the active terminal's while it's still granted. */
+  const panelFolder = () =>
+    plusFolder(
       termState.terms.find((x) => x.id === termState.activeId),
       [
         ...(libRoot !== null && libAvailable ? [libRoot] : []),
@@ -149,9 +190,27 @@ export default function App() {
       ],
       termFolder,
     );
+  /**
+   * The panel's +: the active terminal's folder while it's still granted.
+   * If that folder no longer exists, the default folder instead.
+   */
+  const plusTerminal = () => {
+    const cwd = panelFolder();
     if (cwd === null || cwd === termFolder) return openTerminal(cwd);
     openTerm(cwd).catch(() => openTerminal(termFolder));
   };
+  /** The installed agents, checked each time the New terminal menu opens. */
+  const { agents, refresh: refreshAgents } = useAgents();
+  const [agentMenu, setAgentMenu] = useState<AgentMenuAt | null>(null);
+  const agentMenuFrom = agentMenu?.from;
+  /** Closed without a choice from the status bar: back to the editor. */
+  const closeAgentMenu = useCallback(
+    (chose?: boolean) => {
+      setAgentMenu(null);
+      if (!chose && agentMenuFrom === "status") refocus();
+    },
+    [agentMenuFrom, refocus],
+  );
   // The panel loads with the first terminal and stays mounted after that.
   const [panelLoaded, setPanelLoaded] = useState(false);
   if (!panelLoaded && termState.terms.length > 0) setPanelLoaded(true);
@@ -174,6 +233,11 @@ export default function App() {
       } else if (cmd.type === "newTerminal") {
         openTerminal(termFolder);
         return;
+      } else if (cmd.type === "agentMenu") {
+        // A toggle: an open menu closes, wherever it was opened from.
+        if (agentMenuFrom) closeAgentMenu();
+        else setAgentMenu(statusAnchor());
+        return;
       } else await workspaceRun(cmd);
       // The other editor takes the keyboard.
       if (cmd.type === "toggleRichMarkdown") refocus();
@@ -186,6 +250,8 @@ export default function App() {
       showTerm,
       openTerminal,
       termFolder,
+      agentMenuFrom,
+      closeAgentMenu,
     ],
   );
   /** The side a dragged Tab would split the editor area on, while shown. */
@@ -717,6 +783,18 @@ export default function App() {
                   }
                   onPosition={(p) => w.setSettings({ terminalPosition: p })}
                   onNew={plusTerminal}
+                  onNewMenu={(r) =>
+                    agentMenuFrom === "panel"
+                      ? closeAgentMenu()
+                      : setAgentMenu({
+                          x: r.left,
+                          y: r.bottom + 4,
+                          side: "below",
+                          align: "start",
+                          from: "panel",
+                        })
+                  }
+                  newMenuOpen={agentMenuFrom === "panel"}
                   fontSize={w.fontSize}
                   palette={palette}
                   platform={platform}
@@ -767,6 +845,14 @@ export default function App() {
           notice={w.notice ?? undefined}
           onSettings={() => setSettingsOpen(true)}
           settingsHint={SETTINGS_HINT}
+          agent={{
+            open: agentMenuFrom === "status",
+            hint: AGENT_MENU_HINT,
+            onOpen: (r) =>
+              agentMenuFrom === "status"
+                ? closeAgentMenu()
+                : setAgentMenu(statusAnchor(r)),
+          }}
           markdownMode={
             active && activeMode
               ? {
@@ -889,6 +975,29 @@ export default function App() {
           onSwap={w.swapSplit}
           onOrientation={w.setSplitOrientation}
           onCloseSplit={w.closeSplit}
+        />
+      )}
+      {agentMenu && (
+        <NewTerminalMenu
+          x={agentMenu.x}
+          y={agentMenu.y}
+          side={agentMenu.side}
+          align={agentMenu.align}
+          agents={agents}
+          refresh={refreshAgents}
+          terminalHint={NEW_TERMINAL_HINT}
+          onTerminal={() =>
+            agentMenu.from === "panel"
+              ? plusTerminal()
+              : openTerminal(termFolder)
+          }
+          onAgent={(agent) =>
+            openAgent(
+              agent,
+              agentMenu.from === "panel" ? panelFolder() : termFolder,
+            )
+          }
+          onDismiss={closeAgentMenu}
         />
       )}
       {formatMenu && active?.file && (
