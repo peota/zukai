@@ -25,6 +25,39 @@ const h = vi.hoisted(() => ({
   clearHistory: [] as string[],
   /** Each text the rich editor wrote through the bridge, by Tab id. */
   replaced: [] as [string, string][],
+  /** What the mocked git sync answers: on/off, and each folder's status. */
+  git: {
+    enabled: false,
+    statuses: {} as Record<string, unknown>,
+    selected: [] as (string | null)[],
+  },
+}));
+
+// Git has its own tests; here only what App shows from a folder's status.
+vi.mock("./git/useGitSync", () => ({
+  useGitSync: () => ({
+    get enabled() {
+      return h.git.enabled;
+    },
+    available: true,
+    status: (folder: string) => h.git.statuses[folder],
+    selected: null,
+    select: (f: string | null) => void h.git.selected.push(f),
+    changes: () => undefined,
+    branches: () => undefined,
+    anyDirty: false,
+    switchBranch: async () => {},
+    createBranch: async () => {},
+    running: () => null,
+    justDone: () => null,
+    error: () => null,
+    dismiss: () => {},
+    pull: async () => {},
+    commit: async () => {},
+    push: async () => {},
+    setup: async () => {},
+    refresh: () => {},
+  }),
 }));
 
 vi.mock("./app/shortcuts", async (orig) => ({
@@ -192,6 +225,7 @@ beforeEach(() => {
   h.texts = {};
   h.clearHistory = [];
   h.replaced = [];
+  h.git = { enabled: false, statuses: {}, selected: [] };
   Element.prototype.scrollIntoView = vi.fn();
   s.listScratchpads.mockResolvedValue([{ id: "a", ext: "txt" }]);
   s.listClosedScratchpads.mockResolvedValue([]);
@@ -366,6 +400,105 @@ describe("App", () => {
     await waitFor(() =>
       expect(r.getAllByText("note.ts").length).toBeGreaterThan(0),
     );
+  });
+
+  describe("the status bar's branch chip", () => {
+    const fmt = {
+      encoding: "utf-8",
+      bom: false,
+      lineEnding: "lf",
+      mixed: false,
+    } as const;
+    const print = { mtimeMs: 1, size: 2, hash: "h" };
+    const repo = (over: Record<string, unknown> = {}) => ({
+      kind: "repo",
+      branch: "main",
+      head: "abcdef0123456789",
+      state: "none",
+      ...over,
+    });
+    /** A restored session with `note.md` open, active. */
+    function openNote() {
+      s.readSession.mockResolvedValue(
+        JSON.stringify(
+          toSessionFile({
+            tabs: [
+              {
+                ...newTabState("n"),
+                title: "note.md",
+                language: "markdown",
+                file: {
+                  path: `${R}\\note.md`,
+                  format: fmt,
+                  fingerprint: print,
+                  held: null,
+                },
+              },
+            ],
+            activeId: "n",
+            closed: [],
+          }),
+        ),
+      );
+      f.fileRead.mockResolvedValue({
+        text: "# hi",
+        format: fmt,
+        readable: true,
+        fingerprint: print,
+      });
+      f.fileFingerprint.mockResolvedValue(print);
+      f.fileFingerprintQuick.mockResolvedValue(print);
+    }
+
+    it("shows the branch of the repo holding the file; click opens Git there", async () => {
+      h.git.enabled = true;
+      h.git.statuses[R] = repo();
+      openNote();
+      const r = render(<App />);
+      const chip = await waitFor(() => {
+        const c = r.container.querySelector<HTMLElement>("[data-git-chip]");
+        expect(c?.textContent).toContain("main");
+        return c!;
+      });
+      fireEvent.click(chip);
+      expect(h.git.selected).toContain(R);
+    });
+
+    it("shows the short hash when HEAD is detached", async () => {
+      h.git.enabled = true;
+      h.git.statuses[R] = repo({ branch: null });
+      openNote();
+      const r = render(<App />);
+      await waitFor(() =>
+        expect(
+          r.container.querySelector("[data-git-chip]")?.textContent,
+        ).toContain("abcdef0"),
+      );
+    });
+
+    it("is absent for a scratchpad, a non-repo folder, or git sync off", async () => {
+      h.git.enabled = true;
+      h.git.statuses[R] = { kind: "notRepo" };
+      openNote();
+      const a = render(<App />);
+      await waitFor(() => a.getByTestId("editor"));
+      expect(a.container.querySelector("[data-git-chip]")).toBeNull();
+      a.unmount();
+
+      h.git.statuses[R] = repo();
+      h.git.enabled = false;
+      const b = render(<App />);
+      await waitFor(() => b.getByTestId("editor"));
+      expect(b.container.querySelector("[data-git-chip]")).toBeNull();
+      b.unmount();
+
+      // A scratchpad session in a repo-everywhere world.
+      h.git.enabled = true;
+      s.readSession.mockResolvedValue(null);
+      const c = render(<App />);
+      await waitFor(() => c.getByTestId("editor"));
+      expect(c.container.querySelector("[data-git-chip]")).toBeNull();
+    });
   });
 
   it("Ctrl+, opens Settings; its Theme drives the page; Esc closes it", async () => {

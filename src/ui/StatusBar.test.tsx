@@ -47,6 +47,30 @@ describe("encodingLabel", () => {
   });
 });
 
+describe("StatusBar git chip", () => {
+  it("shows the branch with an icon and opens the Git view on click", () => {
+    const onClick = vi.fn();
+    setup({ git: { branch: "main", state: "none", onClick } });
+    const chip = screen.getByRole("button", { name: /main/ });
+    expect(chip.querySelector("svg")).not.toBeNull();
+    fireEvent.click(chip);
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("names a rebase or merge in progress", () => {
+    setup({ git: { branch: "feat", state: "rebasing", onClick: vi.fn() } });
+    expect(screen.getByRole("button", { name: /feat/ }).textContent).toContain(
+      "rebasing",
+    );
+  });
+
+  it("is absent without the git prop", () => {
+    setup();
+    expect(screen.queryByRole("button", { name: /main/ })).toBeNull();
+    expect(document.querySelector("[data-git-chip]")).toBeNull();
+  });
+});
+
 describe("StatusBar", () => {
   it("the gear opens Settings, with its shortcut in the tooltip", () => {
     const p = setup({ onSettings: vi.fn(), settingsHint: "Ctrl+," });

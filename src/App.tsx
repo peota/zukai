@@ -35,6 +35,7 @@ import type { FormatResult } from "./editor/jsonFormat";
 import { WindowControls } from "./ui/WindowControls";
 import { TabBar } from "./ui/TabBar";
 import { StatusBar } from "./ui/StatusBar";
+import { activeGitFolder } from "./git/activeFolder";
 import { LanguagePicker } from "./ui/LanguagePicker";
 import { TabContextMenu } from "./ui/TabContextMenu";
 import { FileFormatMenu } from "./ui/FileFormatMenu";
@@ -156,14 +157,25 @@ export default function App() {
    * library folder holding the active File (a diff Tab: its folder). Null
    * leaves the view where it is (first: the Library root).
    */
-  const gitFolder =
-    w.gitFolder ??
-    activeTab?.diff?.folder ??
-    (activeFile === undefined
-      ? null
-      : (libraryFolders
-          .filter((f) => isUnder(activeFile, f))
-          .sort((a, b) => b.length - a.length)[0] ?? null));
+  const activeRepoFolder = activeGitFolder({
+    diffFolder: activeTab?.diff?.folder,
+    activeFile,
+    folders: libraryFolders,
+  });
+  const gitFolder = w.gitFolder ?? activeRepoFolder;
+  /** The status bar's branch chip: the active Tab's folder, when a repo. */
+  const activeGit =
+    w.git.enabled && activeRepoFolder !== null
+      ? w.git.status(activeRepoFolder)
+      : undefined;
+  const gitChip =
+    activeRepoFolder !== null && activeGit?.kind === "repo"
+      ? {
+          folder: activeRepoFolder,
+          branch: activeGit.branch ?? activeGit.head.slice(0, 7),
+          state: activeGit.state,
+        }
+      : null;
   /** A new terminal in `cwd`, shown and focused; none without a folder. */
   const openTerminal = useCallback(
     (cwd: string | null) => {
@@ -893,6 +905,15 @@ export default function App() {
           notice={w.notice ?? undefined}
           onSettings={() => setSettingsOpen(true)}
           settingsHint={SETTINGS_HINT}
+          git={
+            gitChip
+              ? {
+                  branch: gitChip.branch,
+                  state: gitChip.state,
+                  onClick: () => w.showGitFor(gitChip.folder),
+                }
+              : undefined
+          }
           ask={
             aiReady
               ? {
