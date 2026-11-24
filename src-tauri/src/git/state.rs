@@ -73,13 +73,25 @@ impl GitState {
     /// Turns the setting on or off. Turning it on forgets a cached "not
     /// found", so the next `git()` looks again (as at startup); a found git
     /// stays cached. Runs nothing.
+    #[cfg(test)]
     pub fn set_enabled(&self, on: bool) {
-        self.enabled.store(on, Ordering::SeqCst);
+        self.set_switch(on);
         if on {
-            let mut slot = lock(&self.git);
-            if matches!(*slot, Some(None)) {
-                *slot = None;
-            }
+            self.forget_not_found();
+        }
+    }
+
+    /// Flips the switch alone; never waits.
+    pub fn set_switch(&self, on: bool) {
+        self.enabled.store(on, Ordering::SeqCst);
+    }
+
+    /// Forgets a cached "not found" so the next `git()` looks again. Waits
+    /// for a discovery in progress: call it off the async runtime.
+    pub fn forget_not_found(&self) {
+        let mut slot = lock(&self.git);
+        if matches!(*slot, Some(None)) {
+            *slot = None;
         }
     }
 
@@ -98,9 +110,15 @@ impl GitState {
             .ok_or_else(|| GitError::new(GitKind::NoGit, "git was not found"))
     }
 
-    /// Whether a discovery so far found git; runs nothing.
+    /// Whether a discovery so far found git; runs nothing and never waits:
+    /// while a discovery is in progress the answer is unknown, so `false`.
     pub fn known_available(&self) -> bool {
-        matches!(*lock(&self.git), Some(Some(_)))
+        let slot = match self.git.try_lock() {
+            Ok(slot) => slot,
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return false,
+        };
+        matches!(*slot, Some(Some(_)))
     }
 
     /// Marks `key` busy until the guard drops; `Busy` if it already is.
@@ -214,6 +232,30 @@ mod tests {
         // A found git stays cached across a re-enable.
         st.set_enabled(true);
         assert!(st.git_with(|| panic!("rediscovered")).is_ok());
+    }
+
+    #[test]
+    fn known_available_does_not_wait_for_a_discovery() {
+        let st = GitState::default();
+        st.set_enabled(true);
+        assert!(st.git_with(find_git).is_ok());
+        assert!(st.known_available());
+        // A discovery in progress holds the slot: the answer is "unknown".
+        let held = st.git.lock().unwrap();
+        assert!(!st.known_available());
+        drop(held);
+        assert!(st.known_available());
+    }
+
+    #[test]
+    fn switching_off_keeps_what_was_found() {
+        let st = GitState::default();
+        st.set_switch(true);
+        st.forget_not_found();
+        assert!(st.git_with(find_git).is_ok());
+        st.set_switch(false);
+        assert_eq!(st.check_enabled().unwrap_err().kind, GitKind::Disabled);
+        assert!(st.known_available());
     }
 
     #[test]

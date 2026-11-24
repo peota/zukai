@@ -1,7 +1,8 @@
 //! Tauri commands for git sync. All of them answer `Disabled` (and run
 //! nothing) until the frontend turns the "Git sync" setting on. A folder
 //! the webview names must be exactly a granted root (the Library or an
-//! added folder), and holds that folder's busy lock while git runs. A clone's
+//! added folder); every command but the read-only status holds that
+//! folder's busy lock while git runs. A clone's
 //! parent only ever comes from the dialog, by token.
 
 use std::path::{Path, PathBuf};
@@ -112,24 +113,41 @@ fn home() -> Option<PathBuf> {
 /// is whether git was found (when off: as far as is known, without looking).
 #[tauri::command]
 pub async fn git_set_enabled(app: AppHandle, enabled: bool) -> Result<GitAvailability, GitError> {
+    // The switch flips at once, in call order; nothing here waits on the
+    // git slot on the async runtime (a discovery may hold it for seconds).
     let st = app.state::<GitState>();
-    st.set_enabled(enabled);
+    st.set_switch(enabled);
     if !enabled {
         return Ok(GitAvailability {
             available: st.known_available(),
         });
     }
     run(app.clone(), |app| {
+        let st = app.state::<GitState>();
+        st.forget_not_found();
         Ok(GitAvailability {
-            available: app.state::<GitState>().git().is_ok(),
+            available: st.git().is_ok(),
         })
     })
     .await
 }
 
+/// The status of the root `folder`. Read-only (`--no-optional-locks`), so it
+/// skips the busy lock: a refresh never makes a user's action fail as busy,
+/// and a read during an operation is refreshed after it anyway.
+fn status_of(st: &GitState, g: &Grants, folder: &str) -> Result<FolderGit, GitError> {
+    st.check_enabled()?;
+    let dir = root_folder(g, folder)?;
+    let git = st.git()?;
+    folder_git(&git, &dir)
+}
+
 #[tauri::command]
 pub async fn git_status(app: AppHandle, folder: String) -> Result<FolderGit, GitError> {
-    on_folder(app, folder, folder_git).await
+    run(app, move |app| {
+        status_of(&app.state::<GitState>(), &app.state::<Grants>(), &folder)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -267,5 +285,29 @@ mod tests {
         assert_eq!(e.detail, Refusal::InLibrary.message());
         assert_eq!(from_file(FileError::NotGranted).kind, GitKind::NotAllowed);
         assert_eq!(from_file(FileError::Exists).kind, GitKind::Failed);
+    }
+
+    #[test]
+    fn status_runs_while_the_folder_is_busy() {
+        let (_t, dir) = crate::git::testutil::repo();
+        let g = Grants::default();
+        let root = g.set_root(&dir).unwrap();
+        let st = GitState::default();
+        let folder = root.to_str().unwrap();
+        // Off: refused before anything runs.
+        let off = status_of(&st, &g, folder).unwrap_err();
+        assert_eq!(off.kind, GitKind::Disabled);
+        st.set_enabled(true);
+        // An operation holds the folder's lock; status still answers.
+        let _busy = st.lock(key(&root)).unwrap();
+        assert!(matches!(
+            status_of(&st, &g, folder).unwrap(),
+            FolderGit::Repo(_)
+        ));
+        // Only an exact root is allowed.
+        let sub = root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let e = status_of(&st, &g, sub.to_str().unwrap()).unwrap_err();
+        assert_eq!(e.kind, GitKind::NotAllowed);
     }
 }
