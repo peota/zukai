@@ -12,7 +12,10 @@ import {
   NewFolderIcon,
   SearchIcon,
 } from "./icons";
+import type { GitSyncApi } from "../git/useGitSync";
 import { DragGhost } from "./DragGhost";
+import { GitRow } from "./GitRow";
+import { SetupSyncCard } from "./SetupSyncCard";
 import { SectionHeading } from "./SectionHeading";
 import { fileIcon } from "./icons";
 import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
@@ -42,6 +45,10 @@ export type NewItem = "folder" | "file" | "canvas";
 export { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, clampWidth };
 /** Keyboard step of the width handle. */
 const WIDTH_STEP = 16;
+/** Git rows sit under their heading's name: LIBRARY's label (pl-2)… */
+const LIBRARY_NAME_INDENT = 8;
+/** …or an added heading's name (8 padding, 14 chevron, 8 gap). */
+const HEADING_NAME_INDENT = 30;
 
 export interface SidebarProps {
   open: boolean;
@@ -104,6 +111,14 @@ export interface SidebarProps {
   onRemoveFolder(path: string): void;
   /** Open in terminal: a new terminal in this folder. */
   onOpenTerminal(path: string): void;
+  /** Git sync (spec 4): nothing git shows while `git.enabled` is false. */
+  git: GitSyncApi;
+  /** Open tabs under `folder` with edits not yet on disk. */
+  unsavedUnder(folder: string): number;
+  /** Save all, from the commit card's unsaved-files line. */
+  onSaveAll(): void;
+  /** Add folder from git… (spec 4.2). */
+  onCloneFolder?(): void;
   /** Decides the Windows-only name rule and the "Show in …" label. */
   platform?: Platform;
 }
@@ -192,6 +207,9 @@ function SidebarPanel({
   onLocateFolder,
   onRemoveFolder,
   onOpenTerminal,
+  git,
+  unsavedUnder,
+  onSaveAll,
   platform: platformProp,
 }: SidebarProps) {
   // With the Library offline its rows are stale: only the added folders show.
@@ -217,6 +235,15 @@ function SidebarPanel({
   const [pendingState, setPendingTrash] = useState<PendingTrash | null>(null);
   const [sel, setSel] = useState<Selection>(NO_SELECTION);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
+  /** The folder whose Set up sync card is open. */
+  const [settingUp, setSettingUp] = useState<string | null>(null);
+  // The card gives way once its folder is a repo (or git sync goes off).
+  if (
+    settingUp !== null &&
+    (!git.enabled || git.status(settingUp)?.kind === "repo")
+  ) {
+    setSettingUp(null);
+  }
   const returnFocus = useRef<HTMLElement | null>(null);
   const closeMenu = useCallback(() => {
     setMenu(null);
@@ -447,6 +474,35 @@ function SidebarPanel({
     onSelect: () => onOpenTerminal(path),
   });
 
+  /**
+   * Set up sync… (spec 4.1), for a folder not in any git work tree. Hidden
+   * with git sync off and for a repo's top; disabled inside a bigger repo or
+   * without git.
+   */
+  const setupItems = (folder: string): MenuItem[] => {
+    if (!git.enabled) return [];
+    const label = "Set up sync…";
+    if (!git.available) {
+      return [
+        { label, disabled: true, reason: "Install git to sync folders." },
+      ];
+    }
+    const s = git.status(folder);
+    if (s?.kind === "notRepo") {
+      return [{ label, onSelect: () => setSettingUp(folder) }];
+    }
+    if (s?.kind === "insideRepo") {
+      return [
+        {
+          label,
+          disabled: true,
+          reason: `This folder is inside the git repo at ${s.top}.`,
+        },
+      ];
+    }
+    return [];
+  };
+
   const rootItems = (r: string): MenuItem[] => [
     ...newItems(r),
     {
@@ -455,6 +511,7 @@ function SidebarPanel({
       onSelect: () => onReveal(r),
     },
     terminalItem(r),
+    ...setupItems(r),
     { label: "Choose Library folder…", onSelect: onChooseRoot },
   ];
 
@@ -485,6 +542,7 @@ function SidebarPanel({
         onSelect: () => onReveal(a.path),
       },
       terminalItem(a.path),
+      ...setupItems(a.path),
       remove,
     ];
   };
@@ -592,6 +650,7 @@ function SidebarPanel({
         ? [
             { label: revealLabel(platform), onSelect: () => onReveal(root) },
             terminalItem(root),
+            ...setupItems(root),
           ]
         : []),
       { label: "Choose Library folder…", onSelect: onChooseRoot },
@@ -678,6 +737,47 @@ function SidebarPanel({
     status = "Nothing here yet. Use + to add a note.";
   }
 
+  /** What shows under a folder's heading: its git row or Set up sync card. */
+  const gitUnder = (
+    folder: string,
+    name: string,
+    indent: number,
+  ): ReactNode => {
+    if (!git.enabled) return null;
+    const s = git.status(folder);
+    if (s?.kind === "repo") {
+      return (
+        <GitRow
+          name={name}
+          status={s}
+          running={git.running(folder)}
+          justDone={git.justDone(folder)}
+          error={git.error(folder)}
+          unsaved={unsavedUnder(folder)}
+          indent={indent}
+          onPull={() => void git.pull(folder)}
+          onCommit={(m) => void git.commit(folder, m)}
+          onPush={() => void git.push(folder)}
+          onSaveAll={onSaveAll}
+          onDismiss={() => git.dismiss(folder)}
+        />
+      );
+    }
+    if (settingUp !== folder) return null;
+    return (
+      <SetupSyncCard
+        indent={indent}
+        running={git.running(folder) === "setup"}
+        error={git.error(folder)}
+        onSetUp={(url) => void git.setup(folder, url)}
+        onCancel={() => {
+          setSettingUp(null);
+          git.dismiss(folder);
+        }}
+      />
+    );
+  };
+
   const libraryTree = (
     <LibraryTree
       treeRef={treeRef}
@@ -720,6 +820,15 @@ function SidebarPanel({
         drag.handlers({ kind: "entry", entry, group: dragGroup(entry) })
       }
       swallowClick={drag.swallowClick}
+      underHeading={(path) =>
+        addedOf(path)?.available
+          ? gitUnder(
+              path,
+              rows[indexOf(path)]?.entry.name ?? path,
+              HEADING_NAME_INDENT,
+            )
+          : null
+      }
     />
   );
 
@@ -815,6 +924,13 @@ function SidebarPanel({
           </button>
         </span>
       </SectionHeading>
+
+      {root !== null && available && (
+        // Outside the tree's scroll: it keeps its height in a full sidebar.
+        <div className="shrink-0">
+          {gitUnder(root, "Library", LIBRARY_NAME_INDENT)}
+        </div>
+      )}
 
       {available ? (
         <>

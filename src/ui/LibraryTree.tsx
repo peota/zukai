@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type {
   KeyboardEvent,
   MouseEvent as ReactMouseEvent,
+  ReactNode,
   RefObject,
 } from "react";
 import type { Entry } from "../library/api";
@@ -74,6 +75,11 @@ export interface LibraryTreeProps {
   onContextMenu(entry: Entry | null, x: number, y: number): void;
   dragHandlers(entry: Entry): PointerHandlers;
   swallowClick(): boolean;
+  /**
+   * Shown right under an added folder's heading (its git row or Set up sync
+   * card). Not a tree item: it takes no `data-row` and no cursor.
+   */
+  underHeading?(path: string): ReactNode;
 }
 
 /** The Library tree (spec 5.2): rows, keyboard, inline rename and delete. */
@@ -108,6 +114,7 @@ export function LibraryTree({
   onContextMenu,
   dragHandlers,
   swallowClick,
+  underHeading,
 }: LibraryTreeProps) {
   const index = rows.findIndex((r) => r.entry.path === cursor);
   const focusTree = () => treeRef.current?.focus({ preventScroll: true });
@@ -287,70 +294,81 @@ export function LibraryTree({
         );
         if (r.heading) {
           const missing = !r.heading.available;
+          const extra = underHeading?.(e.path);
           return (
-            <div
-              key={e.path}
-              id={`z-lib-row-${i}`}
-              role="treeitem"
-              data-row={i}
-              data-path={e.path}
-              data-dir="true"
-              data-heading=""
-              data-drop-target={target ? "true" : undefined}
-              aria-label={e.name}
-              aria-level={r.depth + 1}
-              aria-expanded={missing ? false : open}
-              aria-selected={multi ? false : isCursor}
-              aria-disabled={missing ? "true" : undefined}
-              title={e.path}
-              style={{ paddingLeft: 8 }}
-              onClick={(ev) => click(ev, r)}
-              onContextMenu={(ev) => openMenu(ev, e)}
-              {...dragHandlers(e)}
-              className={
-                "mt-2 flex h-[30px] cursor-default items-center gap-2 rounded-[6px] pr-1 whitespace-nowrap " +
-                motion +
-                (missing ? "text-faint " : "text-muted ") +
-                (target
-                  ? "bg-row-sel shadow-[inset_0_0_0_1px_var(--z-accent)] "
-                  : "hover:bg-row-hover ") +
-                (isCursor
-                  ? "group-focus/tree:shadow-[inset_0_0_0_1px_var(--z-accent-soft)]"
-                  : "")
-              }
-            >
-              <span className="flex w-3.5 shrink-0 justify-center text-faint">
-                <Chevron open={!missing && open} />
-              </span>
-              <span className="max-w-[70%] min-w-0 shrink-0 truncate">
-                {e.name}
-              </span>
-              {/* The parent path, cut from the left so its end shows. */}
-              <span className="min-w-0 flex-1 truncate text-left text-ui-sm text-faint [direction:rtl]">
-                <bdi>{parentOf(e.path)}</bdi>
-              </span>
-              {missing && (
-                <span className="shrink-0 text-ui-sm text-faint">
-                  Not found
-                </span>
-              )}
-              {copyHint}
-              <button
-                type="button"
-                aria-label={`${e.name} actions`}
-                title={`${e.name} actions`}
-                tabIndex={-1}
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  onCursor(e.path);
-                  const b = ev.currentTarget.getBoundingClientRect();
-                  onContextMenu(e, b.left, b.bottom + 4);
-                }}
-                className="flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
+            <Fragment key={e.path}>
+              <div
+                id={`z-lib-row-${i}`}
+                role="treeitem"
+                data-row={i}
+                data-path={e.path}
+                data-dir="true"
+                data-heading=""
+                data-drop-target={target ? "true" : undefined}
+                aria-label={e.name}
+                aria-level={r.depth + 1}
+                aria-expanded={missing ? false : open}
+                aria-selected={multi ? false : isCursor}
+                aria-disabled={missing ? "true" : undefined}
+                title={e.path}
+                style={{ paddingLeft: 8 }}
+                onClick={(ev) => click(ev, r)}
+                onContextMenu={(ev) => openMenu(ev, e)}
+                {...dragHandlers(e)}
+                className={
+                  "mt-2 flex h-[30px] cursor-default items-center gap-2 rounded-[6px] pr-1 whitespace-nowrap " +
+                  motion +
+                  (missing ? "text-faint " : "text-muted ") +
+                  (target
+                    ? "bg-row-sel shadow-[inset_0_0_0_1px_var(--z-accent)] "
+                    : "hover:bg-row-hover ") +
+                  (isCursor
+                    ? "group-focus/tree:shadow-[inset_0_0_0_1px_var(--z-accent-soft)]"
+                    : "")
+                }
               >
-                <MoreIcon />
-              </button>
-            </div>
+                <span className="flex w-3.5 shrink-0 justify-center text-faint">
+                  <Chevron open={!missing && open} />
+                </span>
+                <span className="max-w-[70%] min-w-0 shrink-0 truncate">
+                  {e.name}
+                </span>
+                {/* The parent path, cut from the left so its end shows. */}
+                <span className="min-w-0 flex-1 truncate text-left text-ui-sm text-faint [direction:rtl]">
+                  <bdi>{parentOf(e.path)}</bdi>
+                </span>
+                {missing && (
+                  <span className="shrink-0 text-ui-sm text-faint">
+                    Not found
+                  </span>
+                )}
+                {copyHint}
+                <button
+                  type="button"
+                  aria-label={`${e.name} actions`}
+                  title={`${e.name} actions`}
+                  tabIndex={-1}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onCursor(e.path);
+                    const b = ev.currentTarget.getBoundingClientRect();
+                    onContextMenu(e, b.left, b.bottom + 4);
+                  }}
+                  className="flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
+                >
+                  <MoreIcon />
+                </button>
+              </div>
+              {extra && (
+                // Its own clicks stay its own; a right-click is the heading's.
+                <div
+                  data-under-heading=""
+                  onContextMenu={(ev) => openMenu(ev, e)}
+                >
+                  {extra}
+                </div>
+              )}
+            </Fragment>
           );
         }
         return (

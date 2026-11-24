@@ -1,5 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { FolderGit, GitError } from "../git/api";
+import type { GitSyncApi } from "../git/useGitSync";
 import type { Entry } from "../library/api";
 import { filterRows, visibleRows, type TreeState } from "../library/tree";
 import { Sidebar, type SidebarProps } from "./Sidebar";
@@ -16,6 +18,31 @@ const file = (path: string, link: Entry["link"] = null): Entry => ({
   ...dir(path, link),
   isDir: false,
 });
+
+/** A stand-in for useGitSync; off unless `enabled` is set. */
+function fakeGit(
+  over: Partial<GitSyncApi> & {
+    statuses?: Record<string, FolderGit>;
+    errors?: Record<string, GitError>;
+  } = {},
+): GitSyncApi {
+  const { statuses = {}, errors = {}, ...rest } = over;
+  return {
+    enabled: false,
+    available: true,
+    status: (f) => statuses[f],
+    running: () => null,
+    justDone: () => null,
+    error: (f) => errors[f] ?? null,
+    dismiss: vi.fn(),
+    pull: vi.fn(async () => {}),
+    commit: vi.fn(async () => {}),
+    push: vi.fn(async () => {}),
+    setup: vi.fn(async () => {}),
+    refresh: vi.fn(),
+    ...rest,
+  };
+}
 
 const IDEAS = dir(p("Ideas"));
 const ROADMAP = dir(p("Roadmap"));
@@ -86,6 +113,9 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     onLocateFolder: vi.fn(),
     onRemoveFolder: vi.fn(),
     onOpenTerminal: vi.fn(),
+    git: fakeGit(),
+    unsavedUnder: vi.fn(() => 0),
+    onSaveAll: vi.fn(),
     platform: "windows",
     ...over,
   };
@@ -1481,5 +1511,230 @@ describe("Recent", () => {
   it("is hidden with nothing recent", () => {
     setup({ recent: [] });
     expect(screen.queryByText("RECENT")).toBeNull();
+  });
+});
+
+describe("Sidebar git", () => {
+  const ADDED = "D:\\work\\Notes";
+  const A_MD = file(`${ADDED}\\a.md`);
+  const REPO: FolderGit = {
+    kind: "repo",
+    branch: "main",
+    head: "abc1234",
+    dirty: true,
+    upstream: true,
+    origin: true,
+    ahead: 0,
+    behind: 0,
+    state: "none",
+  };
+  const NOT_REPO: FolderGit = { kind: "notRepo" };
+  const SET_UP = "Set up sync…";
+
+  function setupGit(git: GitSyncApi, over: Partial<SidebarProps> = {}) {
+    const t = makeTree({
+      children: { ...makeTree().children, [ADDED]: [A_MD] },
+      expanded: new Set([IDEAS.path, ADDED]),
+      added: [{ path: ADDED, available: true }],
+    });
+    return setup({
+      tree: t,
+      rows: visibleRows(t),
+      added: t.added,
+      git,
+      ...over,
+    });
+  }
+  const menuItems = () =>
+    within(screen.getByRole("menu"))
+      .getAllByRole("menuitem")
+      .map((el) => el.textContent);
+  const actions = (name: string) =>
+    screen.getByRole("button", { name: `${name} actions` });
+  const closeMenu = () =>
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+  const setUpItem = () =>
+    screen.getByRole("menuitem", { name: new RegExp(`^${SET_UP}`) });
+  /** Every menu a folder's Set up sync… can live in. */
+  function eachMenu(check: (items: (string | null)[]) => void) {
+    fireEvent.click(actions("Library"));
+    check(menuItems());
+    closeMenu();
+    fireEvent.contextMenu(tree());
+    check(menuItems());
+    closeMenu();
+    fireEvent.click(actions("Notes"));
+    check(menuItems());
+    closeMenu();
+    fireEvent.contextMenu(row("Notes"));
+    check(menuItems());
+    closeMenu();
+  }
+  const follows = (a: Node, b: Node) =>
+    (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+  it("git_off_hides_rows_and_menu_items", () => {
+    setupGit(
+      fakeGit({
+        enabled: false,
+        statuses: { [ROOT]: REPO, [ADDED]: NOT_REPO },
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "Pull" })).toBeNull();
+    expect(screen.queryByRole("group", { name: /git$/ })).toBeNull();
+    eachMenu((items) =>
+      expect(items.some((i) => i?.startsWith(SET_UP))).toBe(false),
+    );
+  });
+
+  it("repo_shows_row_under_added_heading", () => {
+    const git = fakeGit({ enabled: true, statuses: { [ADDED]: REPO } });
+    const unsavedUnder = vi.fn(() => 2);
+    const { p } = setupGit(git, { unsavedUnder });
+    const group = screen.getByRole("group", { name: "Notes git" });
+    // Right under the heading, before its first row.
+    expect(follows(row("Notes"), group)).toBe(true);
+    expect(follows(group, row("a.md"))).toBe(true);
+    // Not a tree item, and the row indices stay in step.
+    screen
+      .getAllByRole("treeitem")
+      .forEach((el, i) => expect(el).toHaveAttribute("data-row", String(i)));
+    expect(group.closest("[data-row]")).toBeNull();
+    // The Library itself isn't a repo here: no row for it.
+    expect(screen.queryByRole("group", { name: "Library git" })).toBeNull();
+    // Set up sync… hides for a repo.
+    fireEvent.click(actions("Notes"));
+    expect(menuItems().some((i) => i?.startsWith(SET_UP))).toBe(false);
+    closeMenu();
+
+    fireEvent.click(within(group).getByRole("button", { name: "Pull" }));
+    expect(git.pull).toHaveBeenCalledWith(ADDED);
+    fireEvent.click(within(group).getByRole("button", { name: "Push" }));
+    expect(git.push).toHaveBeenCalledWith(ADDED);
+    fireEvent.click(within(group).getByRole("button", { name: "Commit" }));
+    expect(unsavedUnder).toHaveBeenCalledWith(ADDED);
+    fireEvent.click(screen.getByRole("button", { name: "Save all" }));
+    expect(p.onSaveAll).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByLabelText("Commit message"), {
+      target: { value: "hello" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Commit changes" }));
+    expect(git.commit).toHaveBeenCalledWith(ADDED, "hello");
+    // Clicks in the row don't open or close the folder.
+    expect(p.onToggle).not.toHaveBeenCalled();
+  });
+
+  it("root_repo_shows_row_under_library_heading", () => {
+    const error: GitError = {
+      kind: "rejected",
+      detail: "! [rejected]",
+      conflicts: null,
+      committed: false,
+    };
+    const git = fakeGit({
+      enabled: true,
+      statuses: { [ROOT]: REPO },
+      errors: { [ROOT]: error },
+    });
+    setupGit(git);
+    const group = screen.getByRole("group", { name: "Library git" });
+    expect(tree().contains(group)).toBe(false);
+    expect(follows(group, tree())).toBe(true);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "The remote has newer changes. Pull first, then push.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(git.dismiss).toHaveBeenCalledWith(ROOT);
+  });
+
+  it("not_repo_offers_set_up_sync", () => {
+    const git = fakeGit({
+      enabled: true,
+      statuses: { [ROOT]: NOT_REPO, [ADDED]: NOT_REPO },
+    });
+    const { rerender, p } = setupGit(git);
+    eachMenu((items) => expect(items).toContain(SET_UP));
+
+    fireEvent.click(actions("Notes"));
+    fireEvent.click(setUpItem());
+    const card = screen.getByRole("group", { name: "Set up sync" });
+    expect(follows(row("Notes"), card)).toBe(true);
+    expect(card.closest("[data-row]")).toBeNull();
+    fireEvent.change(within(card).getByLabelText("Remote URL"), {
+      target: { value: " git@host:me/notes.git " },
+    });
+    fireEvent.click(within(card).getByRole("button", { name: "Set up" }));
+    expect(git.setup).toHaveBeenCalledWith(ADDED, "git@host:me/notes.git");
+
+    // A failure before the repo exists shows with the card.
+    const error: GitError = {
+      kind: "failed",
+      detail: "fatal: oops",
+      conflicts: null,
+      committed: false,
+    };
+    rerender(
+      <Sidebar
+        {...p}
+        git={fakeGit({
+          enabled: true,
+          statuses: { [ROOT]: NOT_REPO, [ADDED]: NOT_REPO },
+          errors: { [ADDED]: error },
+        })}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Set up sync" })).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("fatal: oops");
+
+    // Once it's a repo, the card gives way to the git row.
+    const done = fakeGit({
+      enabled: true,
+      statuses: { [ROOT]: NOT_REPO, [ADDED]: REPO },
+    });
+    rerender(<Sidebar {...p} git={done} />);
+    expect(screen.queryByRole("group", { name: "Set up sync" })).toBeNull();
+    expect(screen.getByRole("group", { name: "Notes git" })).toBeVisible();
+
+    // The Library's own card opens under its heading; Cancel closes it.
+    fireEvent.click(actions("Library"));
+    fireEvent.click(setUpItem());
+    const rootCard = screen.getByRole("group", { name: "Set up sync" });
+    expect(tree().contains(rootCard)).toBe(false);
+    fireEvent.click(within(rootCard).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("group", { name: "Set up sync" })).toBeNull();
+    expect(done.dismiss).toHaveBeenCalledWith(ROOT);
+  });
+
+  it("inside_repo_disables_set_up_with_reason", () => {
+    setupGit(
+      fakeGit({
+        enabled: true,
+        statuses: {
+          [ROOT]: { kind: "insideRepo", top: "C:\\" },
+          [ADDED]: { kind: "insideRepo", top: "D:\\work" },
+        },
+      }),
+    );
+    fireEvent.click(actions("Notes"));
+    expect(setUpItem()).toHaveAttribute("aria-disabled", "true");
+    expect(setUpItem()).toHaveTextContent(
+      "This folder is inside the git repo at D:\\work.",
+    );
+    fireEvent.click(setUpItem());
+    expect(screen.queryByRole("group", { name: "Set up sync" })).toBeNull();
+    closeMenu();
+    fireEvent.click(actions("Library"));
+    expect(setUpItem()).toHaveTextContent(
+      "This folder is inside the git repo at C:\\.",
+    );
+  });
+
+  it("no_git_disables_with_install_reason", () => {
+    setupGit(fakeGit({ enabled: true, available: false }));
+    eachMenu((items) =>
+      expect(items).toContain(`${SET_UP}Install git to sync folders.`),
+    );
+    fireEvent.click(actions("Notes"));
+    expect(setUpItem()).toHaveAttribute("aria-disabled", "true");
   });
 });

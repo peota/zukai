@@ -646,6 +646,9 @@ export default function App() {
         onLocateFolder={(path) => void lib.locateFolder(path)}
         onRemoveFolder={(path) => void lib.removeFolder(path)}
         onOpenTerminal={openTerminal}
+        git={w.git}
+        unsavedUnder={w.unsavedUnder}
+        onSaveAll={() => void w.saveAll()}
         platform={platform}
       />
       <div className="flex h-full min-w-0 flex-1 flex-col" data-z-workspace="">
