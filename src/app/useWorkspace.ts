@@ -57,6 +57,8 @@ import {
 import type { TextBridge } from "../editor/EditorHost";
 import type { RichSync } from "../rich/RichEditor";
 import { useLibrary, type LibraryApi } from "./useLibrary";
+import { useGitSync, type GitSyncApi } from "../git/useGitSync";
+import { isUnder } from "../ui/libraryEntries";
 import {
   closeScratchpad,
   deleteScratchpad,
@@ -146,6 +148,10 @@ export interface Workspace extends FilesApi {
   ready: boolean;
   /** The Library sidebar's contents and operations. */
   library: LibraryApi;
+  /** Git status and Pull, Commit and Push for the Library's folders. */
+  git: GitSyncApi;
+  /** How many open Tabs under `folder` have changes not yet in their File. */
+  unsavedUnder(folder: string): number;
   /** Open, width and expanded folders; saved in the Session. */
   sidebar: SidebarState;
   setSidebarWidth(w: number): void;
@@ -673,6 +679,16 @@ export function useWorkspace(): Workspace {
   });
   const collapseLibrary = library.collapseAll;
 
+  const gitFolders = [
+    ...(library.root !== null && library.available ? [library.root] : []),
+    ...library.added.filter((a) => a.available).map((a) => a.path),
+  ];
+  const git = useGitSync({ enabled: settings.gitSync, folders: gitFolders });
+  const unsavedUnder = (folder: string): number =>
+    state.tabs.filter(
+      (t) => t.file && isUnder(t.file.path, folder) && hasPending(t.id),
+    ).length;
+
   const setClosing = useCallback((id: string, on: boolean) => {
     if (on) closing.current.add(id);
     else closing.current.delete(id);
@@ -1156,6 +1172,8 @@ export function useWorkspace(): Workspace {
     saveStatus,
     ready,
     library,
+    git,
+    unsavedUnder,
     sidebar,
     setSidebarWidth,
     toggleSidebar,

@@ -234,7 +234,7 @@ function withAdded(
 }
 
 /** Calls `subscribe` safely: a missing Tauri API in a test must not throw. */
-function listenSafely(
+export function listenSafely(
   subscribe: () => Promise<() => void>,
   what: string,
 ): () => void {

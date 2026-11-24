@@ -545,6 +545,25 @@ function General({
       <Row
         label={
           <>
+            <label htmlFor="z-git-sync">Git sync</label>
+            <span id="z-git-sync-hint" className="block text-ui-xs text-faint">
+              Show git status and Pull, Commit and Push for library folders.
+            </span>
+          </>
+        }
+      >
+        <input
+          id="z-git-sync"
+          aria-describedby="z-git-sync-hint"
+          type="checkbox"
+          checked={settings.gitSync}
+          onChange={(e) => onSettings({ gitSync: e.target.checked })}
+          className="size-4 accent-[var(--z-accent)]"
+        />
+      </Row>
+      <Row
+        label={
+          <>
             <label htmlFor="z-reveal-active">Reveal the open file</label>
             <span
               id="z-reveal-active-hint"

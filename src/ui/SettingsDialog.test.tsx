@@ -31,6 +31,7 @@ describe("SettingsDialog", () => {
         wrapNewTabs: true,
         lineNumbers: false,
         autosaveFiles: false,
+        gitSync: true,
         revealActiveFile: true,
         previewSplit: 0.5,
         markdownDefault: "rich",
