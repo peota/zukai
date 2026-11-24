@@ -25,6 +25,8 @@ pub struct Git {
 #[derive(Debug, Clone)]
 pub struct Done {
     pub stdout: String,
+    /// Only tests read it: success is the exit code alone.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub stderr: String,
 }
 
@@ -255,6 +257,7 @@ pub fn find_git() -> Option<Git> {
 
 /// Without the Command Line Tools `/usr/bin/git` is a stub that pops an
 /// install dialog when run, so it is skipped, whichever way it was found.
+#[cfg(any(unix, test))]
 fn allowed_on_macos(path: &Path, xcode: bool) -> bool {
     xcode || path != Path::new("/usr/bin/git")
 }

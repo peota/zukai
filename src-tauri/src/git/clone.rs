@@ -12,6 +12,9 @@ use super::{Git, GitError, GitKind};
 const CLONE: Duration = Duration::from_secs(300);
 
 /// The last path segment of `url`, minus `.git`; `:` separates like `/`.
+/// The UI suggests the folder name itself (`repoName` in TypeScript); this
+/// is the reference it is tested against here.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn repo_name(url: &str) -> String {
     let trimmed = url.trim().trim_end_matches(['/', '\\']);
     let last = trimmed.rsplit(['/', '\\', ':']).next().unwrap_or("");

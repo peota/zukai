@@ -203,6 +203,7 @@ pub fn run() {
         .manage(library::commands::DropTarget::default())
         .manage(terminal::commands::Terminals::default())
         .manage(ai::ask::Asks::default())
+        .manage(git::state::GitState::default())
         .on_window_event(|window, event| {
             // Rust needs the drop (it grants the paths), so the webview's own
             // drag and drop stays disabled by Tauri while this is enabled.
@@ -278,6 +279,15 @@ pub fn run() {
             library::commands::library_add_folder,
             library::commands::library_locate_folder,
             library::commands::library_remove_folder,
+            git::commands::git_set_enabled,
+            git::commands::git_status,
+            git::commands::git_pull,
+            git::commands::git_commit_push,
+            git::commands::git_push,
+            git::commands::git_setup,
+            git::commands::git_pick_clone_parent,
+            git::commands::git_clone,
+            git::commands::git_cancel,
             terminal::commands::terminal_open,
             terminal::commands::terminal_write,
             terminal::commands::terminal_ack,

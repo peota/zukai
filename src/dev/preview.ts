@@ -207,6 +207,14 @@ function freeName(dir: string, name: string, ext: string): string {
 
 type Args = Record<string, unknown>;
 
+const noGit = () =>
+  Promise.reject({
+    kind: "no_git",
+    detail: "",
+    conflicts: null,
+    committed: false,
+  });
+
 const handlers: Record<string, (a: Args) => unknown> = {
   app_startup_mark: () => null,
   session_read: () => localStorage.getItem(KEY),
@@ -315,6 +323,16 @@ const handlers: Record<string, (a: Args) => unknown> = {
   ai_key_set: () => AI_STATUS,
   ai_key_remove: () => AI_STATUS,
   ai_models: () => ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
+  // Git sync: the preview has no git.
+  git_set_enabled: () => ({ available: false }),
+  git_status: noGit,
+  git_pull: noGit,
+  git_commit_push: noGit,
+  git_push: noGit,
+  git_setup: noGit,
+  git_pick_clone_parent: noGit,
+  git_clone: noGit,
+  git_cancel: noGit,
   ai_cancel: (a) => {
     cancelled.add(a.id as number);
     return null;
