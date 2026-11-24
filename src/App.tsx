@@ -649,6 +649,7 @@ export default function App() {
         git={w.git}
         unsavedUnder={w.unsavedUnder}
         onSaveAll={() => void w.saveAll()}
+        onCloneFolder={lib.cloneFolder}
         platform={platform}
       />
       <div className="flex h-full min-w-0 flex-1 flex-col" data-z-workspace="">

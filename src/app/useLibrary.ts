@@ -31,6 +31,7 @@ import {
   type RootState,
   type SearchResult,
 } from "../library/api";
+import { asGitError, gitClone, type GitError } from "../git/api";
 import { extFor, sanitizeFileName, suggestedFileName } from "../library/names";
 import {
   filterRows,
@@ -50,6 +51,7 @@ import { kindOf } from "../model/kinds";
 import type { SidebarState, TabState, WorkspaceState } from "../model/types";
 import { movedPath } from "../model/workspace";
 import type { ScratchpadItem, NewItem } from "../ui/Sidebar";
+import type { CloneForm } from "../ui/CloneDialog";
 import { isUnder, parentOf, splitName } from "../ui/libraryEntries";
 import type { SaveAsOptions } from "./files/save";
 import { asFileError } from "./files/context";
@@ -131,6 +133,11 @@ export interface LibraryApi {
   recreateRoot(): Promise<void>;
   /** Add folder…: the OS folder picker; a refusal shows its reason. */
   addFolder(): Promise<void>;
+  /**
+   * Add folder from git… (spec 4.2): clones, then adds the folder (or makes
+   * it the Library). Never rejects: resolves to the error, or null when done.
+   */
+  cloneFolder(req: CloneForm, opId: string): Promise<GitError | null>;
   /** Locate…: picks the folder that replaces the added `path`. */
   locateFolder(path: string): Promise<void>;
   /** Remove from sidebar: nothing on disk changes. */
@@ -950,6 +957,26 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     }
   }, [changeRoot, showNotice]);
 
+  // As Add folder…, or, with `useAsLibrary`, as Choose Library folder…: the
+  // new roots apply through `changeRoot`, and the watch effect re-syncs.
+  const cloneFolder = useCallback(
+    async (req: CloneForm, opId: string): Promise<GitError | null> => {
+      let rs: RootState;
+      try {
+        rs = await changeRoot(
+          () => gitClone({ ...req, opId, openPaths: allHeldPaths() }),
+          !req.useAsLibrary,
+        );
+      } catch (err) {
+        return asGitError(err);
+      }
+      const removed = rs.removed ?? [];
+      if (removed.length > 0) showNotice(removedNotice(removed));
+      return null;
+    },
+    [allHeldPaths, changeRoot, showNotice],
+  );
+
   /** Treated as the folder having moved: held Files follow, as on a rename. */
   const locateFolder = useCallback(
     async (path: string) => {
@@ -1157,6 +1184,7 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
     chooseRoot,
     recreateRoot,
     addFolder,
+    cloneFolder,
     locateFolder,
     removeFolder,
     setQuery,

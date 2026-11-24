@@ -12,12 +12,14 @@ import {
   NewFolderIcon,
   SearchIcon,
 } from "./icons";
+import { gitCancel, type GitError, type PickedParent } from "../git/api";
 import type { GitSyncApi } from "../git/useGitSync";
+import { CloneDialog, type CloneForm, type CloneInitial } from "./CloneDialog";
 import { DragGhost } from "./DragGhost";
 import { GitRow } from "./GitRow";
 import { SetupSyncCard } from "./SetupSyncCard";
 import { SectionHeading } from "./SectionHeading";
-import { fileIcon } from "./icons";
+import { fileIcon, Icon } from "./icons";
 import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
 import { Pinned, TabList, type PinnedItem } from "./Pinned";
 import { LibraryTree, type PendingTrash, type SelectHow } from "./LibraryTree";
@@ -117,8 +119,11 @@ export interface SidebarProps {
   unsavedUnder(folder: string): number;
   /** Save all, from the commit card's unsaved-files line. */
   onSaveAll(): void;
-  /** Add folder from git… (spec 4.2). */
-  onCloneFolder?(): void;
+  /**
+   * Add folder from git… (spec 4.2): runs the clone; resolves to its error,
+   * or null once the new folder is in the roots. Never rejects.
+   */
+  onCloneFolder(req: CloneForm, opId: string): Promise<GitError | null>;
   /** Decides the Windows-only name rule and the "Show in …" label. */
   platform?: Platform;
 }
@@ -163,11 +168,69 @@ function topmost(entries: Entry[]): Entry[] {
   );
 }
 
+/** A clone running: its placeholder row's name and the id that cancels it. */
+interface Cloning {
+  opId: string;
+  name: string;
+}
+
+interface CloneProps {
+  cloning: Cloning | null;
+  onStartClone(): void;
+}
+
 /** The Library sidebar, layout A (spec 5.2). */
 export function Sidebar(props: SidebarProps) {
-  if (!props.open) return null;
-  return <SidebarPanel {...props} />;
+  // Held here, not in the panel, so a clone that fails while the sidebar is
+  // closed still brings its dialog back.
+  const { onCloneFolder } = props;
+  const [dialog, setDialog] = useState<CloneInitial | null>(null);
+  const [cloning, setCloning] = useState<Cloning | null>(null);
+
+  const clone = (
+    req: CloneForm,
+    shown: { name: string; parent: PickedParent },
+  ) => {
+    const opId = crypto.randomUUID();
+    setDialog(null);
+    setCloning({ opId, name: shown.name });
+    void onCloneFolder(req, opId).then((error) => {
+      setCloning(null);
+      if (error && error.kind !== "cancelled") {
+        const { url, name, useAsLibrary } = req;
+        setDialog({ url, name, useAsLibrary, parent: shown.parent, error });
+      }
+    });
+  };
+
+  return (
+    <>
+      {props.open && (
+        <SidebarPanel
+          {...props}
+          cloning={cloning}
+          onStartClone={() => setDialog(EMPTY_CLONE)}
+        />
+      )}
+      {dialog && (
+        <CloneDialog
+          initial={dialog === EMPTY_CLONE ? undefined : dialog}
+          onClone={clone}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+    </>
+  );
 }
+
+/** The dialog opened fresh from the menu. */
+const EMPTY_CLONE: CloneInitial = {
+  url: "",
+  name: "",
+  useAsLibrary: false,
+  parent: null,
+  error: null,
+};
 
 function SidebarPanel({
   width,
@@ -210,8 +273,10 @@ function SidebarPanel({
   git,
   unsavedUnder,
   onSaveAll,
+  cloning,
+  onStartClone,
   platform: platformProp,
-}: SidebarProps) {
+}: SidebarProps & CloneProps) {
   // With the Library offline its rows are stale: only the added folders show.
   const rows = useMemo(() => {
     if (available) return allRows;
@@ -520,6 +585,19 @@ function SidebarPanel({
     onSelect: onAddFolder,
   };
 
+  /** Add folder from git… (spec 4.2), gated as Set up sync… is. */
+  const cloneItems = (): MenuItem[] => {
+    if (!git.enabled) return [];
+    const label = "Add folder from git…";
+    if (!git.available) {
+      return [
+        { label, disabled: true, reason: "Install git to sync folders." },
+      ];
+    }
+    // One clone at a time: its placeholder row offers Cancel.
+    return [{ label, disabled: cloning !== null, onSelect: onStartClone }];
+  };
+
   /** An added folder heading's menu (its ⋯ button and a right-click). */
   const headingItems = (a: AddedState): MenuItem[] => {
     const remove: MenuItem = {
@@ -638,6 +716,7 @@ function SidebarPanel({
       ? rootItems(root)
       : [{ label: "Choose Library folder…", onSelect: onChooseRoot }]),
     { ...addFolderItem, separated: true },
+    ...cloneItems(),
   ];
 
   /** The heading's ⋯: the Library's menu less what its buttons do. */
@@ -655,6 +734,7 @@ function SidebarPanel({
         : []),
       { label: "Choose Library folder…", onSelect: onChooseRoot },
       { ...addFolderItem, separated: true },
+      ...cloneItems(),
     ];
     openMenu(
       {
@@ -778,6 +858,39 @@ function SidebarPanel({
     );
   };
 
+  /** Where the cloned folder will appear: after the last added folder. */
+  const clonePlaceholder = cloning && (
+    <button
+      type="button"
+      title={`Cloning ${cloning.name}…`}
+      onClick={(ev) => {
+        const b = ev.currentTarget.getBoundingClientRect();
+        openMenu(
+          {
+            label: `Cloning ${cloning.name}`,
+            x: b.left,
+            y: b.bottom + 4,
+            items: [
+              { label: "Cancel", onSelect: () => void gitCancel(cloning.opId) },
+            ],
+          },
+          ev.currentTarget,
+        );
+      }}
+      style={{ paddingLeft: 8 }}
+      className="mt-2 flex h-[30px] w-full cursor-default items-center gap-2 rounded-[6px] pr-1 text-left whitespace-nowrap text-muted hover:bg-row-hover"
+    >
+      <span className="flex w-3.5 shrink-0 justify-center text-faint">
+        <Icon
+          name="spinner"
+          size={14}
+          className="animate-spin motion-reduce:animate-none"
+        />
+      </span>
+      <span className="min-w-0 flex-1 truncate">Cloning {cloning.name}…</span>
+    </button>
+  );
+
   const libraryTree = (
     <LibraryTree
       treeRef={treeRef}
@@ -829,6 +942,7 @@ function SidebarPanel({
             )
           : null
       }
+      footer={clonePlaceholder}
     />
   );
 
@@ -970,7 +1084,7 @@ function SidebarPanel({
               )}
             </div>
           </div>
-          {rows.length > 0 && libraryTree}
+          {(rows.length > 0 || cloning) && libraryTree}
         </>
       )}
 

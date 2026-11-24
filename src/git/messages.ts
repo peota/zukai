@@ -33,6 +33,16 @@ export function errorCopy(e: GitError): string {
   return (e.committed ? "Committed. Push failed: " : "") + base(e);
 }
 
+/**
+ * The folder name a clone suggests: the URL's last path part, less `.git`
+ * (as Rust's `repo_name`, but the suffix in any case).
+ */
+export function repoName(url: string): string {
+  const trimmed = url.trim().replace(/[/\\]+$/, "");
+  const last = trimmed.split(/[/\\:]/).pop() ?? "";
+  return last.replace(/\.git$/i, "");
+}
+
 export function defaultCommitMessage(now: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `Sync ${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;

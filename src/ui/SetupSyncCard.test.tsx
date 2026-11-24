@@ -77,6 +77,15 @@ describe("SetupSyncCard", () => {
     expect(p.onSetUp).not.toHaveBeenCalled();
   });
 
+  it("running_ignores_cancel_and_escape", () => {
+    const p = setup({ running: true });
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toBeDisabled();
+    fireEvent.click(cancel);
+    fireEvent.keyDown(url(), { key: "Escape" });
+    expect(p.onCancel).not.toHaveBeenCalled();
+  });
+
   it("shows an error with the shared copy", () => {
     const error: GitError = {
       kind: "repo_unreachable",
