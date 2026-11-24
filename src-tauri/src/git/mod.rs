@@ -5,6 +5,10 @@
 
 mod error;
 mod run;
+mod status;
+#[cfg(test)]
+mod testutil;
 
 pub use error::{GitError, GitKind, classify, first_line};
 pub use run::{Done, Git, RunFail, find_git};
+pub use status::{FolderGit, Parsed, RepoState, RepoStatus, folder_git, parse_porcelain};
