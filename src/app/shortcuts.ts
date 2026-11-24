@@ -33,9 +33,7 @@ export type Command =
   /** Shows or hides the terminal panel. */
   | { type: "toggleTerminal" }
   /** Opens a new terminal. */
-  | { type: "newTerminal" }
-  /** Shows or hides the Ask panel (only once an AI provider is ready). */
-  | { type: "toggleAsk" };
+  | { type: "newTerminal" };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -162,8 +160,6 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
       return { type: "toggleSidebar" };
     case "p":
       return { type: "quickOpen" };
-    case "j":
-      return { type: "toggleAsk" };
   }
   // Digits by physical key: AZERTY types symbols on the number row.
   const digit = /^Digit([1-9])$/.exec(e.code);

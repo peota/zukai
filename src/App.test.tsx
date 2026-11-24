@@ -10,7 +10,6 @@ import * as storage from "./storage/api";
 import * as files from "./files/api";
 import * as lib from "./library/api";
 import * as term from "./terminal/api";
-import * as ask from "./ask/api";
 import App from "./App";
 import { toSessionFile } from "./model/session";
 import { newTabState } from "./model/workspace";
@@ -129,17 +128,6 @@ vi.mock("./library/api", () => ({
   onDragDrop: vi.fn(),
 }));
 
-vi.mock("./ask/api", () => ({
-  aiStatus: vi.fn(() =>
-    Promise.resolve({ config: null, hasKey: false, ready: false }),
-  ),
-  aiAsk: vi.fn(),
-  aiCancel: vi.fn(),
-  aiKeyRemove: vi.fn(),
-  aiKeySet: vi.fn(),
-  aiModels: vi.fn(() => Promise.resolve([])),
-}));
-
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     show: () => Promise.resolve(),
@@ -232,8 +220,6 @@ const newTerminal = () =>
     ctrlKey: true,
     shiftKey: true,
   });
-const modJ = () =>
-  fireEvent.keyDown(window, { key: "j", code: "KeyJ", ctrlKey: true });
 const modB = () =>
   fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
 
@@ -797,105 +783,6 @@ describe("App", () => {
     expect(main.querySelector("[data-split-drop]")).toBeNull();
     await waitFor(() => expect(r.getAllByTestId("editor")).toHaveLength(2));
     expect(r.getAllByTestId("editor")[1]).toHaveAttribute("data-id", "b");
-  });
-
-  it("Mod+J does nothing until an AI provider is ready", async () => {
-    const r = render(<App />);
-    await waitFor(() => r.getByTestId("editor"));
-    await waitFor(() => expect(ask.aiStatus).toHaveBeenCalled());
-    await act(async () => {});
-    act(() => modJ());
-    await act(async () => {});
-    expect(r.queryByRole("region", { name: "Ask" })).toBeNull();
-    expect(r.container.querySelector('[aria-label="Ask"]')).toBeNull();
-    expect(r.queryByLabelText("Ask")).toBeNull();
-  });
-
-  it("Mod+J shows and hides the Ask panel, right of the editor and terminal", async () => {
-    vi.mocked(ask.aiStatus).mockResolvedValueOnce({
-      config: { provider: "anthropic", model: "claude-sonnet-5-5" },
-      hasKey: true,
-      ready: true,
-    });
-    const r = render(<App />);
-    await waitFor(() => r.getByTestId("editor"));
-    await act(async () => {});
-    act(() => modJ());
-    const panel = await r.findByRole("region", { name: "Ask" });
-    // The editor and the terminal share a column; Ask sits beside it.
-    const main = r.container.querySelector("main")!;
-    const row = main.parentElement!.parentElement!;
-    expect(panel.parentElement).toBe(row);
-    expect(row.lastElementChild).toBe(panel);
-    expect(row.className).toContain("flex-row");
-    act(() => modJ());
-    await waitFor(() =>
-      expect(r.queryByRole("region", { name: "Ask" })).toBeNull(),
-    );
-  });
-
-  for (const how of ["Mod+J", "the close button"]) {
-    it(`hiding the Ask panel with ${how} stops a running answer`, async () => {
-      vi.mocked(ask.aiStatus).mockResolvedValueOnce({
-        config: { provider: "anthropic", model: "claude-sonnet-5-5" },
-        hasKey: true,
-        ready: true,
-      });
-      // The answer never ends on its own.
-      vi.mocked(ask.aiAsk).mockReturnValue(new Promise(() => {}));
-      vi.mocked(ask.aiCancel).mockResolvedValue(undefined);
-      h.texts.a = "alpha";
-      const r = render(<App />);
-      await waitFor(() => r.getByTestId("editor"));
-      await act(async () => {});
-      act(() => modJ());
-      const question = await r.findByLabelText("Question");
-      fireEvent.change(question, { target: { value: "What is this?" } });
-      fireEvent.keyDown(question, { key: "Enter" });
-      await waitFor(() => expect(ask.aiAsk).toHaveBeenCalled());
-      const id = vi.mocked(ask.aiAsk).mock.calls[0][0];
-      expect(ask.aiCancel).not.toHaveBeenCalled();
-      if (how === "Mod+J") act(() => modJ());
-      else fireEvent.click(r.getByRole("button", { name: "Close Ask panel" }));
-      await waitFor(() =>
-        expect(r.queryByRole("region", { name: "Ask" })).toBeNull(),
-      );
-      expect(ask.aiCancel).toHaveBeenCalledWith(id);
-      // The question stays in the conversation when the panel comes back.
-      act(() => modJ());
-      expect(await r.findByText("What is this?")).toBeInTheDocument();
-    });
-  }
-
-  it("removing the key closes the Ask panel, and a new key doesn't reopen it", async () => {
-    const ready = {
-      config: { provider: "anthropic" as const, model: "claude-sonnet-5-5" },
-      hasKey: true,
-      ready: true,
-    };
-    vi.mocked(ask.aiStatus).mockResolvedValueOnce(ready);
-    vi.mocked(ask.aiKeyRemove).mockResolvedValueOnce({
-      ...ready,
-      hasKey: false,
-      ready: false,
-    });
-    vi.mocked(ask.aiKeySet).mockResolvedValueOnce(ready);
-    const r = render(<App />);
-    await waitFor(() => r.getByTestId("editor"));
-    await act(async () => {});
-    act(() => modJ());
-    await r.findByRole("region", { name: "Ask" });
-    fireEvent.keyDown(window, { key: ",", code: "Comma", ctrlKey: true });
-    fireEvent.click(await r.findByRole("tab", { name: "AI" }));
-    fireEvent.click(r.getByRole("button", { name: "Remove" }));
-    await waitFor(() =>
-      expect(r.queryByRole("region", { name: "Ask" })).toBeNull(),
-    );
-    fireEvent.change(r.getByLabelText("Key"), { target: { value: "sk-test" } });
-    fireEvent.click(r.getByRole("button", { name: "Save key" }));
-    await waitFor(() => expect(ask.aiKeySet).toHaveBeenCalled());
-    await act(async () => {});
-    expect(r.queryByRole("region", { name: "Ask" })).toBeNull();
   });
 
   it("toggleTerminalWithNoFolderShowsNotice", async () => {

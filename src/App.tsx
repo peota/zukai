@@ -53,9 +53,6 @@ import { useGoneClosed } from "./app/useGoneClosed";
 import { useColorScheme } from "./ui/useColorScheme";
 import { SaveChangesDialog } from "./ui/SaveChangesDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
-import { aiStatus, type AiStatus } from "./ask/api";
-import { useAsk } from "./ask/useAsk";
-import { providerLabel } from "./ask/providerLabel";
 import { QuickOpen, type QuickTab } from "./ui/QuickOpen";
 import { fileIcon } from "./ui/icons";
 import { libraryQuickOpen } from "./library/api";
@@ -75,7 +72,6 @@ const BEAUTIFY_HINT = platform === "mac" ? "⇧⌥F" : "Shift+Alt+F";
 const SETTINGS_HINT = platform === "mac" ? "⌘," : "Ctrl+,";
 const PREVIEW_HINT = platform === "mac" ? "⇧⌘V" : "Ctrl+Shift+V";
 const RICH_HINT = platform === "mac" ? "⇧⌘M" : "Ctrl+Shift+M";
-const ASK_HINT = platform === "mac" ? "⌘J" : "Ctrl+J";
 const NO_TERMINAL_FOLDER = "Choose a Library folder to open a terminal";
 
 // xterm loads with the first terminal, never at startup.
@@ -83,11 +79,6 @@ const TerminalPanel = lazy(() =>
   import("./terminal/TerminalPanel").then((m) => ({
     default: m.TerminalPanel,
   })),
-);
-
-// The Ask panel (and its Markdown renderer) loads when it's first opened.
-const AskPanel = lazy(() =>
-  import("./ask/AskPanel").then((m) => ({ default: m.AskPanel })),
 );
 
 interface Cursor {
@@ -103,18 +94,6 @@ export default function App() {
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [picking, setPicking] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [ai, setAi] = useState<AiStatus>({
-    config: null,
-    hasKey: false,
-    ready: false,
-  });
-  useEffect(() => {
-    aiStatus().then(setAi, () => {});
-  }, []);
-  /** Not stored: the Ask panel starts closed, like the terminal panel. */
-  const [askOpen, setAskOpen] = useState(false);
-  const aiReady = ai.ready;
-  const askShown = aiReady && askOpen;
   const [quickOpen, setQuickOpen] = useState(false);
   /** Edits reach a Markdown preview without re-rendering the App. */
   const [feed] = useState(createTextFeed);
@@ -195,12 +174,6 @@ export default function App() {
       } else if (cmd.type === "newTerminal") {
         openTerminal(termFolder);
         return;
-      } else if (cmd.type === "toggleAsk") {
-        if (!aiReady) return;
-        // Hiding gives the keyboard back; showing, the panel takes it.
-        if (askShown) refocus();
-        setAskOpen(!askShown);
-        return;
       } else await workspaceRun(cmd);
       // The other editor takes the keyboard.
       if (cmd.type === "toggleRichMarkdown") refocus();
@@ -213,8 +186,6 @@ export default function App() {
       showTerm,
       openTerminal,
       termFolder,
-      aiReady,
-      askShown,
     ],
   );
   /** The side a dragged Tab would split the editor area on, while shown. */
@@ -272,34 +243,6 @@ export default function App() {
   const activeMode = active ? effectiveMode(active, w.settings) : null;
   /** A Markdown Tab's preview; any other Tab is just edited. */
   const previewMode = (isMarkdown && active?.preview) || "edit";
-  const ask = useAsk({
-    bridge: w.bridge,
-    activeTab: active
-      ? {
-          id: active.id,
-          title: active.title,
-          language: active.language,
-          kind: active.kind,
-        }
-      : null,
-  });
-  const clearAsk = ask.clear;
-  const stopAsk = ask.stop;
-  // Hiding the panel (Mod+J or its ×) stops a running answer; what came so
-  // far stays in the conversation.
-  useEffect(() => {
-    if (!askShown) stopAsk();
-  }, [askShown, stopAsk]);
-  // No provider any more (its key was removed): the panel closes and the
-  // conversation goes, so setting a key later doesn't bring either back.
-  const wasReady = useRef(aiReady);
-  useEffect(() => {
-    if (wasReady.current && !aiReady) {
-      setAskOpen(false);
-      clearAsk();
-    }
-    wasReady.current = aiReady;
-  }, [aiReady, clearAsk]);
   const theme = useColorScheme(w.settings.theme);
   // The CSS palette follows <html data-theme> (light or dark), refined by
   // data-palette (which light or dark theme) and data-accent.
@@ -701,8 +644,7 @@ export default function App() {
           <WindowControls platform={platform} />
         </div>
         {/* The editor area and the terminal panel (under it at the bottom,
-            right of it at the side), then the Ask panel on the right of both.
-            The tab bar keeps its full width. */}
+            right of it at the side). The tab bar keeps its full width. */}
         <div className="flex min-h-0 flex-1 flex-row">
           <div
             className={`flex min-h-0 min-w-0 flex-1 ${
@@ -788,25 +730,6 @@ export default function App() {
               </Suspense>
             )}
           </div>
-          {askShown && (
-            <Suspense fallback={null}>
-              <AskPanel
-                ask={ask}
-                noteTitle={active?.kind === "text" ? active.title : null}
-                providerLabel={providerLabel(ai.config)}
-                width={w.settings.askWidth}
-                onWidth={(px) => w.setSettings({ askWidth: px })}
-                onClose={() => {
-                  setAskOpen(false);
-                  refocus();
-                }}
-                onOpenUrl={(url) =>
-                  void openUrl(url).catch(() => showNotice(`Can't open ${url}`))
-                }
-                onFocusEditor={refocus}
-              />
-            </Suspense>
-          )}
         </div>
         <StatusBar
           line={here.line}
@@ -844,15 +767,6 @@ export default function App() {
           notice={w.notice ?? undefined}
           onSettings={() => setSettingsOpen(true)}
           settingsHint={SETTINGS_HINT}
-          ask={
-            aiReady
-              ? {
-                  open: askShown,
-                  hint: ASK_HINT,
-                  onToggle: () => void run({ type: "toggleAsk" }),
-                }
-              : undefined
-          }
           markdownMode={
             active && activeMode
               ? {
@@ -883,8 +797,6 @@ export default function App() {
           platform={platform}
           onSettings={w.setSettings}
           onFontSize={w.setFontSize}
-          aiStatus={ai}
-          onAiStatus={setAi}
           onClose={() => {
             setSettingsOpen(false);
             refocus();
