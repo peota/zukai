@@ -262,8 +262,11 @@ beforeEach(() => {
         : null,
     ),
   );
+  // Several hooks listen (the Library, git sync): one event reaches them all.
+  const changedListeners: ((e: { dirs: string[] }) => void)[] = [];
   l.onLibraryChanged.mockImplementation(async (cb) => {
-    h.libraryChanged = cb;
+    changedListeners.push(cb);
+    h.libraryChanged = (e) => changedListeners.forEach((c) => c(e));
     return () => {};
   });
   l.onLibraryDropped.mockResolvedValue(() => {});

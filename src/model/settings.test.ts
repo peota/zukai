@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { clampTerminalSize, DEFAULT_SETTINGS, parseSettings } from "./settings";
 
+describe("gitSync", () => {
+  it("defaults on and parses booleans only", () => {
+    expect(DEFAULT_SETTINGS.gitSync).toBe(true);
+    expect(parseSettings({ gitSync: false }).gitSync).toBe(false);
+    expect(parseSettings({ gitSync: "no" }).gitSync).toBe(true);
+  });
+});
+
 describe("parseSettings", () => {
   it("keeps valid values", () => {
     expect(
@@ -25,6 +33,7 @@ describe("parseSettings", () => {
       wrapNewTabs: true,
       lineNumbers: false,
       autosaveFiles: true,
+      gitSync: true,
       revealActiveFile: true,
       previewSplit: 0.35,
       markdownDefault: "markdown",
@@ -56,6 +65,7 @@ describe("parseSettings", () => {
       wrapNewTabs: false,
       lineNumbers: false,
       autosaveFiles: false,
+      gitSync: true,
       revealActiveFile: true,
       previewSplit: 0.5,
       markdownDefault: "rich",

@@ -38,6 +38,8 @@ export interface Settings {
   lineNumbers: boolean;
   /** Files (not Scratchpads) save themselves as you type; off, they save on Ctrl+S. */
   autosaveFiles: boolean;
+  /** Git status, Pull, Commit and Push for library folders. */
+  gitSync: boolean;
   /** The active Tab's File is shown in the Library tree: its folders open, its row scrolled into view. */
   revealActiveFile: boolean;
   /** The editor's share of the row in a Markdown Split (the preview has the rest). */
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   wrapNewTabs: false,
   lineNumbers: true,
   autosaveFiles: false,
+  gitSync: true,
   revealActiveFile: true,
   previewSplit: 0.5,
   markdownDefault: "rich",
@@ -149,6 +152,7 @@ export function parseSettings(v: unknown): Settings {
       typeof v.lineNumbers === "boolean" ? v.lineNumbers : d.lineNumbers,
     autosaveFiles:
       typeof v.autosaveFiles === "boolean" ? v.autosaveFiles : d.autosaveFiles,
+    gitSync: typeof v.gitSync === "boolean" ? v.gitSync : d.gitSync,
     revealActiveFile:
       typeof v.revealActiveFile === "boolean"
         ? v.revealActiveFile
