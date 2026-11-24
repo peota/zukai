@@ -29,6 +29,7 @@ describe("useAgents", () => {
     a.terminalAgents.mockReturnValue(new Promise(() => {}));
     const { result } = renderHook(() => useAgents());
     expect(result.current.agents).toBeNull();
+    expect(a.terminalAgents).not.toHaveBeenCalled();
   });
 
   it("keeps the latest call's result when an earlier call resolves last", async () => {
@@ -39,6 +40,7 @@ describe("useAgents", () => {
       .mockReturnValueOnce(second.promise);
     const { result } = renderHook(() => useAgents());
     act(() => result.current.refresh());
+    act(() => result.current.refresh());
     await act(async () => second.resolve(two));
     await act(async () => first.resolve(one));
     expect(result.current.agents).toEqual(two);
@@ -47,7 +49,7 @@ describe("useAgents", () => {
   it("keeps the last result when a refresh is rejected", async () => {
     a.terminalAgents.mockResolvedValueOnce(one);
     const { result } = renderHook(() => useAgents());
-    await act(async () => {});
+    await act(async () => result.current.refresh());
     expect(result.current.agents).toEqual(one);
     a.terminalAgents.mockRejectedValueOnce(new Error("boom"));
     await act(async () => result.current.refresh());
