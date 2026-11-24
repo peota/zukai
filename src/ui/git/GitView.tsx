@@ -4,13 +4,14 @@ import type { GitSyncApi } from "../../git/useGitSync";
 import type { DiffTarget } from "../../model/types";
 import { Icon, MoreIcon } from "../icons";
 import { Menu } from "../Menu";
+import { BranchMenu } from "./BranchMenu";
 import { ChangesList } from "./ChangesList";
 import { CommitBox } from "./CommitBox";
 import { FolderPicker, type GitFolder } from "./FolderPicker";
 import { GitErrorBox } from "./GitErrorBox";
 import { GitButton, syncRules } from "./syncButtons";
 
-/** What the branch menu (Task 7) gets when the branch button opens it. */
+/** What the branch menu gets when the branch button opens it. */
 export interface BranchMenuSlot {
   folder: string;
   /** The branch button's box, to hang the menu from. */
@@ -43,6 +44,7 @@ export interface GitViewProps {
   onAddFromGit(): void;
   /** A clone is running: one at a time, so Add folder from git… is off. */
   cloning?: boolean;
+  /** The branch button's menu; `BranchMenu` unless a test swaps it. */
   renderBranchMenu?(slot: BranchMenuSlot): ReactNode;
 }
 
@@ -78,7 +80,16 @@ export function GitView({
   onCopyPath,
   onAddFromGit,
   cloning = false,
-  renderBranchMenu,
+  renderBranchMenu = ({ folder, anchor, close }) => (
+    <BranchMenu
+      folder={folder}
+      anchor={anchor}
+      git={git}
+      unsaved={unsavedUnder(folder)}
+      onSaveAll={onSaveAll}
+      onClose={close}
+    />
+  ),
 }: GitViewProps) {
   const [chosen, setChosen] = useState(defaultFolder);
   // A new default (another active tab's folder, or the status bar's chip)
