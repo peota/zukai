@@ -11,8 +11,6 @@ function setup(over: Partial<SettingsDialogProps> = {}) {
     onSettings: vi.fn(),
     onFontSize: vi.fn(),
     onClose: vi.fn(),
-    aiStatus: { config: null, hasKey: false, ready: false },
-    onAiStatus: vi.fn(),
     ...over,
   };
   const r = render(<SettingsDialog {...props} />);
@@ -37,7 +35,6 @@ describe("SettingsDialog", () => {
         terminalPosition: "bottom",
         terminalHeight: 280,
         terminalWidth: 480,
-        askWidth: 400,
       },
       fontSize: 18,
     });
@@ -171,21 +168,9 @@ describe("SettingsDialog", () => {
     expect(screen.getByText("No shortcut matches")).toBeInTheDocument();
   });
 
-  it("lists the Ask panel's shortcut only once an AI provider is ready", () => {
-    const { unmount } = setup();
-    fireEvent.click(screen.getByRole("tab", { name: "Keyboard shortcuts" }));
-    expect(screen.queryByRole("row", { name: /Toggle Ask panel/ })).toBeNull();
-    unmount();
-    setup({
-      aiStatus: {
-        config: { provider: "anthropic", model: "claude-sonnet-5-5" },
-        hasKey: true,
-        ready: true,
-      },
-    });
-    fireEvent.click(screen.getByRole("tab", { name: "Keyboard shortcuts" }));
-    const row = screen.getByRole("row", { name: /Toggle Ask panel/ });
-    expect(within(row).getByText("Ctrl+J")).toBeInTheDocument();
+  it("has no AI tab", () => {
+    setup();
+    expect(screen.queryByRole("tab", { name: "AI" })).toBeNull();
   });
 
   it("shows macOS keys on a Mac", () => {

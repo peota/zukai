@@ -1,6 +1,5 @@
 import {
   ArrowUp,
-  MessageSquareText,
   Check,
   Copy,
   Square,
@@ -54,7 +53,6 @@ import { CANVAS_EXT, IMAGE_EXTS } from "../model/kinds";
 /** The app's line icons (Lucide, one stroke weight throughout). */
 export type IconName =
   | "arrowUp"
-  | "ask"
   | "check"
   | "copy"
   | "square"
@@ -147,7 +145,6 @@ export function fileIcon(name: string): IconName {
 
 const ICONS: Record<IconName, LucideIcon> = {
   arrowUp: ArrowUp,
-  ask: MessageSquareText,
   check: Check,
   copy: Copy,
   square: Square,

@@ -199,22 +199,9 @@ describe("platform differences", () => {
       ),
     ).toBeNull();
   });
-  it("Ask panel: Ctrl+J on windows, Cmd+J on mac; Ctrl+Shift+J is not", () => {
-    expect(matchShortcut(ev("KeyJ", { ctrlKey: true }), "windows")).toEqual({
-      type: "toggleAsk",
-    });
-    expect(matchShortcut(ev("KeyJ", { metaKey: true }), "mac")).toEqual({
-      type: "toggleAsk",
-    });
-    expect(
-      matchShortcut(
-        ev("KeyJ", { key: "J", ctrlKey: true, shiftKey: true }),
-        "windows",
-      ),
-    ).toBeNull();
-    expect(
-      matchShortcut(ev("KeyJ", { ctrlKey: true, altKey: true }), "windows"),
-    ).toBeNull();
+  it("Mod+J maps to no command until agents take it", () => {
+    expect(matchShortcut(ev("KeyJ", { ctrlKey: true }), "windows")).toBeNull();
+    expect(matchShortcut(ev("KeyJ", { metaKey: true }), "mac")).toBeNull();
   });
   it("plain Ctrl+M is not the rich switch", () =>
     expect(matchShortcut(ev("KeyM", { ctrlKey: true }), "windows")).toBeNull());
