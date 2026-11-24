@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GitError, RepoStatus } from "../git/api";
 import { GitRow } from "./GitRow";
@@ -211,15 +211,43 @@ describe("GitRow commit card", () => {
     expect(screen.queryByText(/unsaved/)).toBeNull();
   });
 
-  it("closes on blur to outside", () => {
+  it("pointerdown_outside_closes_card", () => {
     const s = setup({ dirty: true });
     fireEvent.click(s.commit());
-    act(() => {
-      fireEvent.blur(screen.getByLabelText("Commit message"), {
-        relatedTarget: document.body,
-      });
-    });
+    fireEvent.pointerDown(document.body);
     expect(screen.queryByLabelText("Commit message")).toBeNull();
+  });
+
+  it("commit_button_closes_open_card", () => {
+    const s = setup({ dirty: true });
+    fireEvent.click(s.commit());
+    fireEvent.pointerDown(s.commit());
+    fireEvent.blur(screen.getByLabelText("Commit message"), {
+      relatedTarget: s.commit(),
+    });
+    fireEvent.click(s.commit());
+    expect(screen.queryByLabelText("Commit message")).toBeNull();
+    fireEvent.click(s.commit());
+    expect(screen.getByLabelText("Commit message")).toBeTruthy();
+  });
+
+  it("clicking_card_text_keeps_it_open", () => {
+    const s = setup({ dirty: true }, { unsaved: 2 });
+    fireEvent.click(s.commit());
+    const text = screen.getByText("2 unsaved files won't be included");
+    fireEvent.pointerDown(text);
+    fireEvent.click(text);
+    expect(screen.getByLabelText("Commit message")).toBeTruthy();
+  });
+
+  it("save_all_click_keeps_card_open_and_calls_onSaveAll", () => {
+    const s = setup({ dirty: true }, { unsaved: 2 });
+    fireEvent.click(s.commit());
+    const btn = screen.getByRole("button", { name: "Save all" });
+    fireEvent.pointerDown(btn);
+    fireEvent.click(btn);
+    expect(s.onSaveAll).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Commit message")).toBeTruthy();
   });
 });
 
@@ -246,12 +274,30 @@ describe("GitRow error", () => {
     const outer = vi.fn();
     render(
       <div onKeyDown={outer} onClick={outer}>
+        <GitRow {...props({ dirty: true, ahead: 1 }, {})} />
+      </div>,
+    );
+    for (const name of ["Pull", "Push", "Commit"]) {
+      const b = screen.getByRole("button", { name });
+      fireEvent.click(b);
+      fireEvent.keyDown(b, { key: "ArrowDown" });
+    }
+    const input = screen.getByLabelText("Commit message");
+    fireEvent.click(input);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(outer).not.toHaveBeenCalled();
+  });
+
+  it("escape in the card does not leak", () => {
+    const outer = vi.fn();
+    render(
+      <div onKeyDown={outer}>
         <GitRow {...props({ dirty: true }, {})} />
       </div>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Pull" }));
-    fireEvent.keyDown(screen.getByRole("button", { name: "Pull" }), {
-      key: "ArrowDown",
+    fireEvent.click(screen.getByRole("button", { name: "Commit" }));
+    fireEvent.keyDown(screen.getByLabelText("Commit message"), {
+      key: "Escape",
     });
     expect(outer).not.toHaveBeenCalled();
   });
