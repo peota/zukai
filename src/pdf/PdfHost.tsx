@@ -17,6 +17,7 @@ import {
 import type { PdfInfo, PdfZoom, TabState } from "../model/types";
 import { loadPdfjs, pdfAssetParams, type Pdfjs } from "./pdfjs";
 import { pdfPositions, type PdfPosition } from "./positions";
+import { MAX_ZOOM, MIN_ZOOM } from "./zoom";
 import "./pdf.css";
 
 export interface PdfHostProps {
@@ -50,8 +51,6 @@ interface Session {
   viewer: PDFViewer;
 }
 
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 5;
 const KEY_STEP = 1.25;
 const WHEEL_STEP = 1.1;
 /**
@@ -217,10 +216,10 @@ export function PdfHost({
   /** The last position known for a path: what a reload restores. */
   const lastRef = useRef<{ path: string; pos: Position } | null>(null);
   /**
-   * Reports the shown document's page and zoom again: a zoom to the scale
-   * it already has fires no scale event, yet may end fitting.
+   * Reports and saves the shown document's page and zoom again: a zoom to
+   * the scale it already has fires no scale event, yet may end fitting.
    */
-  const reportRef = useRef<() => void>(() => {});
+  const zoomedRef = useRef<() => void>(() => {});
   const onInfoRef = useRef(onInfo);
   useLayoutEffect(() => {
     onInfoRef.current = onInfo;
@@ -310,7 +309,6 @@ export function PdfHost({
         bytes,
       });
     };
-    reportRef.current = report;
     /** Never before the restore, and never while hidden. */
     const save = () => {
       if (!restoredRef.current) return;
@@ -371,6 +369,7 @@ export function PdfHost({
       report();
       save();
     };
+    zoomedRef.current = onScale;
     eventBus.on("pagesinit", onPagesInit);
     eventBus.on("pagechanging", report);
     eventBus.on("scalechanging", onScale);
@@ -442,7 +441,7 @@ export function PdfHost({
         } else {
           return;
         }
-        reportRef.current();
+        zoomedRef.current();
         e.preventDefault();
         return;
       }
@@ -523,7 +522,7 @@ export function PdfHost({
     const viewer = viewerRef.current;
     if (!viewer || !restoredRef.current) return;
     applyZoom(viewer, zoomRequest.zoom);
-    reportRef.current();
+    zoomedRef.current();
   }, [zoomRequest]);
 
   // pdf.js's match count, for the find bar.

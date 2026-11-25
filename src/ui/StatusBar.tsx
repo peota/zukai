@@ -14,6 +14,7 @@ import type { SaveStatus } from "../storage/autosave";
 import { encodingLabel, lineEndingLabel } from "./encodings";
 import { Menu } from "./Menu";
 import { DirtyDot } from "./git/FolderPicker";
+import { MAX_ZOOM, MIN_ZOOM } from "../pdf/zoom";
 
 export type FormatKind = "beautify" | "minify";
 
@@ -228,6 +229,7 @@ export function StatusBar({
             <StepButton
               label="Zoom out"
               icon="minus"
+              disabled={pdf.zoom <= MIN_ZOOM + ZOOM_EPSILON}
               onClick={() => onZoom?.("out")}
             />
             <button
@@ -250,6 +252,7 @@ export function StatusBar({
             <StepButton
               label="Zoom in"
               icon="plus"
+              disabled={pdf.zoom >= MAX_ZOOM - ZOOM_EPSILON}
               onClick={() => onZoom?.("in")}
             />
           </div>
@@ -435,6 +438,9 @@ export function fileSize(bytes: number): string {
   if (kb < 1024) return `${Number(kb.toFixed(1))} KB`;
   return `${Number((kb / 1024).toFixed(1))} MB`;
 }
+
+/** A zoom this close to a limit is at it (scales come back inexact). */
+const ZOOM_EPSILON = 1e-3;
 
 /** The zoom menu's scales, under Fit width. */
 const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];

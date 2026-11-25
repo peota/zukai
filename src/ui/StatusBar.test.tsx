@@ -340,6 +340,17 @@ describe("StatusBar", () => {
       expect(onZoom).toHaveBeenLastCalledWith("in");
     });
 
+    it("zoom out is disabled at the smallest zoom, zoom in at the largest", () => {
+      const { rerender, props } = renderBar(
+        pdfProps({ pdf: { ...pdf, zoom: 0.2500001 } }),
+      );
+      expect(screen.getByRole("button", { name: "Zoom out" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Zoom in" })).toBeEnabled();
+      rerender(<StatusBar {...props} pdf={{ ...pdf, zoom: 4.9999999 }} />);
+      expect(screen.getByRole("button", { name: "Zoom out" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Zoom in" })).toBeDisabled();
+    });
+
     it("the zoom opens a menu of zooms", () => {
       const onZoom = vi.fn();
       pdfBar({ onZoom });
