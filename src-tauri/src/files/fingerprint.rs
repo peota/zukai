@@ -1,6 +1,6 @@
 //! Cheap identity of a file's content: mtime + size, backed by an xxh3 hash.
 
-use super::io::read_capped;
+use super::io::{open_cap, read_capped};
 use serde::{Deserialize, Serialize};
 use std::fs::{File, Metadata};
 use std::io;
@@ -46,7 +46,7 @@ pub fn unread(meta: &Metadata) -> Fingerprint {
 }
 
 /// Fingerprint of the file at `path`, or `None` if it doesn't exist. A file
-/// past `MAX_OPEN_BYTES` is not read: see `unread`.
+/// past `open_cap(path)` is not read: see `unread`.
 pub fn fingerprint_of(path: &Path) -> io::Result<Option<Fingerprint>> {
     let f = match File::open(path) {
         Ok(f) => f,
@@ -54,7 +54,7 @@ pub fn fingerprint_of(path: &Path) -> io::Result<Option<Fingerprint>> {
         Err(e) => return Err(e),
     };
     let meta = f.metadata()?;
-    Ok(Some(match read_capped(&f, meta.len())? {
+    Ok(Some(match read_capped(&f, meta.len(), open_cap(path))? {
         Some(bytes) => from_parts(&meta, &bytes),
         None => unread(&meta),
     }))
@@ -145,6 +145,20 @@ mod tests {
         let fp = fingerprint_of(&p).unwrap().unwrap();
         assert_eq!(fp.size, len);
         assert_eq!(fp.hash, "");
+    }
+
+    #[test]
+    fn pdf_over_open_cap_is_hashed() {
+        let dir = tempfile::tempdir().unwrap();
+        let len = 60 * 1024 * 1024;
+        let pdf = dir.path().join("big.pdf");
+        File::create(&pdf).unwrap().set_len(len).unwrap();
+        let fp = fingerprint_of(&pdf).unwrap().unwrap();
+        assert_eq!(fp.size, len);
+        assert!(!fp.hash.is_empty());
+        let bin = dir.path().join("big.bin");
+        File::create(&bin).unwrap().set_len(len).unwrap();
+        assert_eq!(fingerprint_of(&bin).unwrap().unwrap().hash, "");
     }
 
     #[test]

@@ -11,6 +11,21 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 pub const MAX_OPEN_BYTES: u64 = 50 * 1024 * 1024;
+/// The larger cap for a PDF, which is read as raw bytes and never decoded.
+pub const MAX_PDF_BYTES: u64 = 300 * 1024 * 1024;
+
+/// How many bytes of `path` may be read: `MAX_PDF_BYTES` for a `.pdf` (any
+/// case), else `MAX_OPEN_BYTES`.
+pub(crate) fn open_cap(path: &Path) -> u64 {
+    let is_pdf = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"));
+    if is_pdf {
+        MAX_PDF_BYTES
+    } else {
+        MAX_OPEN_BYTES
+    }
+}
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -30,15 +45,21 @@ pub enum WriteOutcome {
     Unencodable { ch: String, line: u32, col: u32 },
 }
 
-/// Reads at most `MAX_OPEN_BYTES` of a regular file, checking the size from
-/// metadata first so an oversized file is never read into memory.
+/// Reads at most `open_cap(path)` bytes of a regular file, checking the size
+/// from metadata first so an oversized file is never read into memory.
 pub(crate) fn read_bytes(path: &Path) -> Result<(Vec<u8>, Fingerprint), FileError> {
+    read_bytes_capped(path, open_cap(path))
+}
+
+/// `read_bytes` with an explicit `cap`. Text reads pass `MAX_OPEN_BYTES`, so
+/// even a `.pdf` path is never decoded as text past 50 MB.
+fn read_bytes_capped(path: &Path, cap: u64) -> Result<(Vec<u8>, Fingerprint), FileError> {
     // Path metadata first: on Windows a directory can't even be opened as a File.
     let meta = fs::metadata(path)?;
     if !meta.is_file() {
         return Err(FileError::NotAFile);
     }
-    if meta.len() > MAX_OPEN_BYTES {
+    if meta.len() > cap {
         return Err(FileError::TooLarge);
     }
     let f = File::open(path)?;
@@ -46,20 +67,20 @@ pub(crate) fn read_bytes(path: &Path) -> Result<(Vec<u8>, Fingerprint), FileErro
     if !meta.is_file() {
         return Err(FileError::NotAFile);
     }
-    let bytes = read_capped(&f, meta.len())?.ok_or(FileError::TooLarge)?;
+    let bytes = read_capped(&f, meta.len(), cap)?.ok_or(FileError::TooLarge)?;
     let fp = fingerprint::from_parts(&meta, &bytes);
     Ok((bytes, fp))
 }
 
 /// Reads the whole file, or returns `None` without reading if its metadata
-/// length `len` is past `MAX_OPEN_BYTES` (or it grows past it while reading).
-pub(crate) fn read_capped(f: &File, len: u64) -> io::Result<Option<Vec<u8>>> {
-    if len > MAX_OPEN_BYTES {
+/// length `len` is past `cap` (or it grows past it while reading).
+pub(crate) fn read_capped(f: &File, len: u64, cap: u64) -> io::Result<Option<Vec<u8>>> {
+    if len > cap {
         return Ok(None);
     }
     let mut bytes = Vec::with_capacity(len as usize);
-    f.take(MAX_OPEN_BYTES + 1).read_to_end(&mut bytes)?;
-    Ok((bytes.len() as u64 <= MAX_OPEN_BYTES).then_some(bytes))
+    f.take(cap + 1).read_to_end(&mut bytes)?;
+    Ok((bytes.len() as u64 <= cap).then_some(bytes))
 }
 
 fn file_read(decoded: Decoded, fingerprint: Fingerprint) -> FileRead {
@@ -72,12 +93,12 @@ fn file_read(decoded: Decoded, fingerprint: Fingerprint) -> FileRead {
 }
 
 pub fn read_file(path: &Path) -> Result<FileRead, FileError> {
-    let (bytes, fp) = read_bytes(path)?;
+    let (bytes, fp) = read_bytes_capped(path, MAX_OPEN_BYTES)?;
     Ok(file_read(detect_and_decode(&bytes), fp))
 }
 
 pub fn reread_as(path: &Path, label: &str) -> Result<FileRead, FileError> {
-    let (bytes, fp) = read_bytes(path)?;
+    let (bytes, fp) = read_bytes_capped(path, MAX_OPEN_BYTES)?;
     let decoded =
         decode_as(&bytes, label).ok_or_else(|| FileError::UnknownEncoding(label.to_string()))?;
     Ok(file_read(decoded, fp))
@@ -180,7 +201,7 @@ pub fn write_file(
     }
     // Always compare content: mtime and size can't be trusted (FAT's 2 s
     // granularity, SMB caching, tools that restore mtime).
-    let Some(disk_bytes) = read_capped(&f, meta.len())? else {
+    let Some(disk_bytes) = read_capped(&f, meta.len(), MAX_OPEN_BYTES)? else {
         // Over the cap: Zukai can't have this content, so it is always a
         // conflict, whatever `expected` says (even a fingerprint from an
         // earlier over-cap Conflict). The empty hash marks "never read".
@@ -583,7 +604,7 @@ mod tests {
             .unwrap();
         let f = fs::File::open(&p).unwrap();
         let len = f.metadata().unwrap().len();
-        assert!(read_capped(&f, len).unwrap().is_none());
+        assert!(read_capped(&f, len, MAX_OPEN_BYTES).unwrap().is_none());
         // Nothing was consumed from the handle.
         assert_eq!((&f).stream_position().unwrap(), 0);
 
@@ -591,7 +612,27 @@ mod tests {
         let q = dir.path().join("ok.txt");
         fs::write(&q, b"abc").unwrap();
         let g = fs::File::open(&q).unwrap();
-        assert_eq!(read_capped(&g, 3).unwrap().as_deref(), Some(&b"abc"[..]));
+        assert_eq!(
+            read_capped(&g, 3, MAX_OPEN_BYTES).unwrap().as_deref(),
+            Some(&b"abc"[..])
+        );
+    }
+
+    #[test]
+    fn open_cap_is_larger_for_pdf() {
+        assert_eq!(open_cap(Path::new("a/B.PDF")), MAX_PDF_BYTES);
+        assert_eq!(open_cap(Path::new("a.png")), MAX_OPEN_BYTES);
+    }
+
+    #[test]
+    fn read_capped_honours_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.bin");
+        fs::write(&p, b"hello world").unwrap();
+        let f = fs::File::open(&p).unwrap();
+        assert!(read_capped(&f, 11, 10).unwrap().is_none());
+        let g = fs::File::open(&p).unwrap();
+        assert_eq!(read_capped(&g, 11, 11).unwrap().map(|b| b.len()), Some(11));
     }
 
     #[cfg(unix)]

@@ -225,7 +225,7 @@ pub async fn file_pick_save(
     .await
 }
 
-/// A granted File's raw bytes (an Image), at most `MAX_OPEN_BYTES`.
+/// A granted File's raw bytes (an Image or a PDF), at most `open_cap` of its path.
 pub(crate) fn read_bytes_checked(g: &Grants, path: &str) -> Result<Vec<u8>, FileError> {
     Ok(io::read_bytes(&g.check(path)?)?.0)
 }
