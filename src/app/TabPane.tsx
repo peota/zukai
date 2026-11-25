@@ -44,8 +44,8 @@ export interface TabPaneProps
   onImageInfo(id: string, seq: number, info: ImageInfo | null): void;
   /** A PDF's page, zoom and size, for the reload `seq` it was read at. */
   onPdfInfo?(id: string, seq: number, info: PdfInfo | null): void;
-  /** A go-to-page request for the focused PDF Tab. */
-  goToPage?: { page: number; seq: number } | null;
+  /** A go-to-page request, for the one PDF Tab it names. */
+  goToPage?: { tabId: string; page: number; seq: number } | null;
   /** Find, for the focused Tab (a PDF Tab's own find bar). */
   findRequest?: FindRequest | null;
   /** A Markdown Tab's editor (null for any other Tab). */
@@ -235,7 +235,7 @@ export function TabPane(p: TabPaneProps) {
               keys={focused}
               onOpenDefault={p.onOpenDefault}
               findRequest={focused ? p.findRequest : null}
-              goToPage={focused ? p.goToPage : null}
+              goToPage={p.goToPage?.tabId === id ? p.goToPage : null}
             />
           </Suspense>
         )}
