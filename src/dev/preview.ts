@@ -347,6 +347,9 @@ const handlers: Record<string, (a: Args) => unknown> = {
   session_read: () => localStorage.getItem(KEY),
   session_write: (a) => localStorage.setItem(KEY, a.json as string),
   session_backup: () => null,
+  pdf_positions_read: () => localStorage.getItem(KEY + ".pdf"),
+  pdf_positions_write: (a) =>
+    localStorage.setItem(KEY + ".pdf", a.json as string),
   scratchpad_list: () =>
     Object.entries(scratch).map(([id, s]) => ({ id, ext: s.ext })),
   scratchpad_list_closed: () => [],

@@ -227,6 +227,8 @@ pub fn run() {
             commands::session_read,
             commands::session_write,
             commands::session_backup,
+            commands::pdf_positions_read,
+            commands::pdf_positions_write,
             commands::shadow_write,
             commands::shadow_read,
             commands::shadow_delete,
