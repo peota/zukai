@@ -42,6 +42,8 @@ const PAGE_H = 1000;
 class FakeViewer {
   static last: FakeViewer | null = null;
   static options: Record<string, unknown> | null = null;
+  /** Set to make the next construction throw (as pdf.js may). */
+  static throwOnCreate = false;
   container: HTMLDivElement;
   eventBus: FakeEventBus;
   pdfDocument: { numPages: number } | null = null;
@@ -55,6 +57,10 @@ class FakeViewer {
   updateScale = vi.fn();
   setDocument = vi.fn((doc: { numPages: number } | null) => {
     this.pdfDocument = doc;
+    // pdf.js hands the document to its find controller, which resets.
+    const fc = FakeViewer.options?.findController as
+      FakeFindController | undefined;
+    if (fc) fc.state = null;
     this.divs = Array.from({ length: doc?.numPages ?? 0 }, (_, i) => {
       const div = document.createElement("div");
       Object.defineProperty(div, "offsetTop", { value: i * PAGE_H });
@@ -63,6 +69,7 @@ class FakeViewer {
     });
   });
   constructor(o: { container: HTMLDivElement; eventBus: FakeEventBus }) {
+    if (FakeViewer.throwOnCreate) throw new TypeError("not a function");
     FakeViewer.options = o;
     this.container = o.container;
     this.eventBus = o.eventBus;
@@ -84,7 +91,8 @@ class FakeViewer {
   }
   set currentScaleValue(v: string) {
     this.value = v;
-    this.scale = v === "page-width" ? 0.9 : Number(v);
+    // Page width follows the container's width (a 1000px-wide page).
+    this.scale = v === "page-width" ? (width - 40) / 1000 : Number(v);
     this.eventBus.dispatch("scalechanging", { scale: this.scale });
   }
   getPageView(i: number) {
@@ -110,11 +118,34 @@ class FakeLinkService {
 class FakeFindController {
   static last: FakeFindController | null = null;
   options: { eventBus: FakeEventBus; linkService: FakeLinkService };
+  /** The last search, as pdf.js keeps it; null until a find. */
+  state: unknown = null;
   constructor(o: { eventBus: FakeEventBus; linkService: FakeLinkService }) {
     this.options = o;
     FakeFindController.last = this;
+    o.eventBus.on("find", (e) => (this.state = e));
   }
 }
+
+/** jsdom has no ResizeObserver: `resize()` fires every observer. */
+class FakeResizeObserver {
+  static all = new Set<FakeResizeObserver>();
+  constructor(private cb: () => void) {}
+  observe() {
+    FakeResizeObserver.all.add(this);
+  }
+  unobserve() {}
+  disconnect() {
+    FakeResizeObserver.all.delete(this);
+  }
+  fire() {
+    this.cb();
+  }
+}
+const resize = () =>
+  act(() => {
+    for (const o of [...FakeResizeObserver.all]) o.fire();
+  });
 
 const lib = {
   AnnotationMode: { ENABLE: 1 },
@@ -178,24 +209,40 @@ const docTask = (pages: number) => ({
 });
 
 let height = 600;
+let width = 800;
 const original = Object.getOwnPropertyDescriptor(
   HTMLElement.prototype,
   "clientHeight",
+);
+const originalWidth = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "clientWidth",
 );
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, "clientHeight", {
     configurable: true,
     get: () => height,
   });
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+    configurable: true,
+    get: () => width,
+  });
+  vi.stubGlobal("ResizeObserver", FakeResizeObserver);
 });
 afterAll(() => {
   if (original) {
     Object.defineProperty(HTMLElement.prototype, "clientHeight", original);
   }
+  if (originalWidth) {
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", originalWidth);
+  }
+  vi.unstubAllGlobals();
 });
 
 beforeEach(() => {
   height = 600;
+  width = 800;
+  FakeViewer.throwOnCreate = false;
   FakeViewer.last = null;
   store.get.mockReset();
   store.set.mockReset();
@@ -443,11 +490,15 @@ describe("PdfHost", () => {
     await setup();
     const v = await loadedViewer();
     await pagesInit(v);
+    // The viewer sits right of the sidebar and below the tab bar; pdf.js
+    // wants the pointer relative to the container.
+    v.container.getBoundingClientRect = () =>
+      new DOMRect(200, 100, width, height);
     const wheel = new WheelEvent("wheel", {
       deltaY: -100,
       ctrlKey: true,
-      clientX: 30,
-      clientY: 40,
+      clientX: 230,
+      clientY: 140,
       cancelable: true,
     });
     act(() => {
@@ -628,6 +679,127 @@ describe("PdfHost", () => {
       expect.objectContaining({ type: "highlightallchange", query: "spec" }),
     );
     expect(screen.getByRole("textbox", { name: "Find" })).toHaveValue("spec");
+  });
+
+  it("find_reopen_on_fresh_viewer_does_not_move", async () => {
+    // A search made earlier in this Tab, before it was switched away.
+    const { props, view } = await setup({ tab: tabWithId("fresh") });
+    const v = await loadedViewer();
+    await pagesInit(v);
+    view.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 1 }} />,
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Find" }), {
+      target: { value: "spec" },
+    });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Find" }), {
+      key: "Escape",
+    });
+    view.unmount();
+    // Shown again: a new viewer, whose find controller has no search. A
+    // highlight request there would go to the first match and save it.
+    const again = render(<PdfHost {...props} />);
+    const v2 = await loadedViewer();
+    await pagesInit(v2);
+    const finds = vi.fn();
+    v2.eventBus.on("find", finds);
+    again.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 2 }} />,
+    );
+    expect(screen.getByRole("textbox", { name: "Find" })).toHaveValue("spec");
+    expect(finds).not.toHaveBeenCalled();
+  });
+
+  it("refits_width_on_resize", async () => {
+    await setup();
+    const v = await loadedViewer();
+    await pagesInit(v);
+    expect(v.currentScale).toBeCloseTo(0.76);
+    scrollTo(v, 2 * PAGE_H + 250);
+    v.scrollPageIntoView.mockClear();
+    width = 540; // a Split, or the sidebar opened
+    resize();
+    expect(v.currentScaleValue).toBe("page-width");
+    expect(v.currentScale).toBeCloseTo(0.5);
+    // The same place, on the same page.
+    expect(v.scrollPageIntoView).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pageNumber: 3,
+        destArray: [null, { name: "XYZ" }, null, 792 - 250 * 0.792, null],
+      }),
+    );
+    // Too narrow to fit: pdf.js would compute a negative scale.
+    width = 30;
+    resize();
+    expect(v.currentScale).toBeCloseTo(0.5);
+  });
+
+  it("keeps_set_zoom_on_resize", async () => {
+    store.get.mockResolvedValue({
+      page: 1,
+      offsetInPage: 0,
+      zoom: 1.5,
+      updatedAt: 1,
+    });
+    await setup();
+    const v = await loadedViewer();
+    await pagesInit(v);
+    width = 540;
+    resize();
+    expect(v.currentScale).toBe(1.5);
+  });
+
+  it("defers_restore_until_sized", async () => {
+    store.get.mockResolvedValue({
+      page: 47,
+      offsetInPage: 0.5,
+      zoom: 1.5,
+      updatedAt: 1,
+    });
+    height = 0; // laid out hidden
+    const { props } = await setup();
+    const v = await loadedViewer();
+    await pagesInit(v);
+    expect(v.scrollPageIntoView).not.toHaveBeenCalled();
+    // Sized, before the restore: nothing is saved over the stored place.
+    height = 600;
+    scrollTo(v, 0);
+    v.eventBus.dispatch("scalechanging");
+    expect(store.set).not.toHaveBeenCalled();
+    resize();
+    expect(v.currentScale).toBe(1.5);
+    expect(v.scrollPageIntoView).toHaveBeenCalledWith(
+      expect.objectContaining({ pageNumber: 47 }),
+    );
+    expect(props.onInfo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 47, zoom: 1.5 }),
+    );
+    scrollTo(v, 46 * PAGE_H + 500);
+    expect(store.set).toHaveBeenLastCalledWith(PATH, {
+      page: 47,
+      offsetInPage: 0.5,
+      zoom: 1.5,
+    });
+  });
+
+  it("tears_down_viewer_on_unmount", async () => {
+    const { view } = await setup();
+    await loadedViewer();
+    const signal = FakeViewer.options?.abortSignal as AbortSignal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal.aborted).toBe(false);
+    view.unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("viewer_setup_failure_notice", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    FakeViewer.throwOnCreate = true;
+    await setup();
+    expect(
+      await screen.findByText("This file can't be shown as a PDF."),
+    ).toBeInTheDocument();
+    error.mockRestore();
   });
 
   it("password_notice", async () => {
