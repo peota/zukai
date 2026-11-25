@@ -604,6 +604,9 @@ describe("useFiles save and save as", () => {
       await act(() => result.current.saveAs("a"));
       expect(result.current.notice).toMatch(/^Can't save text as /);
     }
+    f.filePickSave.mockResolvedValue("C:\\d\\x.pdf");
+    await act(() => result.current.saveAs("a"));
+    expect(result.current.notice).toBe("Can't save text as a PDF (x.pdf)");
     // A drawing only goes into a .excalidraw file.
     await act(() => result.current.run({ type: "newCanvas" }));
     const id = result.current.state.activeId;
@@ -637,6 +640,64 @@ describe("useFiles save and save as", () => {
     });
     expect(f.fileSaveAs).not.toHaveBeenCalled();
     expect(f.fileWrite).not.toHaveBeenCalled();
+  });
+
+  it("a PDF Tab never reads its text: loading takes its fingerprint", async () => {
+    const pdf = "C:\\d\\doc.pdf";
+    disk[pdf] = { text: "%PDF", hash: "d1" };
+    const { result } = await mount();
+    const id = await openP(result, pdf);
+    expect(fileTabOf(result, pdf)!.kind).toBe("pdf");
+    await expect(result.current.loadContent(id)).resolves.toBe("");
+    expect(f.fileRead).not.toHaveBeenCalled();
+    expect(f.fileFingerprint).toHaveBeenCalledWith(pdf);
+    expect(fileTabOf(result, pdf)!.file!.fingerprint).toEqual(fp("d1"));
+  });
+
+  it("a PDF Tab whose file is gone is Missing", async () => {
+    const pdf = "C:\\d\\doc.pdf";
+    disk[pdf] = { text: "%PDF", hash: "d1" };
+    const { result } = await mount();
+    await openP(result, pdf);
+    delete disk[pdf];
+    act(() => h.fileChanged!({ path: pdf, kind: "removed" }));
+    await waitFor(() =>
+      expect(fileTabOf(result, pdf)!.file!.held).toBe("missing"),
+    );
+    expect(f.fileRead).not.toHaveBeenCalled();
+  });
+
+  it("a PDF Tab is never saved, shadowed or written", async () => {
+    const pdf = "C:\\d\\doc.pdf";
+    disk[pdf] = { text: "%PDF", hash: "d1" };
+    const { result } = await mount();
+    const id = await openP(result, pdf);
+    f.filePickSave.mockResolvedValue("C:\\d\\copy.pdf");
+    await act(() => result.current.saveAs(id));
+    expect(result.current.notice).toBe("PDFs are read-only in Zukai");
+    expect(f.filePickSave).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.run({ type: "save" });
+      await result.current.saveToOriginal(id);
+      await result.current.keepMine(id);
+    });
+    act(() => result.current.setContent(id, "x"));
+    await settle();
+    await act(() => result.current.closeTab(id));
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(f.fileSaveAs).not.toHaveBeenCalled();
+    expect(f.shadowWrite).not.toHaveBeenCalled();
+  });
+
+  it("the replace command on a PDF Tab opens find only", async () => {
+    const pdf = "C:\\d\\doc.pdf";
+    disk[pdf] = { text: "%PDF", hash: "d1" };
+    const { result } = await mount();
+    await openP(result, pdf);
+    await act(() => result.current.run({ type: "replace" }));
+    expect(result.current.findRequest).toEqual({ mode: "find", seq: 1 });
+    await act(() => result.current.run({ type: "zoom", dir: 1 }));
+    expect(result.current.fontSize).toBe(14);
   });
 
   it("a disk change reloads an Image Tab (a new replace for its reloadSeq)", async () => {

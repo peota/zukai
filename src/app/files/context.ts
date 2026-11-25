@@ -14,6 +14,7 @@ import type {
   WorkspaceState,
 } from "../../model/types";
 import { sameContent } from "../../files/fileState";
+import { isViewerKind, kindOf } from "../../model/kinds";
 import * as ws from "../../model/workspace";
 import type { Saver } from "../../storage/autosave";
 import type { KeyedLock } from "../keyedLock";
@@ -91,7 +92,29 @@ export function asFileError(err: unknown): FileError {
   return { kind: "io", message: String(err) };
 }
 
+/** What a PDF Tab's File says about its format: it has no text. */
+const PDF_FORMAT: FileFormat = {
+  encoding: "utf-8",
+  bom: false,
+  lineEnding: "lf",
+  mixed: false,
+};
+
 export async function readDisk(path: string): Promise<DiskRead> {
+  if (kindOf(path) === "pdf") {
+    // A PDF is never decoded as text (it can be huge): only whether it is
+    // there, and its fingerprint.
+    try {
+      const fingerprint = await fileFingerprint(path);
+      if (fingerprint === null) return { kind: "missing" };
+      return {
+        kind: "ok",
+        read: { text: "", format: PDF_FORMAT, readable: true, fingerprint },
+      };
+    } catch (err) {
+      return { kind: "failed", err: asFileError(err) };
+    }
+  }
   try {
     return { kind: "ok", read: await fileRead(path) };
   } catch (err) {
@@ -246,8 +269,8 @@ export function useFilesContext(x: FilesInternals) {
    */
   const keepAside = useCallback(
     (id: string) => {
-      // An Image Tab's text is a lossy decode of its bytes: never kept.
-      if (stateRef.current.tabs.find((t) => t.id === id)?.kind === "image") {
+      // A viewer Tab's text is a lossy decode (or nothing): never kept.
+      if (isViewerKind(stateRef.current.tabs.find((t) => t.id === id)?.kind)) {
         return;
       }
       const schedule = () => {

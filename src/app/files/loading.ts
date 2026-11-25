@@ -7,6 +7,7 @@ import {
 } from "../../files/api";
 import { inShadow, sameContent } from "../../files/fileState";
 import { baseName } from "../../files/paths";
+import { isViewerKind } from "../../model/kinds";
 import type {
   FileInfo,
   Fingerprint,
@@ -81,9 +82,30 @@ export function useLoading(c: FilesContext) {
 
   const readFileText = useCallback(
     async (id: string, file: FileInfo): Promise<string> => {
+      const kind = tabOf(id)?.kind;
+      if (kind === "pdf") {
+        // A PDF is never read as text (it can be huge): only whether it is
+        // still there, and its fingerprint, so changes still reach the Tab.
+        const cur = tabOf(id)?.file ?? file;
+        onDisk.set(id, "");
+        let fingerprint: Fingerprint | null | undefined;
+        try {
+          fingerprint = await fileFingerprint(cur.path);
+        } catch (err) {
+          logError("check file")(err);
+        }
+        if (fingerprint === undefined) return "";
+        const settled = settledFile(cur);
+        patchFile(
+          id,
+          fingerprint === null
+            ? { ...settled, held: "missing" }
+            : { ...settled, fingerprint, held: null },
+        );
+        return "";
+      }
       // An Image has no shadow: it always reads its File.
-      const image = tabOf(id)?.kind === "image";
-      if (inShadow(file) && !image) {
+      if (inShadow(file) && !isViewerKind(kind)) {
         const kept = await readShadow(id, file);
         if (kept === undefined) {
           // It stays held or unsaved as it was (that is what the Session
@@ -185,7 +207,8 @@ export function useLoading(c: FilesContext) {
       const shadowed = new Set(ids);
       const holdIfShadowed = async (tab: TabState): Promise<TabState> => {
         const file = tab.file;
-        if (!file || !shadowed.has(tab.id) || tab.kind === "image") return tab;
+        if (!file || !shadowed.has(tab.id) || isViewerKind(tab.kind))
+          return tab;
         if (inShadow(file)) return tab;
         let disk: Fingerprint | null | undefined;
         try {

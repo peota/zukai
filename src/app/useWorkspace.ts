@@ -1020,6 +1020,11 @@ export function useWorkspace(): Workspace {
         case "replace": {
           // The find bar is the plain editor's.
           const tab = s.tabs.find((t) => t.id === s.activeId);
+          if (tab?.kind === "pdf") {
+            // The PDF viewer's find bar (PdfHost) has no replace.
+            setFindRequest((r) => ({ mode: "find", seq: (r?.seq ?? 0) + 1 }));
+            return;
+          }
           if (tab && effectiveMode(tab, settingsRef.current) === "rich") {
             await setMarkdownMode(tab.id, "markdown");
           }
@@ -1070,7 +1075,7 @@ export function useWorkspace(): Workspace {
           return setMarkdownMode(tab.id, mode === "rich" ? "markdown" : "rich");
         }
         case "zoom": {
-          // A canvas or an image zooms itself (Excalidraw, the viewer); a
+          // A canvas, an image or a PDF zooms itself (Excalidraw, the viewers); a
           // diff shows text at the editor's size.
           const kind = s.tabs.find((t) => t.id === s.activeId)?.kind;
           if (kind === "text" || kind === "diff") zoomEditor(cmd.dir);

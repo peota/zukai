@@ -1,3 +1,4 @@
+import { isViewerKind } from "../model/kinds";
 import type { FileInfo, Fingerprint, TabState } from "../model/types";
 import type { WriteOutcome } from "./api";
 import { onWriteOutcome } from "./fileState";
@@ -78,9 +79,9 @@ export function createDocumentWriter(
     // Resolves rather than rejects: edits to it are refused, so there is
     // nothing unsaved (its text is in the untouched shadow), and a rejection
     // would block closing the Tab and quitting.
-    // An Image is only viewed: its text is a lossy decode of its bytes, never
+    // An Image or PDF is only viewed: its text is a lossy decode of its bytes, never
     // written to the File or a shadow.
-    if (tab.kind === "image") return;
+    if (isViewerKind(tab.kind)) return;
     if (deps.isUnreadable?.(id)) {
       console.error("write refused: unreadable shadow", id);
       return;
