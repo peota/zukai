@@ -41,6 +41,7 @@ const PAGE_H = 1000;
 
 class FakeViewer {
   static last: FakeViewer | null = null;
+  static options: Record<string, unknown> | null = null;
   container: HTMLDivElement;
   eventBus: FakeEventBus;
   pdfDocument: { numPages: number } | null = null;
@@ -62,6 +63,7 @@ class FakeViewer {
     });
   });
   constructor(o: { container: HTMLDivElement; eventBus: FakeEventBus }) {
+    FakeViewer.options = o;
     this.container = o.container;
     this.eventBus = o.eventBus;
     FakeViewer.last = this;
@@ -107,6 +109,7 @@ class FakeLinkService {
 
 const lib = {
   AnnotationMode: { ENABLE: 1 },
+  AnnotationEditorType: { DISABLE: -1, NONE: 0 },
   GlobalWorkerOptions: { workerSrc: "" },
   getDocument: vi.fn(),
 };
@@ -279,6 +282,18 @@ describe("PdfHost", () => {
       expect.objectContaining({ pageNumber: 340 }),
     );
     expect(v.currentScaleValue).toBe("page-width");
+  });
+
+  it("viewer_is_read_only", async () => {
+    await setup();
+    await loadedViewer();
+    // No annotation editor: it would take drops and keys for as long as a
+    // PDF is open.
+    expect(FakeViewer.options).toMatchObject({
+      annotationEditorMode: -1,
+      textLayerMode: 1,
+      annotationMode: 1,
+    });
   });
 
   it("default_is_fit_width", async () => {
