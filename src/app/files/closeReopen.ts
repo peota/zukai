@@ -10,7 +10,7 @@ import { logError } from "../workspaceEffects";
 import {
   fileInfoOf,
   openFailure,
-  readDisk,
+  readTabDisk,
   settledFile,
   unsavedDisk,
   type FilesContext,
@@ -107,7 +107,7 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
         }
       }
       if (text === null) {
-        const r = await readDisk(file.path);
+        const r = await readTabDisk(file.path, kind);
         if (r.kind === "failed") {
           showNotice(openFailure(baseName(file.path), r.err));
           return false;

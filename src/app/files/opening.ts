@@ -8,7 +8,7 @@ import { logError } from "../workspaceEffects";
 import {
   fileInfoOf,
   openFailure,
-  readDisk,
+  readTabDisk,
   type FilesContext,
 } from "./context";
 
@@ -23,7 +23,7 @@ export function useOpening(c: FilesContext) {
         ws.findByPath(stateRef.current, keyOf(path), keyOf);
       let tab = existing();
       if (!tab) {
-        const r = await readDisk(path);
+        const r = await readTabDisk(path, kindOf(path));
         if (r.kind === "missing") {
           return showNotice(`Can't find ${baseName(path)}`);
         }
