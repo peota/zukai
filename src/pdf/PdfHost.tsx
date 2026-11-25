@@ -187,6 +187,9 @@ export function PdfHost({
           linkService,
           textLayerMode: 1, // TextLayerMode.ENABLE
           annotationMode: lib.AnnotationMode.ENABLE,
+          // Read-only: no annotation editor. Its default (NONE) is a live
+          // mode that installs window keys and document-wide drag/drop.
+          annotationEditorMode: lib.AnnotationEditorType.DISABLE,
         });
         linkService.setViewer(viewer);
         viewerRef.current = viewer;
