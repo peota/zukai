@@ -578,6 +578,37 @@ describe("session v3", () => {
   });
 });
 
+describe("pdf Kind", () => {
+  const parse = (tab: unknown) =>
+    parseSessionFile(
+      JSON.stringify({
+        version: 3,
+        tabs: [tab],
+        activeId: "p",
+        closed: [],
+      }),
+    );
+
+  it("a text Tab on a .pdf path becomes a pdf Tab, minus text-only fields", () => {
+    const r = parse({
+      ...fileTab("p", "/a/b.PDF"),
+      kind: "text",
+      markdownMode: "rich",
+      hidden: [[1, 2]],
+      preview: "split",
+    });
+    expect(r?.tabs[0].kind).toBe("pdf");
+    expect(r?.tabs[0].markdownMode).toBeUndefined();
+    expect(r?.tabs[0].hidden).toBeUndefined();
+    expect(r?.tabs[0].preview).toBeUndefined();
+  });
+
+  it("a pdf Tab round-trips", () => {
+    const tab = { ...fileTab("p", "/a/b.pdf"), kind: "pdf" as const };
+    expect(parse(tab)?.tabs).toEqual([tab]);
+  });
+});
+
 describe("session v3 migration and sidebar", () => {
   /** A Tab as v2 wrote it: no `kind`. */
   const v2Tab = (id: string, path?: string): Record<string, unknown> => {
