@@ -15,6 +15,7 @@ import { logError } from "../workspaceEffects";
 import {
   asFileError,
   readDisk,
+  readTabDisk,
   sameFormat,
   type DiskRead,
   type FilesContext,
@@ -94,7 +95,7 @@ export function useBarActions(c: FilesContext, d: BarDeps) {
       await lock(id, () => {
         const path = tabOf(id)?.file?.path;
         return path
-          ? reloadLocked(id, () => readDisk(path))
+          ? reloadLocked(id, () => readTabDisk(path, tabOf(id)?.kind))
           : Promise.resolve();
       });
     },

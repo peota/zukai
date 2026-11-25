@@ -14,7 +14,7 @@ import type {
   WorkspaceState,
 } from "../../model/types";
 import { sameContent } from "../../files/fileState";
-import { isViewerKind, kindOf } from "../../model/kinds";
+import { isViewerKind, type Kind } from "../../model/kinds";
 import * as ws from "../../model/workspace";
 import type { Saver } from "../../storage/autosave";
 import type { KeyedLock } from "../keyedLock";
@@ -101,20 +101,6 @@ const PDF_FORMAT: FileFormat = {
 };
 
 export async function readDisk(path: string): Promise<DiskRead> {
-  if (kindOf(path) === "pdf") {
-    // A PDF is never decoded as text (it can be huge): only whether it is
-    // there, and its fingerprint.
-    try {
-      const fingerprint = await fileFingerprint(path);
-      if (fingerprint === null) return { kind: "missing" };
-      return {
-        kind: "ok",
-        read: { text: "", format: PDF_FORMAT, readable: true, fingerprint },
-      };
-    } catch (err) {
-      return { kind: "failed", err: asFileError(err) };
-    }
-  }
   try {
     return { kind: "ok", read: await fileRead(path) };
   } catch (err) {
@@ -124,6 +110,28 @@ export async function readDisk(path: string): Promise<DiskRead> {
       if (fp === null) return { kind: "missing" };
     }
     return { kind: "failed", err: e };
+  }
+}
+
+/**
+ * `readDisk` for a Tab of Kind `kind`. A PDF Tab is never decoded as text (it
+ * can be huge): only whether its File is there, and its fingerprint. (A diff
+ * pane reads a PDF with plain `readDisk`, which says it isn't text.)
+ */
+export async function readTabDisk(
+  path: string,
+  kind: Kind | undefined,
+): Promise<DiskRead> {
+  if (kind !== "pdf") return readDisk(path);
+  try {
+    const fingerprint = await fileFingerprint(path);
+    if (fingerprint === null) return { kind: "missing" };
+    return {
+      kind: "ok",
+      read: { text: "", format: PDF_FORMAT, readable: true, fingerprint },
+    };
+  } catch (err) {
+    return { kind: "failed", err: asFileError(err) };
   }
 }
 

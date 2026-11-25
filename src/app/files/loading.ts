@@ -22,7 +22,7 @@ import {
   asFileError,
   fileInfoOf,
   openFailure,
-  readDisk,
+  readTabDisk,
   settledFile,
   unsavedDisk,
   type FilesContext,
@@ -83,28 +83,7 @@ export function useLoading(c: FilesContext) {
   const readFileText = useCallback(
     async (id: string, file: FileInfo): Promise<string> => {
       const kind = tabOf(id)?.kind;
-      if (kind === "pdf") {
-        // A PDF is never read as text (it can be huge): only whether it is
-        // still there, and its fingerprint, so changes still reach the Tab.
-        const cur = tabOf(id)?.file ?? file;
-        onDisk.set(id, "");
-        let fingerprint: Fingerprint | null | undefined;
-        try {
-          fingerprint = await fileFingerprint(cur.path);
-        } catch (err) {
-          logError("check file")(err);
-        }
-        if (fingerprint === undefined) return "";
-        const settled = settledFile(cur);
-        patchFile(
-          id,
-          fingerprint === null
-            ? { ...settled, held: "missing" }
-            : { ...settled, fingerprint, held: null },
-        );
-        return "";
-      }
-      // An Image has no shadow: it always reads its File.
+      // An Image or PDF has no shadow: it always reads its File.
       if (inShadow(file) && !isViewerKind(kind)) {
         const kept = await readShadow(id, file);
         if (kept === undefined) {
@@ -127,7 +106,7 @@ export function useLoading(c: FilesContext) {
         }
         // No shadow after all: the File's own text, and nothing unsaved.
       }
-      const r = await readDisk(file.path);
+      const r = await readTabDisk(file.path, kind);
       const cur = tabOf(id)?.file ?? file;
       if (r.kind === "ok") {
         patchFile(id, fileInfoOf(cur.path, r.read));
