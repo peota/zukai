@@ -69,8 +69,8 @@ function loadExcalidraw(): Promise<ExcalidrawModule> {
 }
 
 /**
- * Commands for the text editor: on a canvas they're Excalidraw's keys
- * (its own search, and its own zoom).
+ * Commands for the text editor (or a PDF): on a canvas they're Excalidraw's
+ * keys (its own search, its own zoom, and Mod+G groups shapes).
  */
 const TEXT_ONLY: ReadonlySet<Command["type"]> = new Set([
   "find",
@@ -78,6 +78,7 @@ const TEXT_ONLY: ReadonlySet<Command["type"]> = new Set([
   "toggleWrap",
   "format",
   "zoom",
+  "goToPage",
 ]);
 
 /**

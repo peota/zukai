@@ -382,5 +382,9 @@ describe("CanvasHost", () => {
     fireEvent.keyDown(canvas, { key: "0", code: "Digit0", ctrlKey: true });
     expect(fx.keydown).toHaveBeenCalledTimes(7);
     expect(props.onShortcut).toHaveBeenCalledTimes(1);
+    // Ctrl+G groups shapes there (it's go to page only in a PDF).
+    fireEvent.keyDown(canvas, { key: "g", code: "KeyG", ctrlKey: true });
+    expect(fx.keydown).toHaveBeenCalledTimes(8);
+    expect(props.onShortcut).toHaveBeenCalledTimes(1);
   });
 });
