@@ -82,9 +82,11 @@ class FakeViewer {
     return this.scale;
   }
   set currentScale(v: number) {
+    // Like pdf.js: the same scale again fires no scalechanging.
+    const same = v === this.scale;
     this.scale = v;
     this.value = String(v);
-    this.eventBus.dispatch("scalechanging", { scale: v });
+    if (!same) this.eventBus.dispatch("scalechanging", { scale: v });
   }
   get currentScaleValue() {
     return this.value;
@@ -557,6 +559,19 @@ describe("PdfHost", () => {
     view.rerender(<PdfHost {...props} zoomRequest={{ zoom: 1, seq: 1 }} />);
     expect(props.onInfo).toHaveBeenLastCalledWith(
       expect.objectContaining({ zoom: 1, fitted: false }),
+    );
+  });
+
+  it("zoom_request_saves_a_changed_fit_at_the_same_scale", async () => {
+    width = 1040; // fitted to exactly 100%
+    const { props, view } = await setup();
+    const v = await loadedViewer();
+    await pagesInit(v);
+    store.set.mockClear();
+    view.rerender(<PdfHost {...props} zoomRequest={{ zoom: 1, seq: 1 }} />);
+    expect(store.set).toHaveBeenLastCalledWith(
+      PATH,
+      expect.objectContaining({ zoom: 1 }),
     );
   });
 
