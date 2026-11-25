@@ -6,6 +6,7 @@ import {
   Bold,
   Braces,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Code,
   File,
@@ -89,6 +90,7 @@ export type IconName =
   | "panelBottom"
   | "panelRight"
   | "chevronDown"
+  | "chevronLeft"
   | "chevronRight"
   // The rich editor's toolbar.
   | "paragraph"
@@ -189,6 +191,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   panelBottom: PanelBottom,
   panelRight: PanelRight,
   chevronDown: ChevronDown,
+  chevronLeft: ChevronLeft,
   chevronRight: ChevronRight,
   paragraph: Pilcrow,
   h1: Heading1,

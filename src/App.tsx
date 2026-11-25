@@ -26,6 +26,7 @@ import { effectiveMode } from "./model/markdownMode";
 import type {
   ImageInfo,
   PdfInfo,
+  PdfZoom,
   LanguageId,
   SplitOrientation,
   TabState,
@@ -435,6 +436,12 @@ export default function App() {
     page: number;
     seq: number;
   } | null>(null);
+  /** Zoom the active PDF Tab, from the status bar; `seq` as above. */
+  const [zoomRequest, setZoomRequest] = useState<{
+    tabId: string;
+    zoom: PdfZoom;
+    seq: number;
+  } | null>(null);
   const activePdfInfo = pdfInfo[activeId];
   const shownPdfInfo =
     isPdf &&
@@ -666,6 +673,7 @@ export default function App() {
       onImageInfo={onImageInfo}
       onPdfInfo={onPdfInfo}
       goToPage={goToPage}
+      zoomRequest={zoomRequest}
       findRequest={w.findRequest}
       mode={effectiveMode(tab, w.settings)}
       bridge={w.bridge}
@@ -963,6 +971,14 @@ export default function App() {
               tabId: activeId,
               page,
               seq: (g?.seq ?? 0) + 1,
+            }));
+            refocus();
+          }}
+          onZoom={(zoom) => {
+            setZoomRequest((z) => ({
+              tabId: activeId,
+              zoom,
+              seq: (z?.seq ?? 0) + 1,
             }));
             refocus();
           }}

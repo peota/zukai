@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { FileFormat } from "../model/types";
 import { StatusBar, fileSize, type StatusBarProps } from "./StatusBar";
@@ -204,16 +204,41 @@ describe("StatusBar", () => {
   });
 
   describe("a PDF", () => {
-    const pdf = { page: 12, pages: 340, zoom: 1.25, bytes: 4_404_019 };
+    const pdf = {
+      page: 12,
+      pages: 340,
+      zoom: 1.25,
+      fitted: false,
+      bytes: 4_404_019,
+    };
+    const pdfProps = (over: Partial<StatusBarProps> = {}) => ({
+      kindLabel: "PDF",
+      file: { format: fmt(), readonly: true },
+      pdf,
+      onGoToPage: vi.fn(),
+      onZoom: vi.fn(),
+      onOpenDefault: vi.fn(),
+      ...over,
+    });
     const pdfBar = (over: Partial<StatusBarProps> = {}) =>
-      setup({
-        kindLabel: "PDF",
-        file: { format: fmt(), readonly: true },
-        pdf,
-        onGoToPage: vi.fn(),
-        onOpenDefault: vi.fn(),
+      setup(pdfProps(over));
+    /** Rendered, with `rerender` and its props. */
+    const renderBar = (over: Partial<StatusBarProps>) => {
+      const props: StatusBarProps = {
+        line: 1,
+        col: 1,
+        language: "plaintext",
+        saveStatus: "saved",
+        onPickLanguage: vi.fn(),
+        platformLineEnding: "lf",
+        onEncodingMenu: vi.fn(),
+        onLineEndingMenu: vi.fn(),
+        showFormat: false,
+        onFormat: vi.fn(),
         ...over,
-      });
+      };
+      return { ...render(<StatusBar {...props} />), props };
+    };
 
     it("shows the page, zoom and file size", () => {
       pdfBar();
@@ -280,6 +305,82 @@ describe("StatusBar", () => {
       expect(
         screen.getByRole("spinbutton", { name: "Go to page" }),
       ).toBeInTheDocument();
+    });
+
+    it("previous and next page buttons go one page back and on", () => {
+      const p = pdfBar();
+      fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
+      expect(p.onGoToPage).toHaveBeenLastCalledWith(11);
+      fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+      expect(p.onGoToPage).toHaveBeenLastCalledWith(13);
+    });
+
+    it("previous is disabled on the first page, next on the last", () => {
+      const { rerender, props } = renderBar({
+        ...pdfProps(),
+        pdf: { ...pdf, page: 1 },
+      });
+      expect(
+        screen.getByRole("button", { name: "Previous page" }),
+      ).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Next page" })).toBeEnabled();
+      rerender(<StatusBar {...props} pdf={{ ...pdf, page: 340 }} />);
+      expect(
+        screen.getByRole("button", { name: "Previous page" }),
+      ).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+    });
+
+    it("zoom out and zoom in step the zoom", () => {
+      const onZoom = vi.fn();
+      pdfBar({ onZoom });
+      fireEvent.click(screen.getByRole("button", { name: "Zoom out" }));
+      expect(onZoom).toHaveBeenLastCalledWith("out");
+      fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+      expect(onZoom).toHaveBeenLastCalledWith("in");
+    });
+
+    it("the zoom opens a menu of zooms", () => {
+      const onZoom = vi.fn();
+      pdfBar({ onZoom });
+      const zoom = screen.getByRole("button", { name: "Zoom" });
+      expect(zoom).toHaveTextContent("125%");
+      fireEvent.click(zoom);
+      const menu = screen.getByRole("menu", { name: "Zoom" });
+      const items = within(menu).getAllByRole("menuitem");
+      expect(items.map((i) => i.textContent)).toEqual([
+        "Fit width",
+        "50%",
+        "75%",
+        "100%",
+        "125%",
+        "150%",
+        "200%",
+        "300%",
+      ]);
+      fireEvent.click(within(menu).getByText("200%"));
+      expect(onZoom).toHaveBeenLastCalledWith(2);
+      expect(screen.queryByRole("menu")).toBeNull();
+      fireEvent.click(zoom);
+      fireEvent.click(screen.getByText("Fit width"));
+      expect(onZoom).toHaveBeenLastCalledWith("fit");
+    });
+
+    it("the zoom menu checks the current zoom, or Fit width when fitted", () => {
+      const checked = () =>
+        screen
+          .getAllByRole("menuitem")
+          .filter((i) => i.querySelector("svg"))
+          .map((i) => i.textContent);
+      const { rerender, props } = renderBar(pdfProps());
+      fireEvent.click(screen.getByRole("button", { name: "Zoom" }));
+      expect(checked()).toEqual(["125%"]);
+      rerender(
+        <StatusBar {...props} pdf={{ ...pdf, zoom: 1.25, fitted: true }} />,
+      );
+      expect(checked()).toEqual(["Fit width"]);
+      rerender(<StatusBar {...props} pdf={{ ...pdf, zoom: 1.1 }} />);
+      expect(checked()).toEqual([]);
     });
 
     it("Open with default app calls onOpenDefault", () => {

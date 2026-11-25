@@ -324,6 +324,7 @@ describe("PdfHost", () => {
       page: 47,
       pages: 340,
       zoom: 1.5,
+      fitted: false,
       bytes: 10,
     });
   });
@@ -517,6 +518,62 @@ describe("PdfHost", () => {
     await pagesInit(v);
     view.rerender(<PdfHost {...props} goToPage={{ page: 999, seq: 1 }} />);
     expect(v.currentPageNumber).toBe(340);
+  });
+
+  it("zoom_request_steps_sets_and_fits", async () => {
+    const { props, view } = await setup();
+    const v = await loadedViewer();
+    await pagesInit(v);
+    // 800px wide: fitted to 0.76.
+    expect(props.onInfo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ zoom: 0.76, fitted: true }),
+    );
+    view.rerender(<PdfHost {...props} zoomRequest={{ zoom: "in", seq: 1 }} />);
+    expect(v.currentScale).toBeCloseTo(0.95);
+    expect(props.onInfo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ fitted: false }),
+    );
+    view.rerender(<PdfHost {...props} zoomRequest={{ zoom: "out", seq: 2 }} />);
+    expect(v.currentScale).toBeCloseTo(0.76);
+    view.rerender(<PdfHost {...props} zoomRequest={{ zoom: 9, seq: 3 }} />);
+    expect(v.currentScale).toBe(5);
+    view.rerender(<PdfHost {...props} zoomRequest={{ zoom: 0.5, seq: 4 }} />);
+    expect(v.currentScale).toBe(0.5);
+    view.rerender(<PdfHost {...props} zoomRequest={{ zoom: "fit", seq: 5 }} />);
+    expect(v.currentScaleValue).toBe("page-width");
+    expect(props.onInfo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ zoom: 0.76, fitted: true }),
+    );
+  });
+
+  it("zoom_request_to_the_same_scale_reports_not_fitted", async () => {
+    width = 1040; // fitted to exactly 100%
+    const { props, view } = await setup();
+    const v = await loadedViewer();
+    await pagesInit(v);
+    expect(props.onInfo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ zoom: 1, fitted: true }),
+    );
+    view.rerender(<PdfHost {...props} zoomRequest={{ zoom: 1, seq: 1 }} />);
+    expect(props.onInfo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ zoom: 1, fitted: false }),
+    );
+  });
+
+  it("zoom_request_not_replayed_on_remount", async () => {
+    // A Tab shown again mounts with the last request it was given.
+    await setup({ zoomRequest: { zoom: 3, seq: 7 } });
+    const v = await loadedViewer();
+    await pagesInit(v);
+    expect(v.currentScaleValue).toBe("page-width");
+    expect(v.currentScale).toBeCloseTo(0.76);
+  });
+
+  it("go_to_page_not_replayed_on_remount", async () => {
+    await setup({ goToPage: { page: 99, seq: 3 } });
+    const v = await loadedViewer();
+    await pagesInit(v);
+    expect(v.currentPageNumber).toBe(1);
   });
 
   it("find_request_opens_bar", async () => {

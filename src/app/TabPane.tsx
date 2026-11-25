@@ -3,6 +3,7 @@ import type {
   ImageInfo,
   MarkdownMode,
   PdfInfo,
+  PdfZoom,
   TabState,
 } from "../model/types";
 import type { FindRequest } from "../find/findExtension";
@@ -46,6 +47,8 @@ export interface TabPaneProps
   onPdfInfo?(id: string, seq: number, info: PdfInfo | null): void;
   /** A go-to-page request, for the one PDF Tab it names. */
   goToPage?: { tabId: string; page: number; seq: number } | null;
+  /** A zoom request, for the one PDF Tab it names. */
+  zoomRequest?: { tabId: string; zoom: PdfZoom; seq: number } | null;
   /** Find, for the one PDF Tab it names (a PDF Tab's own find bar). */
   findRequest?: FindRequest | null;
   /** A Markdown Tab's editor (null for any other Tab). */
@@ -236,6 +239,7 @@ export function TabPane(p: TabPaneProps) {
               onOpenDefault={p.onOpenDefault}
               findRequest={p.findRequest?.tabId === id ? p.findRequest : null}
               goToPage={p.goToPage?.tabId === id ? p.goToPage : null}
+              zoomRequest={p.zoomRequest?.tabId === id ? p.zoomRequest : null}
             />
           </Suspense>
         )}
