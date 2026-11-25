@@ -1,4 +1,3 @@
-mod ai;
 pub mod commands;
 mod files;
 mod git;
@@ -41,7 +40,6 @@ pub const BEFORE_EXIT_EVENT: &str = "zukai://before-exit";
 #[tauri::command]
 fn app_exit_after_flush(app: AppHandle) {
     FLUSHED.store(true, Ordering::SeqCst);
-    cancel_asks(&app);
     kill_terminals(&app);
     app.exit(0);
 }
@@ -50,11 +48,6 @@ fn app_exit_after_flush(app: AppHandle) {
 /// the app.
 fn kill_terminals(app: &AppHandle) {
     app.state::<terminal::commands::Terminals>().kill_all();
-}
-
-/// Stops every answer still streaming.
-fn cancel_asks(app: &AppHandle) {
-    app.state::<ai::ask::Asks>().cancel_all();
 }
 
 /// The first flush failed and the app stays open: cancel the pending watchdog
@@ -94,7 +87,6 @@ fn request_exit(app: &AppHandle) {
                 return;
             }
             FLUSHED.store(true, Ordering::SeqCst);
-            cancel_asks(&app);
             kill_terminals(&app);
             app.exit(0);
         });
@@ -202,7 +194,6 @@ pub fn run() {
         .manage(library::watch::AddedWatchers::default())
         .manage(library::commands::DropTarget::default())
         .manage(terminal::commands::Terminals::default())
-        .manage(ai::ask::Asks::default())
         .manage(git::state::GitState::default())
         .on_window_event(|window, event| {
             // Rust needs the drop (it grants the paths), so the webview's own
@@ -294,17 +285,11 @@ pub fn run() {
             git::commands::git_clone,
             git::commands::git_cancel,
             terminal::commands::terminal_open,
+            terminal::commands::terminal_agents,
             terminal::commands::terminal_write,
             terminal::commands::terminal_ack,
             terminal::commands::terminal_resize,
             terminal::commands::terminal_kill,
-            ai::commands::ai_status,
-            ai::commands::ai_config_set,
-            ai::commands::ai_key_set,
-            ai::commands::ai_key_remove,
-            ai::commands::ai_ask,
-            ai::commands::ai_cancel,
-            ai::commands::ai_models,
             app_exit_after_flush,
             exit_flush_failed,
             app_startup_mark,
@@ -321,7 +306,6 @@ pub fn run() {
                 files::open_paths::opened(app, paths);
             }
             if let RunEvent::Exit = event {
-                cancel_asks(app);
                 kill_terminals(app);
             }
             if let RunEvent::ExitRequested { api, code, .. } = event

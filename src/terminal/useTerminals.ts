@@ -54,7 +54,7 @@ export function useTerminals() {
   }, []);
 
   const open = useCallback(
-    async (cwd: string) => {
+    async (cwd: string, agent?: { id: string; name: string }) => {
       // Events can come before the id does: keep them until it's known.
       let id: number | null = null;
       const early: TerminalEvent[] = [];
@@ -63,8 +63,8 @@ export function useTerminals() {
         else deliver(id, e);
       };
       // 80×24 until the view's first fit resizes it.
-      id = await terminalOpen(cwd, 80, 24, onEvent);
-      dispatch({ type: "opened", id, cwd });
+      id = await terminalOpen(cwd, 80, 24, onEvent, agent?.id);
+      dispatch({ type: "opened", id, cwd, agent: agent?.name });
       for (const e of early) deliver(id, e);
     },
     [deliver],

@@ -1,5 +1,6 @@
 //! Embedded terminal: shell selection, process sessions and Tauri commands.
 
+pub mod agents;
 pub mod commands;
 pub mod session;
 pub mod shell;

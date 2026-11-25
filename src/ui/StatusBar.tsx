@@ -68,14 +68,14 @@ export interface StatusBarProps {
   onSettings?(): void;
   settingsHint?: string;
   /**
-   * The Ask button at the far right, under where the Ask panel docks.
-   * Absent until Ask is ready (an AI provider and key are set).
+   * The Agent button at the far right: it opens the New terminal menu above
+   * it. `open` is whether that menu is open; `hint` its shortcut.
    */
-  ask?: { open: boolean; onToggle(): void; hint?: string };
+  agent?: { open: boolean; onOpen(anchor: DOMRect): void; hint: string };
   /**
-   * The Git button beside Ask: shows and hides the Git panel. It names the
-   * branch of the repo holding the active Tab (a short hash when HEAD is
-   * detached), else just "Git". Absent while git sync is off.
+   * The Git button beside Agent: shows and hides the Git panel. It names
+   * the branch of the repo holding the active Tab (a short hash when HEAD
+   * is detached), else just "Git". Absent while git sync is off.
    */
   git?: {
     branch?: string;
@@ -135,7 +135,7 @@ export function StatusBar({
   settingsHint,
   preview,
   markdownMode,
-  ask,
+  agent,
   git,
 }: StatusBarProps) {
   const rich = markdownMode?.mode === "rich";
@@ -239,13 +239,13 @@ export function StatusBar({
           )}
         </div>
       )}
-      {(git || ask) && (
+      {(git || agent) && (
         <>
           <span
             aria-hidden="true"
             className="h-4 w-px shrink-0 bg-hairline-strong"
           />
-          {/* The right panels' toggles, under where those panels dock. */}
+          {/* Git (its panel docks above it) and the agent menu. */}
           <div className="-mr-1 flex min-w-0 shrink-0 items-center gap-1">
             {git && (
               <button
@@ -272,21 +272,25 @@ export function StatusBar({
                 {git.dirty && <DirtyDot />}
               </button>
             )}
-            {ask && (
+            {agent && (
               <button
                 type="button"
                 tabIndex={-1}
-                aria-pressed={ask.open}
-                title={ask.hint ? `Ask (${ask.hint})` : "Ask"}
-                onClick={ask.onToggle}
-                className={panelToggle(ask.open)}
+                data-z-agent-menu="status"
+                aria-haspopup="menu"
+                aria-expanded={agent.open}
+                title={`Agent (${agent.hint})`}
+                onClick={(e) =>
+                  agent.onOpen(e.currentTarget.getBoundingClientRect())
+                }
+                className={panelToggle(agent.open)}
               >
                 <Icon
-                  name="ask"
+                  name="agent"
                   size={14}
-                  className={ask.open ? "text-accent" : "text-faint"}
+                  className={agent.open ? "text-accent" : "text-faint"}
                 />
-                Ask
+                Agent
               </button>
             )}
           </div>

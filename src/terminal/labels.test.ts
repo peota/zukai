@@ -3,14 +3,34 @@ import { tabLabels } from "./labels";
 
 describe("tabLabels", () => {
   it("labelsDisambiguateSameName", () => {
-    expect(tabLabels(["C:\\a\\docs", "/b/docs", "/b/zukai"])).toEqual([
-      "docs · a",
-      "docs · b",
-      "zukai",
-    ]);
+    expect(
+      tabLabels([
+        { cwd: "C:\\a\\docs" },
+        { cwd: "/b/docs" },
+        { cwd: "/b/zukai" },
+      ]),
+    ).toEqual(["docs · a", "docs · b", "zukai"]);
   });
 
   it("usesBaseNameWhenUnique", () => {
-    expect(tabLabels(["/x/one", "/x/two/"])).toEqual(["one", "two"]);
+    expect(tabLabels([{ cwd: "/x/one" }, { cwd: "/x/two/" }])).toEqual([
+      "one",
+      "two",
+    ]);
+  });
+
+  it("prefixesTheAgentName", () => {
+    expect(
+      tabLabels([
+        { cwd: "/a/docs", agent: "Claude Code" },
+        { cwd: "/b/zukai" },
+      ]),
+    ).toEqual(["Claude Code · docs", "zukai"]);
+  });
+
+  it("judgesCollisionsOnFolderNamesAcrossAllTabs", () => {
+    expect(
+      tabLabels([{ cwd: "/a/docs", agent: "Codex" }, { cwd: "/b/docs" }]),
+    ).toEqual(["Codex · docs · a", "docs · b"]);
   });
 });

@@ -34,8 +34,8 @@ export type Command =
   | { type: "toggleTerminal" }
   /** Opens a new terminal. */
   | { type: "newTerminal" }
-  /** Shows or hides the Ask panel (only once an AI provider is ready). */
-  | { type: "toggleAsk" }
+  /** Opens or closes the New terminal menu (a Terminal or an agent). */
+  | { type: "agentMenu" }
   /** Shows or hides the Git panel (only while git sync is on). */
   | { type: "toggleGit" };
 
@@ -167,7 +167,7 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
     case "p":
       return { type: "quickOpen" };
     case "j":
-      return { type: "toggleAsk" };
+      return { type: "agentMenu" };
   }
   // Digits by physical key: AZERTY types symbols on the number row.
   const digit = /^Digit([1-9])$/.exec(e.code);

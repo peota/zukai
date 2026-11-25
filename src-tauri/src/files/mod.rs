@@ -34,6 +34,8 @@ pub enum FileError {
     /// Serialized with kind `"io"`: the frontend only ever sends labels it got from us.
     #[error("unknown encoding: {0}")]
     UnknownEncoding(String),
+    #[error("unknown agent")]
+    UnknownAgent,
 }
 
 /// `io::Error` isn't `Clone`; a copy keeps the variant (so the UI still sees
@@ -50,6 +52,7 @@ impl Clone for FileError {
             FileError::TrashUnavailable(why) => FileError::TrashUnavailable(why.clone()),
             FileError::IntoSelf => FileError::IntoSelf,
             FileError::UnknownEncoding(label) => FileError::UnknownEncoding(label.clone()),
+            FileError::UnknownAgent => FileError::UnknownAgent,
         }
     }
 }
@@ -65,6 +68,7 @@ impl Serialize for FileError {
             FileError::InvalidName => "invalid_name",
             FileError::TrashUnavailable(_) => "trash_unavailable",
             FileError::IntoSelf => "into_self",
+            FileError::UnknownAgent => "unknown_agent",
         };
         let mut st = s.serialize_struct("FileError", 2)?;
         st.serialize_field("kind", kind)?;
@@ -89,5 +93,8 @@ mod tests {
         assert!(v["message"].as_str().unwrap().contains("no bin"));
         let v = serde_json::to_value(FileError::IntoSelf).unwrap();
         assert_eq!(v["kind"], "into_self");
+        let v = serde_json::to_value(FileError::UnknownAgent).unwrap();
+        assert_eq!(v["kind"], "unknown_agent");
+        assert_eq!(v["message"], "unknown agent");
     }
 }

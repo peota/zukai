@@ -110,13 +110,13 @@ describe("StatusBar Git button", () => {
     ).toBeNull();
   });
 
-  it("sits beside Ask, before it", () => {
+  it("sits beside Agent, before it", () => {
     setup({
       git: git(),
-      ask: { open: false, onToggle: vi.fn() },
+      agent: { open: false, onOpen: vi.fn(), hint: "Ctrl+J" },
     });
     const g = screen.getByRole("button", { name: /main/ });
-    const a = screen.getByRole("button", { name: "Ask" });
+    const a = screen.getByRole("button", { name: "Agent" });
     expect(g.parentElement).toBe(a.parentElement);
     expect(
       g.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -320,26 +320,28 @@ describe("StatusBar", () => {
   });
 });
 
-describe("StatusBar Ask button", () => {
-  it("is absent until Ask is ready", () => {
-    setup();
-    expect(screen.queryByRole("button", { name: "Ask" })).toBeNull();
-  });
-
-  it("toggles the Ask panel and shows whether it's open", () => {
-    const onToggle = vi.fn();
-    setup({ ask: { open: false, onToggle, hint: "Ctrl+J" } });
-    const button = screen.getByRole("button", { name: "Ask" });
-    expect(button).toHaveAttribute("aria-pressed", "false");
-    expect(button).toHaveAttribute("title", "Ask (Ctrl+J)");
+describe("StatusBar Agent button", () => {
+  it("opens the agent menu from its own box", () => {
+    const onOpen = vi.fn();
+    setup({ agent: { open: false, onOpen, hint: "Ctrl+J" } });
+    const button = screen.getByRole("button", { name: "Agent" });
+    expect(button).toHaveAttribute("title", "Agent (Ctrl+J)");
+    expect(button).toHaveAttribute("aria-haspopup", "menu");
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveAttribute("data-z-agent-menu");
     fireEvent.click(button);
-    expect(onToggle).toHaveBeenCalled();
+    expect(onOpen).toHaveBeenCalledWith(
+      expect.objectContaining({ right: expect.any(Number) }),
+    );
   });
 
-  it("stays on a Canvas Tab", () => {
-    setup({ kindLabel: "Canvas", ask: { open: true, onToggle: vi.fn() } });
-    expect(screen.getByRole("button", { name: "Ask" })).toHaveAttribute(
-      "aria-pressed",
+  it("shows it's open, on a Canvas Tab too", () => {
+    setup({
+      kindLabel: "Canvas",
+      agent: { open: true, onOpen: vi.fn(), hint: "Ctrl+J" },
+    });
+    expect(screen.getByRole("button", { name: "Agent" })).toHaveAttribute(
+      "aria-expanded",
       "true",
     );
   });

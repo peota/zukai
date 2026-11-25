@@ -15,6 +15,9 @@ use crate::files::FileError;
 use crate::files::commands::blocking;
 use crate::files::grants::Grants;
 use crate::library::commands::folder;
+use crate::terminal::agents::{
+    AGENTS, AgentInfo, agent, agent_spec, find_windows, installed_commands,
+};
 use crate::terminal::session::{Session, Sink, TerminalEvent};
 use crate::terminal::shell::current_shell;
 
@@ -27,17 +30,36 @@ pub struct Terminals {
 
 impl Terminals {
     /// Starts the user's shell in `cwd`, which must be a folder in a granted
-    /// root, and returns the new terminal's id.
+    /// root, and returns the new terminal's id. With an agent id, the shell
+    /// starts that agent and stays at a prompt when it ends.
     pub fn open(
         &self,
         g: &Grants,
         cwd: &str,
+        agent_id: Option<&str>,
         cols: u16,
         rows: u16,
         sink: Sink,
     ) -> Result<u32, FileError> {
         let dir = folder(g, cwd)?;
-        let session = Session::spawn(&current_shell(), &dir, cols, rows, sink)?;
+        let shell = current_shell();
+        let spec = match agent_id {
+            None => shell,
+            Some(id) => {
+                let found = agent(id).ok_or(FileError::UnknownAgent)?;
+                // On Windows the shell needs the file's real name (claude.cmd);
+                // if none is found the bare name makes it print "not found".
+                let command = if cfg!(windows) {
+                    let path = std::env::var_os("PATH");
+                    find_windows(path.as_deref(), found.command, &|p| p.is_file())
+                        .unwrap_or_else(|| found.command.to_string())
+                } else {
+                    found.command.to_string()
+                };
+                agent_spec(&shell, &command)
+            }
+        };
+        let session = Session::spawn(&spec, &dir, cols, rows, sink)?;
         let id = self.last_id.fetch_add(1, Ordering::SeqCst) + 1;
         self.sessions.lock().unwrap().insert(id, Arc::new(session));
         Ok(id)
@@ -99,6 +121,7 @@ impl Terminals {
 pub async fn terminal_open(
     app: AppHandle,
     cwd: String,
+    agent: Option<String>,
     cols: u16,
     rows: u16,
     on_event: Channel<TerminalEvent>,
@@ -108,7 +131,9 @@ pub async fn terminal_open(
         let _ = on_event.send(ev);
     });
     blocking(app, move |g| {
-        handle.state::<Terminals>().open(g, &cwd, cols, rows, sink)
+        handle
+            .state::<Terminals>()
+            .open(g, &cwd, agent.as_deref(), cols, rows, sink)
     })
     .await
 }
@@ -144,6 +169,22 @@ pub async fn terminal_kill(app: AppHandle, id: u32) {
     .await;
 }
 
+/// Every known agent, in menu order, and whether its CLI is installed.
+#[tauri::command]
+pub async fn terminal_agents() -> Vec<AgentInfo> {
+    let installed = tauri::async_runtime::spawn_blocking(installed_commands)
+        .await
+        .unwrap_or_default();
+    AGENTS
+        .iter()
+        .map(|a| AgentInfo {
+            id: a.id.to_string(),
+            name: a.name.to_string(),
+            installed: installed.iter().any(|c| c == a.command),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,7 +214,7 @@ mod tests {
     }
 
     fn open(t: &Terminals, g: &Grants, cwd: &std::path::Path) -> Result<u32, FileError> {
-        t.open(g, cwd.to_str().unwrap(), 200, 30, channel().0)
+        t.open(g, cwd.to_str().unwrap(), None, 200, 30, channel().0)
     }
 
     /// Every event until `Exit`, answering cursor position requests.
@@ -249,6 +290,22 @@ mod tests {
     }
 
     #[test]
+    fn open_refuses_an_unknown_agent() {
+        let (_tmp, g, root, _outside) = library();
+        let t = Open(Terminals::default());
+        let r = t.0.open(
+            &g,
+            root.to_str().unwrap(),
+            Some("nope"),
+            80,
+            24,
+            channel().0,
+        );
+        assert!(matches!(r, Err(FileError::UnknownAgent)));
+        assert!(t.0.sessions.lock().unwrap().is_empty());
+    }
+
+    #[test]
     fn open_refuses_a_file() {
         let (_tmp, g, root, _outside) = library();
         let file = root.join("note.md");
@@ -277,7 +334,9 @@ mod tests {
         let (_tmp, g, root, _outside) = library();
         let t = Open(Terminals::default());
         let (sink, rx) = channel();
-        let id = t.0.open(&g, root.to_str().unwrap(), 200, 30, sink).unwrap();
+        let id =
+            t.0.open(&g, root.to_str().unwrap(), None, 200, 30, sink)
+                .unwrap();
         let burst = if cfg!(windows) {
             format!("1..{LAST} | % {{ $_ }}")
         } else {
@@ -311,7 +370,9 @@ mod tests {
         let (_tmp, g, root, _outside) = library();
         let t = Open(Terminals::default());
         let (sink, rx) = channel();
-        let id = t.0.open(&g, root.to_str().unwrap(), 200, 30, sink).unwrap();
+        let id =
+            t.0.open(&g, root.to_str().unwrap(), None, 200, 30, sink)
+                .unwrap();
         // 150 digits in a known order, typed one key per write, behind a
         // big write that is still being written.
         let digits: String = (0..150)
@@ -337,7 +398,9 @@ mod tests {
         let (_tmp, g, root, _outside) = library();
         let t = Open(Terminals::default());
         let (sink, rx) = channel();
-        let id = t.0.open(&g, root.to_str().unwrap(), 80, 24, sink).unwrap();
+        let id =
+            t.0.open(&g, root.to_str().unwrap(), None, 80, 24, sink)
+                .unwrap();
         t.0.write(id, &format!("exit{NL}"));
         let (_, events) = collect(&t.0, id, &rx, Duration::from_secs(10));
         assert!(matches!(events.last(), Some(TerminalEvent::Exit { .. })));

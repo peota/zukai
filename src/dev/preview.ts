@@ -396,6 +396,14 @@ const handlers: Record<string, (a: Args) => unknown> = {
     return { hits, ready: true };
   },
   library_resolve: (a) => a.path,
+  // The New terminal menu: three agents installed, two not.
+  terminal_agents: () => [
+    { id: "claude-code", name: "Claude Code", installed: true },
+    { id: "codex", name: "Codex", installed: false },
+    { id: "gemini", name: "Gemini", installed: true },
+    { id: "opencode", name: "OpenCode", installed: true },
+    { id: "cursor", name: "Cursor", installed: false },
+  ],
   library_create_folder: (a) => {
     const path = freeName(a.parent as string, a.name as string, "");
     dirs.add(path);
@@ -453,12 +461,6 @@ const handlers: Record<string, (a: Args) => unknown> = {
   file_fingerprint: (a) =>
     (a.path as string) in files ? fp(files[a.path as string]) : null,
   file_fingerprint_quick: (a) => a.expected,
-  // Ask: a configured Anthropic key, and a canned answer streamed in words.
-  ai_status: () => AI_STATUS,
-  ai_config_set: () => AI_STATUS,
-  ai_key_set: () => AI_STATUS,
-  ai_key_remove: () => AI_STATUS,
-  ai_models: () => ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
   // Git sync: the Library is a repo with work in it (see `repo` below).
   git_set_enabled: () => ({ available: GIT !== "nogit" }),
   git_status: () => repoStatus(),
@@ -503,44 +505,7 @@ const handlers: Record<string, (a: Args) => unknown> = {
       repo.branch = a.name as string;
     }),
   git_head_file: (a) => headFile(a.path as string),
-  ai_cancel: (a) => {
-    cancelled.add(a.id as number);
-    return null;
-  },
-  ai_ask: (a) => {
-    const channel = a.onEvent as { onmessage(e: unknown): void };
-    const id = a.id as number;
-    const words = ANSWER.split(/(?<= )/);
-    let i = 0;
-    const tick = () => {
-      if (cancelled.has(id)) return;
-      if (i >= words.length) return channel.onmessage({ kind: "done" });
-      channel.onmessage({ kind: "text", text: words[i++] });
-      setTimeout(tick, 18);
-    };
-    setTimeout(tick, 700);
-    return null;
-  },
 };
-
-const AI_STATUS = {
-  config: { provider: "anthropic", model: "" },
-  hasKey: true,
-  ready: true,
-};
-const cancelled = new Set<number>();
-const ANSWER = `The note is an incident write-up: the Redis primary in **eu-west-1b** failed, Sentinel promoted the replica in 31s, but the checkout workers kept a pooled connection to the old primary.
-
-**The real bug** is that the pool resolved the master once, at startup, and never again. Restarting the workers fixed it only because they re-resolved on boot.
-
-Still open:
-
-- Lower \`socket_timeout\` to 2s so stale connections fail fast.
-- Add a failover drill to the runbook.
-
-\`\`\`python
-pool = redis.ConnectionPool(host=sentinel.discover_master("cache")[0])
-\`\`\``;
 
 mockWindows("main");
 mockIPC(
@@ -632,22 +597,6 @@ if (params.has("demo")) localStorage.setItem(KEY, demoSession(params));
 if (params.has("demo")) await import("../rich/RichEditor");
 await import("../main");
 
-// ?ask opens the Ask panel once the app is up (Mod+J), for screenshots.
-if (params.has("ask")) {
-  setTimeout(() => {
-    const mac = navigator.userAgent.includes("Mac");
-    document.body.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "j",
-        code: "KeyJ",
-        ctrlKey: !mac,
-        metaKey: mac,
-        bubbles: true,
-      }),
-    );
-  }, 1500);
-}
-
 // ?view=git opens the Git panel once the app is up (Mod+Shift+G).
 if (params.get("view") === "git") {
   setTimeout(() => {
@@ -703,7 +652,6 @@ if (params.has("branches")) {
       ),
   );
 }
-
 // ?settings opens Settings once the app is up (Mod+,), for screenshots.
 if (params.has("settings")) {
   setTimeout(() => {

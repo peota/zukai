@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../storage/api";
 import { useWorkspace } from "./useWorkspace";
+import { nextScratchpadTitle } from "../model/workspace";
 
 const h = vi.hoisted(() => ({
   flushAll: null as null | (() => Promise<void>),
@@ -266,15 +267,24 @@ describe("useWorkspace reopen and session", () => {
 });
 
 describe("useWorkspace titles", () => {
-  it("setContent updates the Title of an unrenamed Tab only", async () => {
+  it("a new Scratchpad is numbered, and typing never retitles it", async () => {
     const { result } = await mount();
-    act(() => result.current.setContent("a", "\n  hello world\nmore"));
-    expect(result.current.state.tabs[0].title).toBe("hello world");
+    await act(() => result.current.run({ type: "newTab" }));
+    const id = result.current.state.activeId;
+    const tab = () => result.current.state.tabs.find((t) => t.id === id)!;
+    const others = result.current.state.tabs.filter((t) => t.id !== id);
+    const want = nextScratchpadTitle({ tabs: others });
+    expect(tab().title).toBe(want);
+    act(() => result.current.setContent(id, "\n  hello world\nmore"));
+    expect(tab().title).toBe(want);
 
-    await act(() => result.current.rename("a", "Named"));
-    act(() => result.current.setContent("a", "something else"));
-    expect(result.current.state.tabs[0].title).toBe("Named");
-    expect(result.current.state.tabs[0].renamed).toBe(true);
+    await act(() => result.current.rename(id, "Named"));
+    expect(tab().title).toBe("Named");
+    expect(tab().renamed).toBe(true);
+    // Clearing the name gives back a free number.
+    await act(() => result.current.rename(id, ""));
+    expect(tab().title).toBe(want);
+    expect(tab().renamed).toBe(false);
   });
 
   it("a Canvas Scratchpad's Title never comes from its JSON", async () => {
@@ -432,7 +442,6 @@ describe("useWorkspace settings", () => {
       terminalPosition: "bottom",
       terminalHeight: 280,
       terminalWidth: 480,
-      askWidth: 400,
       gitWidth: 320,
     });
     act(() =>
