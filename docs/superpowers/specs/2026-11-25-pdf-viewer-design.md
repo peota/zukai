@@ -58,7 +58,7 @@ The user handed the choice of approach to me. A is my call.
 ### PdfHost (`src/pdf/PdfHost.tsx`)
 
 - Modelled on `ImageHost`: props `tab`, `readBytes`, `reloadSeq`, `keys` (zoom/navigation keys only when focused, for Splits), `onInfo` (for the status bar), plus position in and out (below).
-- Lazy-imports `pdfjs-dist` and the viewer on first mount. The worker is a bundled asset (Vite `?url`), loaded from `'self'`.
+- Lazy-imports `pdfjs-dist` and the viewer on first mount. The worker is a bundled asset (Vite `?url`), loaded from `'self'`. It uses pdf.js's `legacy/` build (library, viewer, CSS and worker): the modern build relies on JS too new for WKWebView and WebKitGTK (`Map.prototype.getOrInsertComputed`, `Math.sumPrecise`, …), which the legacy build polyfills.
 - `isEvalSupported: false`, and the PDF's own scripting is disabled. Links: internal links navigate, external links do nothing.
 - The viewer is themed to Zukai: the page background is the app background, pages have a subtle shadow, and selection uses the accent colour. There is no pdf.js toolbar.
 - Errors: an encrypted or corrupt PDF shows a short notice in the Tab, like an invalid drawing on a Canvas, with an "Open with default app" button. A password prompt is out of scope.

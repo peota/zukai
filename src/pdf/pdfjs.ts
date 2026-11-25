@@ -1,8 +1,12 @@
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+// pdf.js's legacy build: the modern one uses brand-new JS (Map's
+// getOrInsertComputed, Math.sumPrecise, Promise.try, Uint8Array.fromBase64…)
+// that WKWebView and WebKitGTK may not have yet; the legacy build carries
+// polyfills for it. The same version, and the same assets.
+import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 export interface Pdfjs {
-  lib: typeof import("pdfjs-dist");
-  viewer: typeof import("pdfjs-dist/web/pdf_viewer.mjs");
+  lib: typeof import("pdfjs-dist/legacy/build/pdf.mjs");
+  viewer: typeof import("pdfjs-dist/legacy/web/pdf_viewer.mjs");
 }
 
 /**
@@ -34,9 +38,9 @@ let loading: Promise<Pdfjs> | null = null;
  */
 export function loadPdfjs(): Promise<Pdfjs> {
   loading ??= (async () => {
-    const lib = await import("pdfjs-dist");
+    const lib = await import("pdfjs-dist/legacy/build/pdf.mjs");
     lib.GlobalWorkerOptions.workerSrc = workerUrl;
-    const viewer = await import("pdfjs-dist/web/pdf_viewer.mjs");
+    const viewer = await import("pdfjs-dist/legacy/web/pdf_viewer.mjs");
     return { lib, viewer };
   })().catch((err: unknown) => {
     // A failed chunk load can be retried by the next viewer.
