@@ -9,6 +9,8 @@ export type FindMode = "find" | "replace";
 export interface FindRequest {
   mode: FindMode;
   seq: number;
+  /** The PDF Tab it was made in (a PDF's find bar is its own). */
+  tabId?: string;
 }
 
 interface Range {

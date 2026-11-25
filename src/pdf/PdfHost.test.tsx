@@ -107,6 +107,15 @@ class FakeLinkService {
   setDocument = vi.fn();
 }
 
+class FakeFindController {
+  static last: FakeFindController | null = null;
+  options: { eventBus: FakeEventBus; linkService: FakeLinkService };
+  constructor(o: { eventBus: FakeEventBus; linkService: FakeLinkService }) {
+    this.options = o;
+    FakeFindController.last = this;
+  }
+}
+
 const lib = {
   AnnotationMode: { ENABLE: 1 },
   AnnotationEditorType: { DISABLE: -1, NONE: 0 },
@@ -122,6 +131,7 @@ vi.mock("./pdfjs", () => ({
         EventBus: FakeEventBus,
         PDFLinkService: FakeLinkService,
         PDFViewer: FakeViewer,
+        PDFFindController: FakeFindController,
       },
     }),
   pdfAssetParams: () => ({}),
@@ -158,6 +168,9 @@ function pdfTab(path = PATH): TabState {
     },
   };
 }
+
+/** A Tab of its own: the find state is remembered per Tab id. */
+const tabWithId = (id: string): TabState => ({ ...pdfTab(), id });
 
 const docTask = (pages: number) => ({
   promise: Promise.resolve({ numPages: pages }),
@@ -453,6 +466,168 @@ describe("PdfHost", () => {
     await pagesInit(v);
     view.rerender(<PdfHost {...props} goToPage={{ page: 999, seq: 1 }} />);
     expect(v.currentPageNumber).toBe(340);
+  });
+
+  it("find_request_opens_bar", async () => {
+    const { props, view } = await setup({ tab: tabWithId("open") });
+    const v = await loadedViewer();
+    await pagesInit(v);
+    // pdf.js's find controller, on the viewer's bus and link service.
+    const fc = FakeFindController.last!;
+    expect(FakeViewer.options?.findController).toBe(fc);
+    expect(fc.options.eventBus).toBe(v.eventBus);
+    expect(screen.queryByRole("search")).toBeNull();
+    const finds = vi.fn();
+    v.eventBus.on("find", finds);
+    view.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 1 }} />,
+    );
+    const input = screen.getByRole("textbox", { name: "Find" });
+    expect(input).toHaveFocus();
+    fireEvent.change(input, { target: { value: "spec" } });
+    expect(finds).toHaveBeenLastCalledWith({
+      source: null,
+      type: "",
+      query: "spec",
+      caseSensitive: false,
+      entireWord: false,
+      highlightAll: true,
+      findPrevious: false,
+      matchDiacritics: false,
+    });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    expect(finds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "again", findPrevious: true }),
+    );
+    // Mod+F again while open: back to the same field, its text kept.
+    act(() => v.container.focus());
+    view.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 2 }} />,
+    );
+    expect(screen.getByRole("textbox", { name: "Find" })).toBe(input);
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("spec");
+  });
+
+  it("find_shows_match_count", async () => {
+    const { props, view } = await setup({ tab: tabWithId("count") });
+    const v = await loadedViewer();
+    await pagesInit(v);
+    view.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 1 }} />,
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Find" }), {
+      target: { value: "spec" },
+    });
+    act(() =>
+      v.eventBus.dispatch("updatefindcontrolstate", {
+        state: 0,
+        matchesCount: { current: 1, total: 41 },
+      }),
+    );
+    expect(screen.getByText("1 of 41")).toBeInTheDocument();
+    act(() =>
+      v.eventBus.dispatch("updatefindmatchescount", {
+        matchesCount: { current: 3, total: 41 },
+      }),
+    );
+    expect(screen.getByText("3 of 41")).toBeInTheDocument();
+  });
+
+  it("find_escape_closes_and_focuses_viewer", async () => {
+    const { props, view } = await setup({ tab: tabWithId("esc") });
+    const v = await loadedViewer();
+    await pagesInit(v);
+    const closes = vi.fn();
+    v.eventBus.on("findbarclose", closes);
+    view.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 1 }} />,
+    );
+    const input = screen.getByRole("textbox", { name: "Find" });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("search")).toBeNull();
+    expect(closes).toHaveBeenCalledWith({ source: null });
+    expect(v.container).toHaveFocus();
+  });
+
+  it("find_input_keeps_page_keys", async () => {
+    const { props, view } = await setup({ tab: tabWithId("keys") });
+    const v = await loadedViewer();
+    await pagesInit(v);
+    view.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 1 }} />,
+    );
+    const input = screen.getByRole("textbox", { name: "Find" });
+    const end = new KeyboardEvent("keydown", {
+      key: "End",
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      input.dispatchEvent(end);
+    });
+    expect(end.defaultPrevented).toBe(false);
+    expect(v.currentPageNumber).toBe(1);
+  });
+
+  it("find_state_is_remembered_per_tab", async () => {
+    const { props, view } = await setup({ tab: tabWithId("mem") });
+    const v = await loadedViewer();
+    await pagesInit(v);
+    view.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 1 }} />,
+    );
+    const input = screen.getByRole("textbox", { name: "Find" });
+    fireEvent.change(input, { target: { value: "spec" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    // Shown again later (the Tab was switched away and back).
+    view.unmount();
+    const again = render(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 1 }} />,
+    );
+    const v2 = await loadedViewer();
+    await pagesInit(v2);
+    expect(screen.queryByRole("search")).toBeNull(); // never replayed
+    again.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 2 }} />,
+    );
+    expect(screen.getByRole("textbox", { name: "Find" })).toHaveValue("spec");
+    // Another Tab starts empty.
+    again.unmount();
+    const other = tabWithId("other");
+    const third = render(
+      <PdfHost {...props} tab={other} findRequest={{ mode: "find", seq: 2 }} />,
+    );
+    await pagesInit(await loadedViewer());
+    expect(screen.queryByRole("search")).toBeNull();
+    third.rerender(
+      <PdfHost {...props} tab={other} findRequest={{ mode: "find", seq: 3 }} />,
+    );
+    expect(screen.getByRole("textbox", { name: "Find" })).toHaveValue("");
+  });
+
+  it("find_reopen_shows_last_highlights", async () => {
+    const { props, view } = await setup({ tab: tabWithId("hl") });
+    const v = await loadedViewer();
+    await pagesInit(v);
+    const finds = vi.fn();
+    v.eventBus.on("find", finds);
+    view.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 1 }} />,
+    );
+    const input = screen.getByRole("textbox", { name: "Find" });
+    fireEvent.change(input, { target: { value: "spec" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    finds.mockClear();
+    view.rerender(
+      <PdfHost {...props} findRequest={{ mode: "find", seq: 2 }} />,
+    );
+    // Highlights back on, without moving to another match.
+    expect(finds).toHaveBeenCalledTimes(1);
+    expect(finds).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "highlightallchange", query: "spec" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Find" })).toHaveValue("spec");
   });
 
   it("password_notice", async () => {

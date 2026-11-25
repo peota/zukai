@@ -8,6 +8,11 @@ import type { PDFDocumentLoadingTask } from "pdfjs-dist";
 import { detectPlatform } from "../app/shortcuts";
 import { isEditorTarget } from "../app/browserGuard";
 import type { FindRequest } from "../find/findExtension";
+import {
+  EMPTY_PDF_FIND,
+  PdfFindBar,
+  type PdfFindState,
+} from "../find/PdfFindBar";
 import type { PdfInfo, TabState } from "../model/types";
 import { loadPdfjs, pdfAssetParams, type Pdfjs } from "./pdfjs";
 import { pdfPositions, type PdfPosition } from "./positions";
@@ -123,6 +128,12 @@ function restore(viewer: PDFViewer, pos: Position | null | undefined) {
 
 const platform = detectPlatform();
 
+/** Each PDF Tab's last search, by Tab id: in memory, like a text Tab's. */
+const findStates = new Map<string, PdfFindState>();
+
+/** pdf.js's match count, as its find events carry it. */
+type MatchesCount = { current: number; total: number };
+
 /** A field, an editable element or the editor: where Mod+- etc. aren't ours. */
 function typesText(t: EventTarget | null): boolean {
   return (
@@ -148,6 +159,7 @@ export function PdfHost({
   keys = true,
   onInfo,
   onOpenDefault,
+  findRequest,
   goToPage,
 }: PdfHostProps) {
   const path = tab.file?.path ?? "";
@@ -157,6 +169,9 @@ export function PdfHost({
   const innerRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<Session | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** The find bar, while open; `seq` remounts it for each opening. */
+  const [find, setFind] = useState<{ seq: number } | null>(null);
+  const [findCount, setFindCount] = useState<MatchesCount | null>(null);
   /** The viewer, for a request outside its effects (go to page). */
   const viewerRef = useRef<PDFViewer | null>(null);
   /** The shown document's position has been applied: saving may begin. */
@@ -180,11 +195,18 @@ export function PdfHost({
         const linkService = new v.PDFLinkService({ eventBus });
         // Web links stay inert; "Open with default app" is the way out.
         linkService.externalLinkEnabled = false;
+        // Find (the find bar's "find" events); the viewer hands it each
+        // document and draws its highlights in the text layer.
+        const findController = new v.PDFFindController({
+          eventBus,
+          linkService,
+        });
         const viewer = new v.PDFViewer({
           container,
           viewer: inner,
           eventBus,
           linkService,
+          findController,
           textLayerMode: 1, // TextLayerMode.ENABLE
           annotationMode: lib.AnnotationMode.ENABLE,
           // Read-only: no annotation editor. Its default (NONE) is a live
@@ -399,6 +421,76 @@ export function PdfHost({
     );
   }, [goToPage]);
 
+  // pdf.js's match count, for the find bar.
+  useEffect(() => {
+    if (!pdf) return;
+    const { eventBus } = pdf;
+    const onCount = (e: { matchesCount?: MatchesCount }) => {
+      if (e.matchesCount) setFindCount(e.matchesCount);
+    };
+    eventBus.on("updatefindmatchescount", onCount);
+    eventBus.on("updatefindcontrolstate", onCount);
+    return () => {
+      eventBus.off("updatefindmatchescount", onCount);
+      eventBus.off("updatefindcontrolstate", onCount);
+    };
+  }, [pdf]);
+
+  /** Hands a search to pdf.js's find controller. */
+  const dispatchFind = (s: PdfFindState, type: string, previous = false) =>
+    pdf?.eventBus.dispatch("find", {
+      source: null,
+      type,
+      query: s.search,
+      caseSensitive: s.caseSensitive,
+      entireWord: s.wholeWord,
+      highlightAll: true,
+      findPrevious: previous,
+      matchDiacritics: false,
+    });
+
+  /** Open the find bar, or (pressed again) go back to its field. */
+  const openFind = (seq: number) => {
+    if (find) {
+      const input = hostRef.current?.querySelector<HTMLInputElement>(
+        "[data-find-bar] input",
+      );
+      input?.focus();
+      input?.select();
+      return;
+    }
+    // The last search shows its highlights again, without moving.
+    const last = findStates.get(tab.id);
+    if (last?.search) dispatchFind(last, "highlightallchange");
+    setFind({ seq });
+  };
+
+  // Find: only a request made while shown (a new `seq`), so a remount never
+  // replays the last one.
+  const findSeq = useRef(findRequest?.seq ?? 0);
+  useEffect(() => {
+    if (!findRequest || findRequest.seq === findSeq.current) return;
+    findSeq.current = findRequest.seq;
+    openFind(findRequest.seq);
+    // Acts on a new request only; openFind reads the rest as it is then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findRequest]);
+
+  const onFindQuery = (
+    s: PdfFindState,
+    { again, previous }: { again: boolean; previous: boolean },
+  ) => {
+    findStates.set(tab.id, s);
+    dispatchFind(s, again ? "again" : "", previous);
+  };
+
+  const onFindClose = (s: PdfFindState) => {
+    findStates.set(tab.id, s);
+    pdf?.eventBus.dispatch("findbarclose", { source: null });
+    setFind(null);
+    containerRef.current?.focus();
+  };
+
   const message = missing ? null : notice;
 
   return (
@@ -407,13 +499,24 @@ export function PdfHost({
       <div
         ref={containerRef}
         data-pdf-viewer=""
+        // Focusable, so closing the find bar gives the keys back to it.
+        tabIndex={-1}
         className={
-          "zukai-pdf absolute inset-0 overflow-auto" +
+          "zukai-pdf absolute inset-0 overflow-auto outline-none" +
           (message || missing ? " invisible" : "")
         }
       >
         <div ref={innerRef} className="pdfViewer" />
       </div>
+      {find && !message && !missing && (
+        <PdfFindBar
+          key={find.seq}
+          initial={findStates.get(tab.id) ?? EMPTY_PDF_FIND}
+          count={findCount}
+          onQuery={onFindQuery}
+          onClose={onFindClose}
+        />
+      )}
       {message && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-ui-sm text-muted">
           <p>{message}</p>

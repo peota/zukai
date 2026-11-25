@@ -4,12 +4,20 @@ import { TabPane, type TabPaneProps } from "./TabPane";
 import type { TabState } from "../model/types";
 
 const seen = vi.hoisted(() => ({
-  calls: [] as { id: string; goToPage: unknown }[],
+  calls: [] as { id: string; goToPage: unknown; findRequest: unknown }[],
 }));
 
 vi.mock("../pdf/PdfHost", () => ({
-  default: (p: { tab: { id: string }; goToPage: unknown }) => {
-    seen.calls.push({ id: p.tab.id, goToPage: p.goToPage });
+  default: (p: {
+    tab: { id: string };
+    goToPage: unknown;
+    findRequest: unknown;
+  }) => {
+    seen.calls.push({
+      id: p.tab.id,
+      goToPage: p.goToPage,
+      findRequest: p.findRequest,
+    });
     return null;
   },
 }));
@@ -27,6 +35,7 @@ function pane(
   id: string,
   focused: boolean,
   goToPage: TabPaneProps["goToPage"],
+  findRequest: TabPaneProps["findRequest"] = null,
 ) {
   return (
     <TabPane
@@ -34,6 +43,7 @@ function pane(
         tab: pdfTab(id),
         focused,
         goToPage,
+        findRequest,
         tabs: [],
         slotRef: () => {},
         reloadSeq: 0,
@@ -60,5 +70,26 @@ describe("TabPane go to page", () => {
     render(pane("a", true, req));
     await vi.waitFor(() => expect(seen.calls.length).toBeGreaterThan(0));
     expect(seen.calls[seen.calls.length - 1]?.goToPage).toEqual(req);
+  });
+});
+
+describe("TabPane find", () => {
+  it("a find request for PDF B never reaches PDF A when A's pane gets focus", async () => {
+    seen.calls.length = 0;
+    // Split: A unfocused, B focused; the user presses Mod+F in B.
+    const req = { mode: "find" as const, seq: 4, tabId: "b" };
+    const { rerender } = render(pane("a", false, null, req));
+    // Focus moves to A.
+    rerender(pane("a", true, null, req));
+    await vi.waitFor(() => expect(seen.calls.length).toBeGreaterThan(0));
+    expect(seen.calls.every((c) => c.findRequest === null)).toBe(true);
+  });
+
+  it("a find request for this Tab reaches it", async () => {
+    seen.calls.length = 0;
+    const req = { mode: "find" as const, seq: 5, tabId: "a" };
+    render(pane("a", true, null, req));
+    await vi.waitFor(() => expect(seen.calls.length).toBeGreaterThan(0));
+    expect(seen.calls[seen.calls.length - 1]?.findRequest).toEqual(req);
   });
 });
