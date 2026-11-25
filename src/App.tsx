@@ -431,6 +431,7 @@ export default function App() {
   );
   /** Go to a page of the active PDF Tab: `seq` makes each request new. */
   const [goToPage, setGoToPage] = useState<{
+    tabId: string;
     page: number;
     seq: number;
   } | null>(null);
@@ -958,7 +959,11 @@ export default function App() {
           image={shownImageInfo}
           pdf={shownPdfInfo}
           onGoToPage={(page) => {
-            setGoToPage((g) => ({ page, seq: (g?.seq ?? 0) + 1 }));
+            setGoToPage((g) => ({
+              tabId: activeId,
+              page,
+              seq: (g?.seq ?? 0) + 1,
+            }));
             refocus();
           }}
           pageInputSignal={pageInputSignal}
