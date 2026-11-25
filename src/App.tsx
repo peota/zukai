@@ -11,7 +11,11 @@ import { useWorkspace } from "./app/useWorkspace";
 import { isTerminalTarget, routeKey } from "./terminal/keys";
 import { defaultFolder, plusFolder } from "./terminal/defaultFolder";
 import { useTerminals } from "./terminal/useTerminals";
+import { useAgents } from "./terminal/useAgents";
+import { NewTerminalMenu } from "./terminal/NewTerminalMenu";
+import type { AgentInfo } from "./terminal/api";
 import { detectPlatform, matchShortcut, type Command } from "./app/shortcuts";
+import { formatKeys } from "./app/shortcutList";
 import {
   allowsContextMenu,
   blocksBrowserKey,
@@ -55,9 +59,6 @@ import { useGoneClosed } from "./app/useGoneClosed";
 import { useColorScheme } from "./ui/useColorScheme";
 import { SaveChangesDialog } from "./ui/SaveChangesDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
-import { aiStatus, type AiStatus } from "./ask/api";
-import { useAsk } from "./ask/useAsk";
-import { providerLabel } from "./ask/providerLabel";
 import { QuickOpen, type QuickTab } from "./ui/QuickOpen";
 import { fileIcon } from "./ui/icons";
 import { libraryQuickOpen } from "./library/api";
@@ -77,20 +78,41 @@ const BEAUTIFY_HINT = platform === "mac" ? "⇧⌥F" : "Shift+Alt+F";
 const SETTINGS_HINT = platform === "mac" ? "⌘," : "Ctrl+,";
 const PREVIEW_HINT = platform === "mac" ? "⇧⌘V" : "Ctrl+Shift+V";
 const RICH_HINT = platform === "mac" ? "⇧⌘M" : "Ctrl+Shift+M";
-const ASK_HINT = platform === "mac" ? "⌘J" : "Ctrl+J";
 const GIT_HINT = platform === "mac" ? "⇧⌘G" : "Ctrl+Shift+G";
 const NO_TERMINAL_FOLDER = "Choose a Library folder to open a terminal";
+const NEW_TERMINAL_HINT = formatKeys(["Ctrl", "Shift", "`"], platform);
+const AGENT_MENU_HINT = formatKeys(["Mod", "J"], platform);
+
+/** Where the New terminal menu hangs, and which button opened it. */
+interface AgentMenuAt {
+  x: number;
+  y: number;
+  side: "below" | "above";
+  align: "start" | "end";
+  from: "panel" | "status";
+}
+
+/** Above the status bar's Agent button, right-aligned with it. */
+function statusAnchor(box?: DOMRect): AgentMenuAt {
+  const r =
+    box ??
+    document
+      .querySelector('[data-z-agent-menu="status"]')
+      ?.getBoundingClientRect();
+  return {
+    x: r ? r.right : window.innerWidth,
+    y: r ? r.top - 4 : window.innerHeight - 36,
+    side: "above",
+    align: "end",
+    from: "status",
+  };
+}
 
 // xterm loads with the first terminal, never at startup.
 const TerminalPanel = lazy(() =>
   import("./terminal/TerminalPanel").then((m) => ({
     default: m.TerminalPanel,
   })),
-);
-
-// The Ask panel (and its Markdown renderer) loads when it's first opened.
-const AskPanel = lazy(() =>
-  import("./ask/AskPanel").then((m) => ({ default: m.AskPanel })),
 );
 
 interface Cursor {
@@ -106,18 +128,6 @@ export default function App() {
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [picking, setPicking] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [ai, setAi] = useState<AiStatus>({
-    config: null,
-    hasKey: false,
-    ready: false,
-  });
-  useEffect(() => {
-    aiStatus().then(setAi, () => {});
-  }, []);
-  /** Not stored: the Ask panel starts closed, like the terminal panel. */
-  const [askOpen, setAskOpen] = useState(false);
-  const aiReady = ai.ready;
-  const askShown = aiReady && askOpen;
   const [quickOpen, setQuickOpen] = useState(false);
   /** Edits reach a Markdown preview without re-rendering the App. */
   const [feed] = useState(createTextFeed);
@@ -185,32 +195,50 @@ export default function App() {
           state: activeGit.state,
         }
       : null;
-  /** A new terminal in `cwd`, shown and focused; none without a folder. */
+  /**
+   * A new terminal in `cwd`, shown and focused, running `agent` if given; none
+   * without a folder.
+   */
   const openTerminal = useCallback(
-    (cwd: string | null) => {
+    (cwd: string | null, agent?: AgentInfo) => {
       if (cwd === null) {
         showNotice(NO_TERMINAL_FOLDER);
         return;
       }
-      openTerm(cwd).catch((err) =>
+      openTerm(cwd, agent).catch((err) =>
         showNotice(`Can't open a terminal: ${asFileError(err).message}`),
       );
     },
     [openTerm, showNotice],
   );
-  /**
-   * The panel's +: the active terminal's folder while it's still granted.
-   * If that folder no longer exists, the default folder instead.
-   */
-  const plusTerminal = () => {
-    const cwd = plusFolder(
+  /** The panel's folder: the active terminal's while it's still granted. */
+  const panelFolder = () =>
+    plusFolder(
       termState.terms.find((x) => x.id === termState.activeId),
       libraryFolders,
       termFolder,
     );
-    if (cwd === null || cwd === termFolder) return openTerminal(cwd);
-    openTerm(cwd).catch(() => openTerminal(termFolder));
+  /**
+   * The panel's +: the active terminal's folder while it's still granted.
+   * If that folder no longer exists, the default folder instead.
+   */
+  const plusTerminal = (agent?: AgentInfo) => {
+    const cwd = panelFolder();
+    if (cwd === null || cwd === termFolder) return openTerminal(cwd, agent);
+    openTerm(cwd, agent).catch(() => openTerminal(termFolder, agent));
   };
+  /** The installed agents, checked each time the New terminal menu opens. */
+  const { agents, refresh: refreshAgents } = useAgents();
+  const [agentMenu, setAgentMenu] = useState<AgentMenuAt | null>(null);
+  const agentMenuFrom = agentMenu?.from;
+  /** Closed without a choice from the status bar: back to the editor. */
+  const closeAgentMenu = useCallback(
+    (chose?: boolean) => {
+      setAgentMenu(null);
+      if (!chose && agentMenuFrom === "status") refocus();
+    },
+    [agentMenuFrom, refocus],
+  );
   // The panel loads with the first terminal and stays mounted after that.
   const [panelLoaded, setPanelLoaded] = useState(false);
   if (!panelLoaded && termState.terms.length > 0) setPanelLoaded(true);
@@ -233,13 +261,10 @@ export default function App() {
       } else if (cmd.type === "newTerminal") {
         openTerminal(termFolder);
         return;
-      } else if (cmd.type === "toggleAsk") {
-        if (!aiReady) return;
-        // Hiding gives the keyboard back; showing, the panel takes it.
-        if (askShown) refocus();
-        // Ask and Git take turns on the right.
-        else setGitOpen(false);
-        setAskOpen(!askShown);
+      } else if (cmd.type === "agentMenu") {
+        // A toggle: an open menu closes, wherever it was opened from.
+        if (agentMenuFrom) closeAgentMenu();
+        else setAgentMenu(statusAnchor());
         return;
       } else if (cmd.type === "toggleGit") {
         if (gitOpen) refocus();
@@ -257,15 +282,12 @@ export default function App() {
       showTerm,
       openTerminal,
       termFolder,
-      aiReady,
-      askShown,
+      agentMenuFrom,
+      closeAgentMenu,
       gitOpen,
       setGitOpen,
     ],
   );
-  // Opening Git (shortcut, status bar) puts Ask away: they take turns.
-  // Opening Ask closes Git in the same update, so this never undoes that.
-  if (gitOpen && askOpen) setAskOpen(false);
   /** Bumped to open Add folder from git… from the Git panel. */
   const [cloneRequest, setCloneRequest] = useState(0);
   const [cloning, setCloning] = useState(false);
@@ -324,34 +346,6 @@ export default function App() {
   const activeMode = active ? effectiveMode(active, w.settings) : null;
   /** A Markdown Tab's preview; any other Tab is just edited. */
   const previewMode = (isMarkdown && active?.preview) || "edit";
-  const ask = useAsk({
-    bridge: w.bridge,
-    activeTab: active
-      ? {
-          id: active.id,
-          title: active.title,
-          language: active.language,
-          kind: active.kind,
-        }
-      : null,
-  });
-  const clearAsk = ask.clear;
-  const stopAsk = ask.stop;
-  // Hiding the panel (Mod+J or its ×) stops a running answer; what came so
-  // far stays in the conversation.
-  useEffect(() => {
-    if (!askShown) stopAsk();
-  }, [askShown, stopAsk]);
-  // No provider any more (its key was removed): the panel closes and the
-  // conversation goes, so setting a key later doesn't bring either back.
-  const wasReady = useRef(aiReady);
-  useEffect(() => {
-    if (wasReady.current && !aiReady) {
-      setAskOpen(false);
-      clearAsk();
-    }
-    wasReady.current = aiReady;
-  }, [aiReady, clearAsk]);
   const theme = useColorScheme(w.settings.theme);
   // The CSS palette follows <html data-theme> (light or dark), refined by
   // data-palette (which light or dark theme) and data-accent.
@@ -779,8 +773,7 @@ export default function App() {
           <WindowControls platform={platform} />
         </div>
         {/* The editor area and the terminal panel (under it at the bottom,
-            right of it at the side), then the Ask panel on the right of both.
-            The tab bar keeps its full width. */}
+            right of it at the side). The tab bar keeps its full width. */}
         <div className="flex min-h-0 flex-1 flex-row">
           <div
             className={`flex min-h-0 min-w-0 flex-1 ${
@@ -853,6 +846,18 @@ export default function App() {
                   }
                   onPosition={(p) => w.setSettings({ terminalPosition: p })}
                   onNew={plusTerminal}
+                  onNewMenu={(r) =>
+                    agentMenuFrom === "panel"
+                      ? closeAgentMenu()
+                      : setAgentMenu({
+                          x: r.left,
+                          y: r.bottom + 4,
+                          side: "below",
+                          align: "start",
+                          from: "panel",
+                        })
+                  }
+                  newMenuOpen={agentMenuFrom === "panel"}
                   fontSize={w.fontSize}
                   palette={palette}
                   platform={platform}
@@ -890,25 +895,6 @@ export default function App() {
               }}
               cloning={cloning}
             />
-          )}
-          {askShown && (
-            <Suspense fallback={null}>
-              <AskPanel
-                ask={ask}
-                noteTitle={active?.kind === "text" ? active.title : null}
-                providerLabel={providerLabel(ai.config)}
-                width={w.settings.askWidth}
-                onWidth={(px) => w.setSettings({ askWidth: px })}
-                onClose={() => {
-                  setAskOpen(false);
-                  refocus();
-                }}
-                onOpenUrl={(url) =>
-                  void openUrl(url).catch(() => showNotice(`Can't open ${url}`))
-                }
-                onFocusEditor={refocus}
-              />
-            </Suspense>
           )}
         </div>
         <StatusBar
@@ -970,15 +956,14 @@ export default function App() {
                 }
               : undefined
           }
-          ask={
-            aiReady
-              ? {
-                  open: askShown,
-                  hint: ASK_HINT,
-                  onToggle: () => void run({ type: "toggleAsk" }),
-                }
-              : undefined
-          }
+          agent={{
+            open: agentMenuFrom === "status",
+            hint: AGENT_MENU_HINT,
+            onOpen: (r) =>
+              agentMenuFrom === "status"
+                ? closeAgentMenu()
+                : setAgentMenu(statusAnchor(r)),
+          }}
           markdownMode={
             active && activeMode
               ? {
@@ -1009,8 +994,6 @@ export default function App() {
           platform={platform}
           onSettings={w.setSettings}
           onFontSize={w.setFontSize}
-          aiStatus={ai}
-          onAiStatus={setAi}
           onClose={() => {
             setSettingsOpen(false);
             refocus();
@@ -1102,6 +1085,28 @@ export default function App() {
           onSwap={w.swapSplit}
           onOrientation={w.setSplitOrientation}
           onCloseSplit={w.closeSplit}
+        />
+      )}
+      {agentMenu && (
+        <NewTerminalMenu
+          x={agentMenu.x}
+          y={agentMenu.y}
+          side={agentMenu.side}
+          align={agentMenu.align}
+          agents={agents}
+          refresh={refreshAgents}
+          terminalHint={NEW_TERMINAL_HINT}
+          onTerminal={() =>
+            agentMenu.from === "panel"
+              ? plusTerminal()
+              : openTerminal(termFolder)
+          }
+          onAgent={(agent) =>
+            agentMenu.from === "panel"
+              ? plusTerminal(agent)
+              : openTerminal(termFolder, agent)
+          }
+          onDismiss={closeAgentMenu}
         />
       )}
       {formatMenu && active?.file && (

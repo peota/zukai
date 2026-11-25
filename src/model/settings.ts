@@ -52,8 +52,6 @@ export interface Settings {
   terminalHeight: number;
   /** The terminal panel's width when docked at the side, in px. */
   terminalWidth: number;
-  /** The Ask panel's width in px. */
-  askWidth: number;
   /** The Git panel's width in px. */
   gitWidth: number;
 }
@@ -66,7 +64,6 @@ export const TERMINAL_POSITIONS: readonly TerminalPosition[] = [
 
 export const TERMINAL_MIN_HEIGHT = 120;
 export const TERMINAL_MIN_WIDTH = 240;
-export const ASK_MIN_WIDTH = 280;
 export const GIT_MIN_WIDTH = 240;
 
 /** A terminal size in whole pixels, at least `min` and at most 70% of `available`. */
@@ -113,7 +110,6 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   terminalPosition: "bottom",
   terminalHeight: 280,
   terminalWidth: 480,
-  askWidth: 400,
   gitWidth: 320,
 });
 
@@ -184,7 +180,6 @@ export function parseSettings(v: unknown): Settings {
       TERMINAL_MIN_WIDTH,
       d.terminalWidth,
     ),
-    askWidth: storedSize(v.askWidth, ASK_MIN_WIDTH, d.askWidth),
     gitWidth: storedSize(v.gitWidth, GIT_MIN_WIDTH, d.gitWidth),
   };
 }

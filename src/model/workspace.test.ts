@@ -11,6 +11,7 @@ import {
   moveTab,
   newTab,
   newTabState,
+  nextScratchpadTitle,
   openDiffTab,
   rename,
   movedPath,
@@ -56,6 +57,38 @@ describe("newTab", () => {
     newTab(s0, "n");
     expect(ids(s0)).toEqual(["a"]);
   });
+  it("numbers a Text Scratchpad with the lowest free number", () => {
+    let s = newTab(ws(["a"]), "n1");
+    s = newTab(s, "n2");
+    const title = (st: WorkspaceState, id: string) =>
+      st.tabs.find((t) => t.id === id)?.title;
+    expect(title(s, "n1")).toBe("Scratchpad 1");
+    expect(title(s, "n2")).toBe("Scratchpad 2");
+    s = closeTab(s, "n1", true, 1, same).state;
+    s = newTab(s, "n3");
+    expect(title(s, "n3")).toBe("Scratchpad 1");
+  });
+  it("leaves a Canvas Untitled", () => {
+    const s = newTab(ws(["a"]), "k", "canvas");
+    expect(s.tabs.find((t) => t.id === "k")?.title).toBe("Untitled");
+  });
+});
+
+describe("nextScratchpadTitle", () => {
+  it("ignores Files, Canvases, renamed titles and `except`", () => {
+    const s: WorkspaceState = {
+      tabs: [
+        { ...newTabState("a"), title: "Scratchpad 1" },
+        { ...newTabState("k", "canvas"), title: "Scratchpad 2" },
+        { ...withFile("f", "/Scratchpad 3"), title: "Scratchpad 3" },
+        { ...newTabState("r"), title: "Scratchpad two" },
+      ],
+      activeId: "a",
+      closed: [],
+    };
+    expect(nextScratchpadTitle(s)).toBe("Scratchpad 2");
+    expect(nextScratchpadTitle(s, "a")).toBe("Scratchpad 1");
+  });
 });
 
 describe("closeTab", () => {
@@ -80,6 +113,7 @@ describe("closeTab", () => {
     const e = ensureOneTab(r.state, "fresh");
     expect(ids(e)).toEqual(["fresh"]);
     expect(e.activeId).toBe("fresh");
+    expect(e.tabs[0].title).toBe("Scratchpad 1");
   });
   it("empty tabs are deleted and not listed; non-empty are listed newest first with index", () => {
     let s = ws(["a", "b", "c", "d"], "a");

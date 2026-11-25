@@ -74,7 +74,6 @@ A searchable list of every command, opened with Mod+Shift+P. It's the main way t
 
 **Settings**
 Changed in the **Settings** dialog, opened by the gear at the left of the status bar or Mod+, (a dialog, not a Tab: decided 2026-11-19). Its General section holds the Theme (System, Light or Dark), "Open Markdown notes in" (**Rich editor**, the default, or Markdown: see **Rich editor**), the editor font size, word wrap in new Tabs and line numbers, applied at once and stored in the Session (`settings`, with `fontSize` beside it). Its Keyboard shortcuts section lists every shortcut for the platform, searchable; they can't be changed yet.
-- Its AI section holds the AI provider, its key (shown only as set or not set, with Remove; the key itself lives in the OS keychain), the model, and the Excluded from Ask patterns. See **Ask panel**.
 - Later: a search box over all settings, and groups for Editor, Appearance, Files, Tables, Quick capture and Keybindings as those settings arrive.
 - Each setting is one row with a checkbox, dropdown or text field. Changes apply immediately. A Reset link appears only when the value differs from the default.
 - Keybindings are a searchable list where you press a key combination to record it, with conflict warnings.
@@ -89,31 +88,11 @@ _Avoid_: console, shell tab, Tab (a Tab is the editor's).
 Where Terminals are shown, under the editor area (the default) or to its right, beside the editor and under the tab bar. Its slim header holds a tab per Terminal and New terminal, Kill terminal, Move to side/bottom and Hide panel. Ctrl+` shows or hides it; hiding never ends a Terminal, and killing the last one hides it. Its position and its height (bottom) and width (side) are Settings; whether it's shown isn't remembered, so it starts hidden.
 _Avoid_: terminal pane, console.
 
-## Ask
+**Agent**
+A Terminal started by running one of Zukai's known agent CLIs (Claude Code, Codex, Gemini, OpenCode, Cursor) in the default folder; when the agent quits, the shell stays at a prompt.
 
-AI in Zukai is one feature, Ask, using the user's own key (see [ADR 0013](docs/adr/0013-ask-with-the-users-own-key.md)).
-
-**Ask panel**
-A panel docked on the right of the editor area (beside the editor and the terminal panel) where the user asks questions about their material and reads the answers; Mod+J, or the Ask button at the right end of the status bar (under where the panel docks), shows or hides it. It exists only once an AI provider and key are set; until then there's no panel, shortcut or icon. Each answer links the Files it used, and shows every tool step ("Searched `kafka` · Read `infra/lag.md`") and which provider and model the request went to. Nothing is sent until the user presses Enter.
-_Avoid_: chat, assistant, copilot, AI panel.
-
-**Ask scope**
-What a question is about: **This note** (the active Tab), **This folder** (a Library folder or an Added folder, such as a repository) or **Library** (the Library and every Added folder). A chip in the panel shows it, defaulting to the current context; "Ask about this folder" on a folder's menu opens the panel with that scope set.
-
-**AI provider**
-Where questions are sent: Anthropic, OpenAI, or an OpenAI-compatible URL (Ollama, LM Studio, OpenRouter, …). One is active at a time, set in Settings → AI with a key and a model. The key is kept by Rust in the OS keychain, never in `settings.json`, and the webview never sees it.
-
-**Ask tools**
-The read-only steps Ask uses to find things, run by Rust inside the folder grants: list a folder, search text, read a File. There's no search index and nothing is uploaded in the background. Hidden text is sent as `[hidden]`. The tools refuse **Excluded from Ask** paths: secret-shaped files (`.env*`, `*.pem`, `*.key`, `id_rsa*`, `.npmrc`, `credentials*`), anything `.gitignore` excludes, and the user's own patterns in Settings → AI.
-
-**Proposed edit**
-A change Ask suggests to a File, or a new note or Canvas it suggests. It opens in Compare; accepted chunks become ordinary undoable edits in the Tab, and the File then follows its usual saving rules. Ask never writes anything the user hasn't reviewed.
-
-**Open as Canvas**
-A button on a Mermaid diagram in an answer that converts it into an editable Canvas (with `@excalidraw/mermaid-to-excalidraw`, loaded only when used).
-
-**Ask history**
-The last ~20 conversations, kept in the app data folder for 30 days and reopened from the panel header. **Save as note** turns one into a Markdown File or a Scratchpad, with its diagrams and links. Conversations never go into the Library by themselves.
+**Agent menu**
+The menu beside the Terminal panel's +, the status bar's Agent button and Mod+J: Terminal, then Start an agent, listing installed agents first (1–9) and dimming the rest as not installed.
 
 ## Library
 
@@ -182,7 +161,7 @@ Deferred: Find in Files, macros, plugins, bookmarks, document map.
 
 **Title**
 The name shown on a Tab.
-- **Scratchpad:** an automatic title until the user renames it. A Text Scratchpad uses its first non-empty line, cut to about 30 characters ("Untitled" when empty). A Canvas Scratchpad is "Canvas", "Canvas 2" and so on. Once renamed, the title sticks. It's stored in `session.json`, not in the file name.
+- **Scratchpad:** an automatic title until the user renames it. A new Text Scratchpad is "Scratchpad N", with the lowest N no open Text Scratchpad uses (as Notepad++ numbers new documents); typing doesn't change it. A Canvas Scratchpad is "Canvas", "Canvas 2" and so on. Once renamed, the title sticks. It's stored in `session.json`, not in the file name.
 - **File:** its filename. Renaming the Tab renames the file on disk in the same folder. The extension is locked so the Kind can't change. If the new name already exists, an inline error appears and nothing is overwritten. Hovering shows the full path, and two Files with the same name show their parent folder to tell them apart.
 
 ## Tables

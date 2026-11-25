@@ -227,19 +227,17 @@ describe("platform differences", () => {
       ),
     ).toBeNull();
   });
-  it("Ask panel: Ctrl+J on windows, Cmd+J on mac; Ctrl+Shift+J is not", () => {
+  it("Mod+J opens the agent menu", () => {
     expect(matchShortcut(ev("KeyJ", { ctrlKey: true }), "windows")).toEqual({
-      type: "toggleAsk",
+      type: "agentMenu",
     });
     expect(matchShortcut(ev("KeyJ", { metaKey: true }), "mac")).toEqual({
-      type: "toggleAsk",
+      type: "agentMenu",
     });
     expect(
-      matchShortcut(
-        ev("KeyJ", { key: "J", ctrlKey: true, shiftKey: true }),
-        "windows",
-      ),
+      matchShortcut(ev("KeyJ", { ctrlKey: true, shiftKey: true }), "windows"),
     ).toBeNull();
+    // Ctrl+Alt is AltGr on Windows: it types letters, so it's left alone.
     expect(
       matchShortcut(ev("KeyJ", { ctrlKey: true, altKey: true }), "windows"),
     ).toBeNull();

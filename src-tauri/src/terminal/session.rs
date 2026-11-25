@@ -557,6 +557,102 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn agent_leaves_a_prompt() {
+        use crate::terminal::agents::{ShellKind, agent_spec, shell_kind};
+        let dir = tempfile::tempdir().unwrap();
+        let script = if cfg!(windows) {
+            let p = dir.path().join("agent.cmd");
+            std::fs::write(&p, "@echo agent-ran\r\n@exit /b 3\r\n").unwrap();
+            p
+        } else {
+            let p = dir.path().join("agent.sh");
+            std::fs::write(&p, "#!/bin/sh\necho agent-ran; exit 3\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            p
+        };
+        let script_str = script.to_string_lossy().into_owned();
+        if script_str.contains(' ') {
+            eprintln!("skipped: temp path has a space: {script_str}");
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        let sink: Sink = Arc::new(move |ev| {
+            let _ = tx.send(ev);
+        });
+        let spec = agent_spec(&current_shell(), &script_str);
+        let running = Running(Session::spawn(&spec, dir.path(), 200, 30, sink).expect("spawn"));
+
+        // Wait for the agent's output, answering cursor requests on the way.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut seen = String::new();
+        while !seen.contains("agent-ran") {
+            let left = deadline
+                .checked_duration_since(Instant::now())
+                .expect("timed out waiting for agent-ran");
+            match rx.recv_timeout(left).expect("agent-ran") {
+                TerminalEvent::Data { data } => {
+                    for _ in data.matches("\x1b[6n") {
+                        running.0.write(b"\x1b[1;1R");
+                    }
+                    running.0.ack(js_len(&data));
+                    seen.push_str(&data);
+                }
+                TerminalEvent::Exit { .. } => panic!("exited before agent-ran: {seen:?}"),
+            }
+        }
+        // A command whose output differs from what is typed, so only a live
+        // shell can produce it (the PTY echo of the input can't).
+        let probe = match shell_kind(&current_shell().program) {
+            ShellKind::Pwsh => "echo ('zk'+42)",
+            ShellKind::Cmd => "echo zk%OS:~0,0%42",
+            _ => "echo zk$((6*7))",
+        };
+        running.0.write(format!("{probe}{NL}").as_bytes());
+        running.0.write(format!("exit{NL}").as_bytes());
+        let (rest, events) = collect(&running.0, &rx);
+        seen.push_str(&rest);
+        assert!(
+            matches!(events.last(), Some(TerminalEvent::Exit { .. })),
+            "no exit; output: {seen:?}"
+        );
+        let after = seen.split_once("agent-ran").unwrap().1;
+        // Drop escape sequences (CSI and OSC) so a line can be compared whole.
+        let mut plain = String::new();
+        let mut chars = after.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c != '\x1b' {
+                plain.push(c);
+                continue;
+            }
+            match chars.next() {
+                Some('[') => {
+                    for n in chars.by_ref() {
+                        if ('@'..='~').contains(&n) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    for n in chars.by_ref() {
+                        if n == '\x07' {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            plain.lines().any(|l| l.trim() == "zk42"),
+            "no prompt after agent: {seen:?}"
+        );
+    }
+
+    #[test]
     fn utf8_tail_is_carried_across_reads() {
         let bytes = "aé".as_bytes();
         assert_eq!(utf8_split(&bytes[..2]), 1);

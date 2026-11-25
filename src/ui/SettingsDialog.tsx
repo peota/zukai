@@ -19,8 +19,6 @@ import type {
   Settings,
   ThemePref,
 } from "../model/settings";
-import type { AiStatus } from "../ask/api";
-import { AiSettings } from "./AiSettings";
 import { BUTTON, Row } from "./settingsRows";
 import { CloseIcon, Icon } from "./icons";
 import type { MarkdownMode } from "../model/types";
@@ -34,11 +32,9 @@ export interface SettingsDialogProps {
   onSettings(patch: Partial<Settings>): void;
   onFontSize(px: number): void;
   onClose(): void;
-  aiStatus: AiStatus;
-  onAiStatus(s: AiStatus): void;
 }
 
-type Section = "general" | "ai" | "shortcuts";
+type Section = "general" | "shortcuts";
 
 const THEMES: { id: ThemePref; label: string }[] = [
   { id: "system", label: "System" },
@@ -59,8 +55,6 @@ export function SettingsDialog({
   onSettings,
   onFontSize,
   onClose,
-  aiStatus,
-  onAiStatus,
 }: SettingsDialogProps) {
   const [section, setSection] = useState<Section>("general");
 
@@ -106,12 +100,6 @@ export function SettingsDialog({
               General
             </SectionTab>
             <SectionTab
-              selected={section === "ai"}
-              onSelect={() => setSection("ai")}
-            >
-              AI
-            </SectionTab>
-            <SectionTab
               selected={section === "shortcuts"}
               onSelect={() => setSection("shortcuts")}
             >
@@ -136,10 +124,8 @@ export function SettingsDialog({
               onSettings={onSettings}
               onFontSize={onFontSize}
             />
-          ) : section === "ai" ? (
-            <AiSettings status={aiStatus} onStatus={onAiStatus} />
           ) : (
-            <Shortcuts platform={platform} askReady={aiStatus.ready} />
+            <Shortcuts platform={platform} />
           )}
         </div>
       </div>
@@ -588,24 +574,15 @@ function General({
   );
 }
 
-function Shortcuts({
-  platform,
-  askReady,
-}: {
-  platform: Platform;
-  /** The Ask panel's shortcut exists only once an AI provider is ready. */
-  askReady: boolean;
-}) {
+function Shortcuts({ platform }: { platform: Platform }) {
   const [query, setQuery] = useState("");
   const all = useMemo(
     () =>
-      shortcutsFor(platform)
-        .filter((s) => askReady || s.command !== "toggleAsk")
-        .map((s) => ({
-          ...s,
-          shown: s.keys.map((k) => formatKeys(k, platform)),
-        })),
-    [platform, askReady],
+      shortcutsFor(platform).map((s) => ({
+        ...s,
+        shown: s.keys.map((k) => formatKeys(k, platform)),
+      })),
+    [platform],
   );
   const q = query.trim().toLowerCase();
   const rows = all.filter(

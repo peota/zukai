@@ -29,7 +29,7 @@ const ALL: Record<Command["type"], true> = {
   toggleRichMarkdown: true,
   toggleTerminal: true,
   newTerminal: true,
-  toggleAsk: true,
+  agentMenu: true,
   toggleGit: true,
 };
 

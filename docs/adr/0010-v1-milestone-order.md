@@ -34,3 +34,4 @@ v1 ships when all seven are done.
 - 2026-11-19: Canvas (M3) is delivered with the Library before M2 (ADR 0011).
 - 2026-11-19: Split (M5, without Compare) is delivered early, at the owner's request.
 - 2026-11-21: Ask (ADR 0013) is a milestone of its own, built ahead of the remaining v1 work, at the owner's request.
+- 2026-11-24: Ask is removed; agents started from the Terminal panel replace it (ADR 0014).

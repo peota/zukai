@@ -3,6 +3,8 @@ export interface TermInfo {
   id: number;
   /** The folder the terminal was opened in. */
   cwd: string;
+  /** The display name of the agent running in it; absent for a plain shell. */
+  agent?: string;
   /** `undefined` while running; `null` once exited with no code. */
   exited: number | null | undefined;
 }
@@ -15,7 +17,7 @@ export interface TermState {
 }
 
 export type TermAction =
-  | { type: "opened"; id: number; cwd: string }
+  | { type: "opened"; id: number; cwd: string; agent?: string }
   | { type: "killed"; id: number }
   | { type: "exited"; id: number; code: number | null }
   | { type: "activate"; id: number }
@@ -32,7 +34,10 @@ export function termReducer(s: TermState, a: TermAction): TermState {
   switch (a.type) {
     case "opened":
       return {
-        terms: [...s.terms, { id: a.id, cwd: a.cwd, exited: undefined }],
+        terms: [
+          ...s.terms,
+          { id: a.id, cwd: a.cwd, agent: a.agent, exited: undefined },
+        ],
         activeId: a.id,
         shown: true,
       };

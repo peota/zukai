@@ -10,7 +10,6 @@ import * as storage from "./storage/api";
 import * as files from "./files/api";
 import * as lib from "./library/api";
 import * as term from "./terminal/api";
-import * as ask from "./ask/api";
 import App from "./App";
 import { toSessionFile } from "./model/session";
 import { newTabState } from "./model/workspace";
@@ -162,17 +161,6 @@ vi.mock("./library/api", () => ({
   onDragDrop: vi.fn(),
 }));
 
-vi.mock("./ask/api", () => ({
-  aiStatus: vi.fn(() =>
-    Promise.resolve({ config: null, hasKey: false, ready: false }),
-  ),
-  aiAsk: vi.fn(),
-  aiCancel: vi.fn(),
-  aiKeyRemove: vi.fn(),
-  aiKeySet: vi.fn(),
-  aiModels: vi.fn(() => Promise.resolve([])),
-}));
-
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     show: () => Promise.resolve(),
@@ -185,6 +173,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 vi.mock("@tauri-apps/api/event", () => ({ emit: vi.fn() }));
 
 vi.mock("./terminal/api", () => ({
+  terminalAgents: vi.fn(),
   terminalOpen: vi.fn(),
   terminalWrite: vi.fn(),
   terminalAck: vi.fn(),
@@ -193,17 +182,37 @@ vi.mock("./terminal/api", () => ({
 }));
 
 // The panel itself has its own tests; here only where App puts it.
-vi.mock("./terminal/TerminalPanel", () => ({
-  TerminalPanel: (p: { position: string; size: number; onNew(): void }) => (
-    <div
-      data-testid="terminal-panel"
-      data-position={p.position}
-      data-size={p.size}
-    >
-      <button onClick={p.onNew}>New terminal</button>
-    </div>
-  ),
-}));
+vi.mock("./terminal/TerminalPanel", async () => {
+  const { tabLabels } = await import("./terminal/labels");
+  return {
+    TerminalPanel: (p: {
+      t: { state: { terms: { cwd: string; agent?: string }[] } };
+      position: string;
+      size: number;
+      onNew(): void;
+      onNewMenu(anchor: DOMRect): void;
+    }) => (
+      <div
+        data-testid="terminal-panel"
+        data-position={p.position}
+        data-size={p.size}
+      >
+        {tabLabels(p.t.state.terms).map((label) => (
+          <span key={label} role="tab">
+            {label}
+          </span>
+        ))}
+        <button onClick={p.onNew}>New terminal</button>
+        <button
+          data-z-agent-menu=""
+          onClick={(e) => p.onNewMenu(e.currentTarget.getBoundingClientRect())}
+        >
+          New terminal menu
+        </button>
+      </div>
+    ),
+  };
+});
 
 vi.mock("./app/exit", () => ({
   BEFORE_EXIT_EVENT: "zukai://before-exit",
@@ -219,6 +228,14 @@ const l = vi.mocked(lib);
 const tm = vi.mocked(term);
 
 const R = "C:\\L";
+
+const AGENTS = [
+  { id: "claude-code", name: "Claude Code", installed: true },
+  { id: "codex", name: "Codex", installed: false },
+  { id: "gemini", name: "Gemini", installed: false },
+  { id: "opencode", name: "OpenCode", installed: false },
+  { id: "cursor", name: "Cursor", installed: false },
+];
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -247,6 +264,7 @@ beforeEach(() => {
   l.onLibraryDropped.mockResolvedValue(() => {});
   l.onDragDrop.mockResolvedValue(() => {});
   tm.terminalOpen.mockResolvedValue(1);
+  tm.terminalAgents.mockResolvedValue(AGENTS);
   tm.terminalKill.mockResolvedValue(undefined);
   tm.terminalResize.mockResolvedValue(undefined);
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -551,26 +569,6 @@ describe("App", () => {
       await act(async () => {});
       expect(r.queryByRole("region", { name: "Git panel" })).toBeNull();
     });
-
-    it("the Git and Ask panels take turns on the right", async () => {
-      vi.mocked(ask.aiStatus).mockResolvedValueOnce({
-        config: { provider: "anthropic", model: "claude-sonnet-5-5" },
-        hasKey: true,
-        ready: true,
-      });
-      h.git.enabled = true;
-      const r = render(<App />);
-      await waitFor(() => r.getByTestId("editor"));
-      await act(async () => {});
-      act(() => modJ());
-      await r.findByRole("region", { name: "Ask" });
-      act(() => modShiftG());
-      await r.findByRole("region", { name: "Git panel" });
-      expect(r.queryByRole("region", { name: "Ask" })).toBeNull();
-      act(() => modJ());
-      await r.findByRole("region", { name: "Ask" });
-      expect(r.queryByRole("region", { name: "Git panel" })).toBeNull();
-    });
   });
 
   it("Ctrl+, opens Settings; its Theme drives the page; Esc closes it", async () => {
@@ -625,7 +623,7 @@ describe("App", () => {
     await waitFor(() => {
       const tabs = r.getAllByRole("tab");
       expect(tabs).toHaveLength(1);
-      expect(tabs[0]).toHaveTextContent("Untitled");
+      expect(tabs[0]).toHaveTextContent("Scratchpad 1");
     });
     expect(s.closeScratchpad).toHaveBeenCalledWith("a");
   });
@@ -1004,105 +1002,6 @@ describe("App", () => {
     expect(r.getAllByTestId("editor")[1]).toHaveAttribute("data-id", "b");
   });
 
-  it("Mod+J does nothing until an AI provider is ready", async () => {
-    const r = render(<App />);
-    await waitFor(() => r.getByTestId("editor"));
-    await waitFor(() => expect(ask.aiStatus).toHaveBeenCalled());
-    await act(async () => {});
-    act(() => modJ());
-    await act(async () => {});
-    expect(r.queryByRole("region", { name: "Ask" })).toBeNull();
-    expect(r.container.querySelector('[aria-label="Ask"]')).toBeNull();
-    expect(r.queryByLabelText("Ask")).toBeNull();
-  });
-
-  it("Mod+J shows and hides the Ask panel, right of the editor and terminal", async () => {
-    vi.mocked(ask.aiStatus).mockResolvedValueOnce({
-      config: { provider: "anthropic", model: "claude-sonnet-5-5" },
-      hasKey: true,
-      ready: true,
-    });
-    const r = render(<App />);
-    await waitFor(() => r.getByTestId("editor"));
-    await act(async () => {});
-    act(() => modJ());
-    const panel = await r.findByRole("region", { name: "Ask" });
-    // The editor and the terminal share a column; Ask sits beside it.
-    const main = r.container.querySelector("main")!;
-    const row = main.parentElement!.parentElement!;
-    expect(panel.parentElement).toBe(row);
-    expect(row.lastElementChild).toBe(panel);
-    expect(row.className).toContain("flex-row");
-    act(() => modJ());
-    await waitFor(() =>
-      expect(r.queryByRole("region", { name: "Ask" })).toBeNull(),
-    );
-  });
-
-  for (const how of ["Mod+J", "the close button"]) {
-    it(`hiding the Ask panel with ${how} stops a running answer`, async () => {
-      vi.mocked(ask.aiStatus).mockResolvedValueOnce({
-        config: { provider: "anthropic", model: "claude-sonnet-5-5" },
-        hasKey: true,
-        ready: true,
-      });
-      // The answer never ends on its own.
-      vi.mocked(ask.aiAsk).mockReturnValue(new Promise(() => {}));
-      vi.mocked(ask.aiCancel).mockResolvedValue(undefined);
-      h.texts.a = "alpha";
-      const r = render(<App />);
-      await waitFor(() => r.getByTestId("editor"));
-      await act(async () => {});
-      act(() => modJ());
-      const question = await r.findByLabelText("Question");
-      fireEvent.change(question, { target: { value: "What is this?" } });
-      fireEvent.keyDown(question, { key: "Enter" });
-      await waitFor(() => expect(ask.aiAsk).toHaveBeenCalled());
-      const id = vi.mocked(ask.aiAsk).mock.calls[0][0];
-      expect(ask.aiCancel).not.toHaveBeenCalled();
-      if (how === "Mod+J") act(() => modJ());
-      else fireEvent.click(r.getByRole("button", { name: "Close Ask panel" }));
-      await waitFor(() =>
-        expect(r.queryByRole("region", { name: "Ask" })).toBeNull(),
-      );
-      expect(ask.aiCancel).toHaveBeenCalledWith(id);
-      // The question stays in the conversation when the panel comes back.
-      act(() => modJ());
-      expect(await r.findByText("What is this?")).toBeInTheDocument();
-    });
-  }
-
-  it("removing the key closes the Ask panel, and a new key doesn't reopen it", async () => {
-    const ready = {
-      config: { provider: "anthropic" as const, model: "claude-sonnet-5-5" },
-      hasKey: true,
-      ready: true,
-    };
-    vi.mocked(ask.aiStatus).mockResolvedValueOnce(ready);
-    vi.mocked(ask.aiKeyRemove).mockResolvedValueOnce({
-      ...ready,
-      hasKey: false,
-      ready: false,
-    });
-    vi.mocked(ask.aiKeySet).mockResolvedValueOnce(ready);
-    const r = render(<App />);
-    await waitFor(() => r.getByTestId("editor"));
-    await act(async () => {});
-    act(() => modJ());
-    await r.findByRole("region", { name: "Ask" });
-    fireEvent.keyDown(window, { key: ",", code: "Comma", ctrlKey: true });
-    fireEvent.click(await r.findByRole("tab", { name: "AI" }));
-    fireEvent.click(r.getByRole("button", { name: "Remove" }));
-    await waitFor(() =>
-      expect(r.queryByRole("region", { name: "Ask" })).toBeNull(),
-    );
-    fireEvent.change(r.getByLabelText("Key"), { target: { value: "sk-test" } });
-    fireEvent.click(r.getByRole("button", { name: "Save key" }));
-    await waitFor(() => expect(ask.aiKeySet).toHaveBeenCalled());
-    await act(async () => {});
-    expect(r.queryByRole("region", { name: "Ask" })).toBeNull();
-  });
-
   it("toggleTerminalWithNoFolderShowsNotice", async () => {
     l.libraryRoot.mockResolvedValue({
       root: null,
@@ -1132,6 +1031,7 @@ describe("App", () => {
         80,
         24,
         expect.any(Function),
+        undefined,
       );
     });
     expect(tm.terminalOpen).toHaveBeenCalledTimes(1);
@@ -1157,6 +1057,7 @@ describe("App", () => {
         80,
         24,
         expect.any(Function),
+        undefined,
       ),
     );
     // The folder has since been deleted: opening there fails.
@@ -1225,5 +1126,201 @@ describe("App", () => {
     expect(seen.size).toBeGreaterThan(20);
     expect(seen).toContain("./terminal/useTerminals.ts");
     expect(bad).toEqual([]);
+  });
+});
+
+describe("the agent menu", () => {
+  const fmt = {
+    encoding: "utf-8",
+    bom: false,
+    lineEnding: "lf",
+    mixed: false,
+  } as const;
+  const print = { mtimeMs: 1, size: 2, hash: "h" };
+
+  /** A File Tab on /lib/docs/note.md, in the Library /lib. */
+  const docsNote = () => {
+    l.libraryRoot.mockResolvedValue({
+      root: "/lib",
+      available: true,
+      added: [],
+    });
+    l.libraryList.mockImplementation(async (dir: string) =>
+      dir === "/lib"
+        ? [
+            { name: "docs", path: "/lib/docs", isDir: true, link: null },
+            { name: "zukai", path: "/lib/zukai", isDir: true, link: null },
+          ]
+        : [],
+    );
+    s.readSession.mockResolvedValue(
+      JSON.stringify(
+        toSessionFile({
+          tabs: [
+            {
+              ...newTabState("n"),
+              title: "note.md",
+              language: "markdown",
+              file: {
+                path: "/lib/docs/note.md",
+                format: fmt,
+                fingerprint: print,
+                held: null,
+              },
+            },
+          ],
+          activeId: "n",
+          closed: [],
+        }),
+      ),
+    );
+    f.fileRead.mockResolvedValue({
+      text: "# hi",
+      format: fmt,
+      readable: true,
+      fingerprint: print,
+    });
+    f.fileFingerprint.mockResolvedValue(print);
+    f.fileFingerprintQuick.mockResolvedValue(print);
+  };
+
+  /** Claude Code's row once the check has found it. */
+  const installed = (r: ReturnType<typeof render>) =>
+    waitFor(() => {
+      const row = r.getByRole("menuitem", { name: /Claude Code/ });
+      expect(row).not.toHaveAttribute("aria-disabled");
+      return row;
+    });
+
+  it("Mod+J opens the New terminal menu, and checks the agents each time", async () => {
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    expect(tm.terminalAgents).not.toHaveBeenCalled();
+    act(() => modJ());
+    const menu = r.getByRole("menu", { name: "New terminal" });
+    expect(getByRole(menu, "menuitem", { name: /Claude Code/ })).toBeTruthy();
+    await installed(r);
+    expect(tm.terminalAgents).toHaveBeenCalledTimes(1);
+    // Mod+J again closes it.
+    act(() => modJ());
+    expect(r.queryByRole("menu", { name: "New terminal" })).toBeNull();
+    act(() => modJ());
+    await installed(r);
+    expect(tm.terminalAgents).toHaveBeenCalledTimes(2);
+  });
+
+  it("1 starts Claude Code in the active File's folder", async () => {
+    docsNote();
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    // Until the Library root is known there's no folder: wait for it.
+    await waitFor(() => expect(l.libraryRoot).toHaveBeenCalled());
+    await act(async () => {});
+    act(() => modJ());
+    await installed(r);
+    fireEvent.keyDown(r.getByRole("menu", { name: "New terminal" }), {
+      key: "1",
+      code: "Digit1",
+    });
+    await waitFor(() =>
+      expect(tm.terminalOpen).toHaveBeenCalledWith(
+        "/lib/docs",
+        80,
+        24,
+        expect.any(Function),
+        "claude-code",
+      ),
+    );
+    expect(r.queryByRole("menu", { name: "New terminal" })).toBeNull();
+    expect(
+      await r.findByRole("tab", { name: "Claude Code · docs" }),
+    ).toBeTruthy();
+  });
+
+  it("with no folder, choosing an agent shows the notice", async () => {
+    l.libraryRoot.mockResolvedValue({
+      root: null,
+      available: false,
+      added: [],
+    });
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    act(() => modJ());
+    fireEvent.click(await installed(r));
+    await waitFor(() =>
+      expect(
+        r.getByText("Choose a Library folder to open a terminal"),
+      ).toBeTruthy(),
+    );
+    expect(tm.terminalOpen).not.toHaveBeenCalled();
+  });
+
+  it("from the panel's chevron, the agent starts in the active terminal's folder", async () => {
+    docsNote();
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    act(() => modB());
+    const zukai = await r.findByRole("treeitem", { name: "zukai" });
+    fireEvent.contextMenu(zukai);
+    fireEvent.click(r.getByRole("menuitem", { name: "Open in terminal" }));
+    await waitFor(() =>
+      expect(tm.terminalOpen).toHaveBeenCalledWith(
+        "/lib/zukai",
+        80,
+        24,
+        expect.any(Function),
+        undefined,
+      ),
+    );
+    tm.terminalOpen.mockResolvedValueOnce(2);
+    fireEvent.click(
+      await r.findByRole("button", { name: "New terminal menu" }),
+    );
+    fireEvent.click(await installed(r));
+    await waitFor(() => expect(tm.terminalOpen).toHaveBeenCalledTimes(2));
+    expect(tm.terminalOpen).toHaveBeenLastCalledWith(
+      "/lib/zukai",
+      80,
+      24,
+      expect.any(Function),
+      "claude-code",
+    );
+    expect(tm.terminalAgents).toHaveBeenCalledTimes(1);
+  });
+
+  it("from the chevron, an agent falls back to the default folder when the terminal's folder won't open", async () => {
+    docsNote();
+    const r = render(<App />);
+    await waitFor(() => r.getByTestId("editor"));
+    act(() => modB());
+    const zukai = await r.findByRole("treeitem", { name: "zukai" });
+    fireEvent.contextMenu(zukai);
+    fireEvent.click(r.getByRole("menuitem", { name: "Open in terminal" }));
+    await waitFor(() => expect(tm.terminalOpen).toHaveBeenCalledTimes(1));
+    // The active terminal's folder is gone now.
+    tm.terminalOpen.mockImplementation(async (cwd: string) => {
+      if (cwd === "/lib/zukai") throw new Error("gone");
+      return 2;
+    });
+    fireEvent.click(
+      await r.findByRole("button", { name: "New terminal menu" }),
+    );
+    fireEvent.click(await installed(r));
+    await waitFor(() => expect(tm.terminalOpen).toHaveBeenCalledTimes(3));
+    expect(tm.terminalOpen).toHaveBeenNthCalledWith(
+      2,
+      "/lib/zukai",
+      80,
+      24,
+      expect.any(Function),
+      "claude-code",
+    );
+    expect(tm.terminalOpen).toHaveBeenLastCalledWith(
+      "/lib/docs",
+      80,
+      24,
+      expect.any(Function),
+      "claude-code",
+    );
   });
 });

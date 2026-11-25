@@ -25,7 +25,8 @@ export interface FileError {
     | "exists"
     | "invalid_name"
     | "trash_unavailable"
-    | "into_self";
+    | "into_self"
+    | "unknown_agent";
   message: string;
 }
 

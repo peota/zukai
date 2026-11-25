@@ -42,6 +42,7 @@ describe("useTerminals", () => {
       80,
       24,
       expect.any(Function),
+      undefined,
     );
     expect(result.current.state.terms).toEqual([
       { id: 3, cwd: "C:\\L", exited: undefined },
@@ -63,6 +64,19 @@ describe("useTerminals", () => {
 
     result.current.write(3, "ls\r");
     expect(a.terminalWrite).toHaveBeenCalledWith(3, "ls\r");
+  });
+
+  it("opens an agent: passes its id and keeps its name on the term", async () => {
+    const { result } = renderHook(() => useTerminals());
+    await act(() => result.current.open("/x", { id: "codex", name: "Codex" }));
+    expect(a.terminalOpen).toHaveBeenCalledWith(
+      "/x",
+      80,
+      24,
+      expect.any(Function),
+      "codex",
+    );
+    expect(result.current.state.terms[0].agent).toBe("Codex");
   });
 
   it("a view that registers again (StrictMode) still gets the early output once", async () => {
