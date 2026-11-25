@@ -47,18 +47,41 @@ describe("encodingLabel", () => {
   });
 });
 
-describe("StatusBar git chip", () => {
-  it("shows the branch with an icon and opens the Git view on click", () => {
-    const onClick = vi.fn();
-    setup({ git: { branch: "main", state: "none", onClick } });
+describe("StatusBar Git button", () => {
+  const git = (over: Partial<NonNullable<StatusBarProps["git"]>> = {}) => ({
+    branch: "main",
+    state: "none" as const,
+    open: false,
+    dirty: false,
+    onToggle: vi.fn(),
+    ...over,
+  });
+
+  it("shows the branch with an icon and toggles the Git panel on click", () => {
+    const g = git();
+    setup({ git: g });
     const chip = screen.getByRole("button", { name: /main/ });
     expect(chip.querySelector("svg")).not.toBeNull();
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(chip);
-    expect(onClick).toHaveBeenCalledOnce();
+    expect(g.onToggle).toHaveBeenCalledOnce();
+  });
+
+  it("looks pressed while the panel is open", () => {
+    setup({ git: git({ open: true }) });
+    const chip = screen.getByRole("button", { name: /main/ });
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    expect(chip.className).toContain("bg-row-sel");
+  });
+
+  it("says Git outside a repo", () => {
+    setup({ git: git({ branch: undefined }) });
+    const chip = screen.getByRole("button", { name: /^Git/ });
+    expect(chip.getAttribute("title")).toBe("Git");
   });
 
   it("names a rebase or merge in progress", () => {
-    setup({ git: { branch: "feat", state: "rebasing", onClick: vi.fn() } });
+    setup({ git: git({ branch: "feat", state: "rebasing" }) });
     expect(screen.getByRole("button", { name: /feat/ }).textContent).toContain(
       "rebasing",
     );
@@ -66,16 +89,42 @@ describe("StatusBar git chip", () => {
     expect(screen.getByText("rebasing").className).not.toContain("text-danger");
   });
 
-  it("names the branch in its tooltip, for a truncated name", () => {
-    setup({ git: { branch: "feat/long", state: "none", onClick: vi.fn() } });
+  it("names the branch and the shortcut in its tooltip", () => {
+    setup({ git: git({ branch: "feat/long", hint: "Ctrl+Shift+G" }) });
     expect(
       screen.getByRole("button", { name: /feat\/long/ }).getAttribute("title"),
-    ).toBe("feat/long: show in Git");
+    ).toBe("feat/long: Git (Ctrl+Shift+G)");
+  });
+
+  it("carries the amber dot while anything is uncommitted", () => {
+    setup({ git: git({ dirty: true }) });
+    expect(
+      screen.getByRole("img", { name: "Uncommitted changes" }),
+    ).toBeTruthy();
+  });
+
+  it("has no dot with everything committed", () => {
+    setup({ git: git() });
+    expect(
+      screen.queryByRole("img", { name: "Uncommitted changes" }),
+    ).toBeNull();
+  });
+
+  it("sits beside Ask, before it", () => {
+    setup({
+      git: git(),
+      ask: { open: false, onToggle: vi.fn() },
+    });
+    const g = screen.getByRole("button", { name: /main/ });
+    const a = screen.getByRole("button", { name: "Ask" });
+    expect(g.parentElement).toBe(a.parentElement);
+    expect(
+      g.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("is absent without the git prop", () => {
     setup();
-    expect(screen.queryByRole("button", { name: /main/ })).toBeNull();
     expect(document.querySelector("[data-git-chip]")).toBeNull();
   });
 });

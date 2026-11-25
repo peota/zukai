@@ -433,6 +433,7 @@ describe("useWorkspace settings", () => {
       terminalHeight: 280,
       terminalWidth: 480,
       askWidth: 400,
+      gitWidth: 320,
     });
     act(() =>
       result.current.setSettings({

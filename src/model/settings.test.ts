@@ -41,6 +41,7 @@ describe("parseSettings", () => {
       terminalHeight: 280,
       terminalWidth: 480,
       askWidth: 400,
+      gitWidth: 320,
     });
   });
 
@@ -73,6 +74,7 @@ describe("parseSettings", () => {
       terminalHeight: 280,
       terminalWidth: 480,
       askWidth: 400,
+      gitWidth: 320,
     });
   });
 });

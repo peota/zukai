@@ -48,6 +48,7 @@ import { baseName, languageRename } from "./files/paths";
 import { inShadow } from "./files/fileState";
 import { asFileError } from "./app/files/context";
 import { Sidebar } from "./ui/Sidebar";
+import { GitPanel } from "./ui/git/GitPanel";
 import { SidebarToggle } from "./ui/SidebarToggle";
 import { pinnedItems, recentItems } from "./ui/Pinned";
 import { useGoneClosed } from "./app/useGoneClosed";
@@ -77,6 +78,7 @@ const SETTINGS_HINT = platform === "mac" ? "⌘," : "Ctrl+,";
 const PREVIEW_HINT = platform === "mac" ? "⇧⌘V" : "Ctrl+Shift+V";
 const RICH_HINT = platform === "mac" ? "⇧⌘M" : "Ctrl+Shift+M";
 const ASK_HINT = platform === "mac" ? "⌘J" : "Ctrl+J";
+const GIT_HINT = platform === "mac" ? "⇧⌘G" : "Ctrl+Shift+G";
 const NO_TERMINAL_FOLDER = "Choose a Library folder to open a terminal";
 
 // xterm loads with the first terminal, never at startup.
@@ -132,7 +134,9 @@ export default function App() {
   const [focusSignal, setFocusSignal] = useState(0);
   /** Give the keyboard back to the editor. */
   const refocus = useCallback(() => setFocusSignal((n) => n + 1), []);
-  const { showNotice } = w;
+  const { showNotice, setGitOpen } = w;
+  /** The Git panel shows only while git sync is on (and known to be). */
+  const gitOpen = w.gitOpen && w.git.enabled;
 
   const terms = useTerminals();
   const termState = terms.state;
@@ -152,6 +156,11 @@ export default function App() {
     ...(libRoot !== null && libAvailable ? [libRoot] : []),
     ...libAdded.filter((a) => a.available).map((a) => a.path),
   ];
+  /** The Git panel's folders: the Library root, then the added ones. */
+  const gitFolders = libraryFolders.map((path, i) => ({
+    path,
+    name: i === 0 && path === libRoot ? "Library" : baseName(path),
+  }));
   /**
    * The Git view's folder: the one last picked this session, else the
    * library folder holding the active File (a diff Tab: its folder). Null
@@ -228,7 +237,13 @@ export default function App() {
         if (!aiReady) return;
         // Hiding gives the keyboard back; showing, the panel takes it.
         if (askShown) refocus();
+        // Ask and Git take turns on the right.
+        else setGitOpen(false);
         setAskOpen(!askShown);
+        return;
+      } else if (cmd.type === "toggleGit") {
+        if (gitOpen) refocus();
+        setGitOpen(!gitOpen);
         return;
       } else await workspaceRun(cmd);
       // The other editor takes the keyboard.
@@ -244,8 +259,16 @@ export default function App() {
       termFolder,
       aiReady,
       askShown,
+      gitOpen,
+      setGitOpen,
     ],
   );
+  // Opening Git (shortcut, status bar) puts Ask away: they take turns.
+  // Opening Ask closes Git in the same update, so this never undoes that.
+  if (gitOpen && askOpen) setAskOpen(false);
+  /** Bumped to open Add folder from git… from the Git panel. */
+  const [cloneRequest, setCloneRequest] = useState(0);
+  const [cloning, setCloning] = useState(false);
   /** The side a dragged Tab would split the editor area on, while shown. */
   const [dropZone, setDropZone] = useState<SplitOrientation | null>(null);
   const [tabMenu, setTabMenu] = useState<{
@@ -697,14 +720,8 @@ export default function App() {
         onRemoveFolder={(path) => void lib.removeFolder(path)}
         onOpenTerminal={openTerminal}
         git={w.git}
-        view={w.sidebarView}
-        onView={w.setSidebarView}
-        gitFolder={gitFolder}
-        onGitFolder={w.setGitFolder}
-        unsavedUnder={w.unsavedUnder}
-        onSaveAll={() => void w.saveAll()}
-        onOpenDiff={w.openDiff}
-        onOpenFile={(path) => void w.openPaths([path]).then(refocus)}
+        cloneRequest={cloneRequest}
+        onCloning={setCloning}
         onCloneFolder={lib.cloneFolder}
         platform={platform}
       />
@@ -849,6 +866,31 @@ export default function App() {
               </Suspense>
             )}
           </div>
+          {gitOpen && (
+            <GitPanel
+              width={w.settings.gitWidth}
+              onWidth={(px) => w.setSettings({ gitWidth: px })}
+              onClose={() => {
+                setGitOpen(false);
+                refocus();
+              }}
+              git={w.git}
+              folders={gitFolders}
+              defaultFolder={gitFolder}
+              onSelectFolder={w.setGitFolder}
+              unsavedUnder={w.unsavedUnder}
+              onSaveAll={() => void w.saveAll()}
+              onOpenDiff={w.openDiff}
+              onOpenFile={(path) => void w.openPaths([path]).then(refocus)}
+              onCopyPath={lib.copyPath}
+              onAddFromGit={() => {
+                // The clone's progress row shows in the Library tree.
+                if (!w.sidebar.open) w.toggleSidebar();
+                setCloneRequest((n) => n + 1);
+              }}
+              cloning={cloning}
+            />
+          )}
           {askShown && (
             <Suspense fallback={null}>
               <AskPanel
@@ -914,11 +956,17 @@ export default function App() {
           onSettings={() => setSettingsOpen(true)}
           settingsHint={SETTINGS_HINT}
           git={
-            gitChip
+            w.git.enabled
               ? {
-                  branch: gitChip.branch,
-                  state: gitChip.state,
-                  onClick: () => w.showGitFor(gitChip.folder),
+                  branch: gitChip?.branch,
+                  state: gitChip?.state ?? "none",
+                  open: gitOpen,
+                  dirty: w.git.anyDirty,
+                  hint: GIT_HINT,
+                  onToggle: () =>
+                    gitChip && !gitOpen
+                      ? w.showGitFor(gitChip.folder)
+                      : void run({ type: "toggleGit" }),
                 }
               : undefined
           }

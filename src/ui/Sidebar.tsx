@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 import type { AddedState, Entry } from "../library/api";
 import type { Row, TreeState } from "../library/tree";
@@ -14,12 +14,8 @@ import {
 } from "./icons";
 import { gitCancel, type GitError, type PickedParent } from "../git/api";
 import type { GitSyncApi } from "../git/useGitSync";
-import { baseName } from "../files/paths";
-import type { DiffTarget, SidebarView } from "../model/types";
 import { CloneDialog, type CloneForm, type CloneInitial } from "./CloneDialog";
 import { DragGhost } from "./DragGhost";
-import { GitView } from "./git/GitView";
-import { SidebarViewSwitch } from "./git/SidebarViewSwitch";
 import { SectionHeading } from "./SectionHeading";
 import { fileIcon, Icon } from "./icons";
 import { ScratchpadList, type ScratchpadItem } from "./ScratchpadList";
@@ -113,24 +109,13 @@ export interface SidebarProps {
   onOpenTerminal(path: string): void;
   /** Git sync (spec 4): nothing git shows while `git.enabled` is false. */
   git: GitSyncApi;
-  /** Files or Git, below the switch; Files whenever git sync is off. */
-  view: SidebarView;
-  onView(v: SidebarView): void;
   /**
-   * The folder the Git view shows: the one last picked, else the active
-   * tab's library folder; null keeps what shows (first: the Library root).
+   * Bumped to open the Add folder from git… dialog from outside (the Git
+   * panel); ignored while a clone runs.
    */
-  gitFolder: string | null;
-  /** A folder picked in the Git view. */
-  onGitFolder(folder: string): void;
-  /** Open tabs under `folder` with edits not yet on disk. */
-  unsavedUnder(folder: string): number;
-  /** Save all, from the commit box's unsaved-files line. */
-  onSaveAll(): void;
-  /** A change in the Git view: its diff tab. */
-  onOpenDiff(target: DiffTarget): void;
-  /** Open file, from a change's menu (an absolute path). */
-  onOpenFile(path: string): void;
+  cloneRequest?: number;
+  /** A clone started or finished: one runs at a time. */
+  onCloning?(on: boolean): void;
   /**
    * Add folder from git… (spec 4.2): runs the clone; resolves to its error,
    * or null once the new folder is in the roots. Never rejects.
@@ -195,9 +180,18 @@ interface CloneProps {
 export function Sidebar(props: SidebarProps) {
   // Held here, not in the panel, so a clone that fails while the sidebar is
   // closed still brings its dialog back.
-  const { onCloneFolder, git, view, onView } = props;
+  const { onCloneFolder, cloneRequest, onCloning } = props;
   const [dialog, setDialog] = useState<CloneInitial | null>(null);
   const [cloning, setCloning] = useState<Cloning | null>(null);
+  const [seenRequest, setSeenRequest] = useState(cloneRequest);
+  if (cloneRequest !== seenRequest) {
+    setSeenRequest(cloneRequest);
+    if (cloning === null) setDialog(EMPTY_CLONE);
+  }
+  const running = cloning !== null;
+  useEffect(() => {
+    onCloning?.(running);
+  }, [running, onCloning]);
 
   const clone = (
     req: CloneForm,
@@ -208,7 +202,6 @@ export function Sidebar(props: SidebarProps) {
     setCloning({ opId, name: shown.name });
     // Its placeholder (progress, Cancel) shows in the Library tree, where
     // the new folder will appear.
-    if (git.enabled && view === "git") onView("files");
     void onCloneFolder(req, opId).then((error) => {
       setCloning(null);
       if (error && error.kind !== "cancelled") {
@@ -286,14 +279,6 @@ function SidebarPanel({
   onRemoveFolder,
   onOpenTerminal,
   git,
-  view,
-  onView,
-  gitFolder,
-  onGitFolder,
-  unsavedUnder,
-  onSaveAll,
-  onOpenDiff,
-  onOpenFile,
   cloning,
   onStartClone,
   platform: platformProp,
@@ -797,16 +782,6 @@ function SidebarPanel({
     status = "Nothing here yet. Use + to add a note.";
   }
 
-  /** With git sync off the sidebar is Files, whatever was last chosen. */
-  const showGit = git.enabled && view === "git";
-  /** The Git view's folders: the Library root, then the added ones. */
-  const gitFolders = [
-    ...(root !== null && available ? [{ path: root, name: "Library" }] : []),
-    ...added
-      .filter((a) => a.available)
-      .map((a) => ({ path: a.path, name: baseName(a.path) })),
-  ];
-
   /** Where the cloned folder will appear: after the last added folder. */
   const clonePlaceholder = cloning && (
     <button
@@ -899,161 +874,137 @@ function SidebarPanel({
         (platform === "mac" ? "pt-11" : "pt-2.5")
       }
     >
-      {git.enabled && (
-        <SidebarViewSwitch view={view} dirty={git.anyDirty} onView={onView} />
-      )}
-
-      {showGit ? (
-        <GitView
-          git={git}
-          folders={gitFolders}
-          defaultFolder={gitFolder}
-          onSelectFolder={onGitFolder}
-          unsavedUnder={unsavedUnder}
-          onSaveAll={onSaveAll}
-          onOpenDiff={onOpenDiff}
-          onOpenFile={onOpenFile}
-          onCopyPath={onCopyPath}
-          onAddFromGit={onStartClone}
-          cloning={cloning !== null}
+      <label className="mx-0.5 mb-1 flex h-8 shrink-0 items-center gap-2 rounded-[8px] border border-hairline bg-sunken px-2.5 text-ui text-faint focus-within:border-accent">
+        <SearchIcon />
+        <input
+          type="search"
+          value={search.query}
+          placeholder="Search Library"
+          aria-label="Search Library"
+          spellCheck={false}
+          disabled={!available}
+          onChange={(e) => onSearch(e.target.value)}
+          onKeyDown={onSearchKey}
+          className="min-w-0 flex-1 bg-transparent text-text outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:hidden"
         />
-      ) : (
-        <>
-          <label className="mx-0.5 mb-1 flex h-8 shrink-0 items-center gap-2 rounded-[8px] border border-hairline bg-sunken px-2.5 text-ui text-faint focus-within:border-accent">
-            <SearchIcon />
-            <input
-              type="search"
-              value={search.query}
-              placeholder="Search Library"
-              aria-label="Search Library"
-              spellCheck={false}
-              disabled={!available}
-              onChange={(e) => onSearch(e.target.value)}
-              onKeyDown={onSearchKey}
-              className="min-w-0 flex-1 bg-transparent text-text outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:hidden"
-            />
-          </label>
+      </label>
 
-          <TabList
-            label="Recent"
-            items={recent}
-            activeId={activeId}
-            onOpen={onRecentOpen}
-          />
+      <TabList
+        label="Recent"
+        items={recent}
+        activeId={activeId}
+        onOpen={onRecentOpen}
+      />
 
-          <Pinned
-            items={pinned}
-            activeId={activeId}
-            onOpen={onPinnedOpen}
-            onContextMenu={showPinnedMenu}
-          />
+      <Pinned
+        items={pinned}
+        activeId={activeId}
+        onOpen={onPinnedOpen}
+        onContextMenu={showPinnedMenu}
+      />
 
-          <SectionHeading label="LIBRARY">
-            {/* Quiet until the sidebar is pointed at or focused; an empty
-            Library keeps them up, since its hint points at them. */}
-            <span
-              className={
-                "flex items-center gap-0.5 " +
-                (libraryEmpty
-                  ? ""
-                  : "opacity-0 transition-opacity duration-150 ease-out group-focus-within/side:opacity-100 group-hover/side:opacity-100 motion-reduce:transition-none")
-              }
-            >
-              {root !== null &&
-                available &&
-                quickActions.map((a) => (
-                  <button
-                    key={a.what}
-                    type="button"
-                    aria-label={a.label}
-                    title={a.label}
-                    onClick={() => void create(root, a.what)}
-                    className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
-                  >
-                    {a.icon}
-                  </button>
-                ))}
-              {available && (
-                <button
-                  type="button"
-                  aria-label="Collapse all"
-                  title={`Collapse all (${formatKeys(["Mod", "Shift", "C"], platform)})`}
-                  disabled={tree.expanded.size === 0}
-                  onClick={onCollapseAll}
-                  className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint"
-                >
-                  <CollapseAllIcon />
-                </button>
-              )}
+      <SectionHeading label="LIBRARY">
+        {/* Quiet until the sidebar is pointed at or focused; an empty
+        Library keeps them up, since its hint points at them. */}
+        <span
+          className={
+            "flex items-center gap-0.5 " +
+            (libraryEmpty
+              ? ""
+              : "opacity-0 transition-opacity duration-150 ease-out group-focus-within/side:opacity-100 group-hover/side:opacity-100 motion-reduce:transition-none")
+          }
+        >
+          {root !== null &&
+            available &&
+            quickActions.map((a) => (
               <button
-                ref={moreRef}
+                key={a.what}
                 type="button"
-                aria-label="Library actions"
-                title="Library actions"
-                data-z-library-more=""
-                onClick={toggleMoreMenu}
+                aria-label={a.label}
+                title={a.label}
+                onClick={() => void create(root, a.what)}
                 className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
               >
-                <MoreIcon />
+                {a.icon}
               </button>
-            </span>
-          </SectionHeading>
-
-          {available ? (
-            <>
-              {status && (
-                <div className="shrink-0 px-2 py-1 text-faint">{status}</div>
-              )}
-              {libraryTree}
-            </>
-          ) : (
-            <>
-              <div
-                className={
-                  "px-2 py-1 text-muted " +
-                  (rows.length > 0 ? "shrink-0" : "min-h-0 flex-1")
-                }
-              >
-                <p className="m-0">The Library folder isn't available.</p>
-                {root && (
-                  <p className="m-0 mt-1 text-ui-sm break-all text-faint">
-                    {root}
-                  </p>
-                )}
-                <div className="mt-3 flex flex-col items-start gap-1.5">
-                  <button
-                    type="button"
-                    onClick={onChooseRoot}
-                    className="rounded-[6px] bg-accent px-2.5 py-1 font-medium text-accent-fg"
-                  >
-                    Choose Library folder…
-                  </button>
-                  {root && (
-                    <button
-                      type="button"
-                      onClick={onRecreateRoot}
-                      className="rounded-[6px] px-2.5 py-1 text-muted hover:bg-row-hover hover:text-text"
-                    >
-                      Create it again
-                    </button>
-                  )}
-                </div>
-              </div>
-              {(rows.length > 0 || cloning) && libraryTree}
-            </>
+            ))}
+          {available && (
+            <button
+              type="button"
+              aria-label="Collapse all"
+              title={`Collapse all (${formatKeys(["Mod", "Shift", "C"], platform)})`}
+              disabled={tree.expanded.size === 0}
+              onClick={onCollapseAll}
+              className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint"
+            >
+              <CollapseAllIcon />
+            </button>
           )}
+          <button
+            ref={moreRef}
+            type="button"
+            aria-label="Library actions"
+            title="Library actions"
+            data-z-library-more=""
+            onClick={toggleMoreMenu}
+            className="flex size-6 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
+          >
+            <MoreIcon />
+          </button>
+        </span>
+      </SectionHeading>
 
-          <ScratchpadList
-            items={scratchpads}
-            activeId={activeId}
-            onActivate={onScratchpadActivate}
-            onContextMenu={showScratchpadMenu}
-            dragHandlers={(id) => drag.handlers({ kind: "scratchpad", id })}
-            draggedId={dragSource?.kind === "scratchpad" ? dragSource.id : null}
-            swallowClick={drag.swallowClick}
-          />
+      {available ? (
+        <>
+          {status && (
+            <div className="shrink-0 px-2 py-1 text-faint">{status}</div>
+          )}
+          {libraryTree}
+        </>
+      ) : (
+        <>
+          <div
+            className={
+              "px-2 py-1 text-muted " +
+              (rows.length > 0 ? "shrink-0" : "min-h-0 flex-1")
+            }
+          >
+            <p className="m-0">The Library folder isn't available.</p>
+            {root && (
+              <p className="m-0 mt-1 text-ui-sm break-all text-faint">{root}</p>
+            )}
+            <div className="mt-3 flex flex-col items-start gap-1.5">
+              <button
+                type="button"
+                onClick={onChooseRoot}
+                className="rounded-[6px] bg-accent px-2.5 py-1 font-medium text-accent-fg"
+              >
+                Choose Library folder…
+              </button>
+              {root && (
+                <button
+                  type="button"
+                  onClick={onRecreateRoot}
+                  className="rounded-[6px] px-2.5 py-1 text-muted hover:bg-row-hover hover:text-text"
+                >
+                  Create it again
+                </button>
+              )}
+            </div>
+          </div>
+          {(rows.length > 0 || cloning) && libraryTree}
         </>
       )}
+
+      <ScratchpadList
+        items={scratchpads}
+        activeId={activeId}
+        onActivate={onScratchpadActivate}
+        onContextMenu={showScratchpadMenu}
+        dragHandlers={(id) => drag.handlers({ kind: "scratchpad", id })}
+        draggedId={dragSource?.kind === "scratchpad" ? dragSource.id : null}
+        swallowClick={drag.swallowClick}
+      />
 
       <WidthHandle width={width} onWidth={onWidth} />
 

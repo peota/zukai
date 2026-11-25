@@ -608,7 +608,6 @@ function demoSession(params: URLSearchParams): string {
       open: true,
       width: Number(params.get("width") ?? 260),
       expanded: [join(ROOT, "incidents"), join(ROOT, "snippets")],
-      view: params.get("view") === "git" ? "git" : "files",
     },
     fontSize: 14,
     settings: {
@@ -643,6 +642,23 @@ if (params.has("ask")) {
         code: "KeyJ",
         ctrlKey: !mac,
         metaKey: mac,
+        bubbles: true,
+      }),
+    );
+  }, 1500);
+}
+
+// ?view=git opens the Git panel once the app is up (Mod+Shift+G).
+if (params.get("view") === "git") {
+  setTimeout(() => {
+    const mac = navigator.userAgent.includes("Mac");
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "G",
+        code: "KeyG",
+        ctrlKey: !mac,
+        metaKey: mac,
+        shiftKey: true,
         bubbles: true,
       }),
     );

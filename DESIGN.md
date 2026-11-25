@@ -210,12 +210,10 @@ components:
     typography: "{typography.sidebar}"
     rounded: "{rounded.md}"
     height: "{spacing.row}"
-  view-switch:
-    backgroundColor: "transparent"
-    textColor: "{colors.paper-muted}"
-    rounded: "{rounded.track}"
-    padding: "2px"
-    height: "30px"
+  git-panel:
+    backgroundColor: "{colors.paper-chrome}"
+    textColor: "{colors.paper-text}"
+    width: "320px"
   git-view:
     backgroundColor: "transparent"
     textColor: "{colors.paper-text}"

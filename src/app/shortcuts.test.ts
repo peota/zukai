@@ -166,7 +166,7 @@ describe("the Git view toggle", () => {
         ev("KeyG", { key: "G", ctrlKey: true, shiftKey: true }),
         "windows",
       ),
-    ).toEqual({ type: "toggleGitView" });
+    ).toEqual({ type: "toggleGit" });
     expect(
       matchShortcut(ev("KeyG", { key: "g", ctrlKey: true }), "windows"),
     ).toBeNull();
@@ -177,7 +177,7 @@ describe("the Git view toggle", () => {
         ev("KeyG", { key: "G", metaKey: true, shiftKey: true }),
         "mac",
       ),
-    ).toEqual({ type: "toggleGitView" });
+    ).toEqual({ type: "toggleGit" });
     expect(
       matchShortcut(
         ev("KeyG", { key: "G", ctrlKey: true, shiftKey: true }),

@@ -31,7 +31,6 @@ export const DEFAULT_SIDEBAR: Readonly<SidebarState> = Object.freeze({
   width: 260,
   expanded: [],
   recent: [],
-  view: "files",
 });
 
 /** The editor's text size in px (Mod+= / Mod+- / Mod+wheel change it). */
@@ -175,7 +174,6 @@ function parseSidebar(v: unknown): SidebarState {
     recent: Array.isArray(v.recent)
       ? v.recent.filter((x): x is string => typeof x === "string")
       : [],
-    view: v.view === "git" ? "git" : "files",
   };
 }
 
