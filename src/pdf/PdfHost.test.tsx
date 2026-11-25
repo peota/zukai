@@ -734,6 +734,49 @@ describe("PdfHost", () => {
     expect(v.currentScale).toBeCloseTo(0.5);
   });
 
+  it("default_fit_never_passes_200_percent", async () => {
+    width = 3040; // a wide window: page width alone would be 300%
+    await setup();
+    const v = await loadedViewer();
+    await pagesInit(v);
+    expect(v.currentScale).toBeCloseTo(2);
+    // Still the fitted zoom, not a zoom the user chose.
+    store.set.mockClear();
+    scrollTo(v, 250);
+    expect(store.set).toHaveBeenLastCalledWith(
+      PATH,
+      expect.objectContaining({ zoom: "fit-width" }),
+    );
+  });
+
+  it("capped_fit_follows_resizes", async () => {
+    width = 3040;
+    await setup();
+    const v = await loadedViewer();
+    await pagesInit(v);
+    width = 540;
+    resize();
+    expect(v.currentScale).toBeCloseTo(0.5);
+    width = 3040;
+    resize();
+    expect(v.currentScale).toBeCloseTo(2);
+  });
+
+  it("mod_0_fits_with_the_cap", async () => {
+    store.get.mockResolvedValue({
+      page: 1,
+      offsetInPage: 0,
+      zoom: 1.6,
+      updatedAt: 1,
+    });
+    width = 3040;
+    await setup();
+    const v = await loadedViewer();
+    await pagesInit(v);
+    modKey("0");
+    expect(v.currentScale).toBeCloseTo(2);
+  });
+
   it("keeps_set_zoom_on_resize", async () => {
     store.get.mockResolvedValue({
       page: 1,

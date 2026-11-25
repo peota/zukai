@@ -57,6 +57,27 @@ const WHEEL_STEP = 1.1;
  * than this would get a negative scale.
  */
 const FIT_PADDING = 40;
+/**
+ * The fitted zoom never goes past 200%: in a wide window page width alone
+ * would blow a portrait page up far past reading size.
+ */
+const MAX_FIT = 2;
+
+/** Viewers showing the fitted zoom (not one the user chose). */
+const fitting = new WeakMap<PDFViewer, boolean>();
+
+/** Fit the page's width, up to MAX_FIT. */
+function fitWidth(viewer: PDFViewer) {
+  fitting.set(viewer, true);
+  viewer.currentScaleValue = "page-width";
+  if (viewer.currentScale > MAX_FIT) viewer.currentScale = MAX_FIT;
+}
+
+/** A zoom the user chose: kept as is, even when the window resizes. */
+function setZoom(viewer: PDFViewer, zoom: number) {
+  fitting.set(viewer, false);
+  viewer.currentScale = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+}
 
 const TOO_LARGE = "Too large to show in Zukai.";
 const PASSWORD = "This PDF is password-protected.";
@@ -109,17 +130,16 @@ function positionOf(
   return {
     page,
     offsetInPage: d && h > 0 ? clamp((top - d.offsetTop) / h, 0, 1) : 0,
-    zoom:
-      viewer.currentScaleValue === "page-width"
-        ? "fit-width"
-        : clamp(viewer.currentScale, MIN_ZOOM, MAX_ZOOM),
+    zoom: fitting.get(viewer)
+      ? "fit-width"
+      : clamp(viewer.currentScale, MIN_ZOOM, MAX_ZOOM),
   };
 }
 
 /** Shows `pos` (fit width when there is none), its page clamped. */
 function restore(viewer: PDFViewer, pos: Position | null | undefined) {
-  if (!pos || pos.zoom === "fit-width") viewer.currentScaleValue = "page-width";
-  else viewer.currentScale = pos.zoom;
+  if (!pos || pos.zoom === "fit-width") fitWidth(viewer);
+  else setZoom(viewer, pos.zoom);
   if (!pos) return;
   const pageNumber = clamp(pos.page, 1, viewer.pagesCount);
   const vp = pageView(viewer, pageNumber)?.viewport;
@@ -323,7 +343,7 @@ export function PdfHost({
       const width = container.clientWidth;
       if (!restoredRef.current || width === fittedWidth) return;
       fittedWidth = width;
-      if (viewer.currentScaleValue !== "page-width") return;
+      if (!fitting.get(viewer)) return;
       const pos = positionOf(viewer, container);
       restore(viewer, pos && { ...pos, zoom: "fit-width" });
     };
@@ -392,23 +412,15 @@ export function PdfHost({
       const otherMod = mac ? e.ctrlKey : e.metaKey;
       if (mod && !otherMod && !e.altKey) {
         if (e.key === "=" || e.key === "+" || e.code === "NumpadAdd") {
-          viewer.currentScale = clamp(
-            viewer.currentScale * KEY_STEP,
-            MIN_ZOOM,
-            MAX_ZOOM,
-          );
+          setZoom(viewer, viewer.currentScale * KEY_STEP);
         } else if (e.key === "-" || e.code === "NumpadSubtract") {
-          viewer.currentScale = clamp(
-            viewer.currentScale / KEY_STEP,
-            MIN_ZOOM,
-            MAX_ZOOM,
-          );
+          setZoom(viewer, viewer.currentScale / KEY_STEP);
         } else if (
           e.key === "0" ||
           e.code === "Digit0" ||
           e.code === "Numpad0"
         ) {
-          viewer.currentScaleValue = "page-width";
+          fitWidth(viewer);
         } else {
           return;
         }
@@ -457,6 +469,7 @@ export function PdfHost({
       // pdf.js takes the pointer relative to the container's offset parent
       // (it subtracts the container's offsetLeft / offsetTop).
       const r = container.getBoundingClientRect();
+      fitting.set(viewer, false);
       viewer.updateScale({
         scaleFactor: to / from,
         origin: [
