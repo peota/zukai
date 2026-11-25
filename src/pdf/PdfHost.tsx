@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   EventBus,
+  PDFFindController,
   PDFLinkService,
   PDFViewer,
-} from "pdfjs-dist/web/pdf_viewer.mjs";
-import type { PDFDocumentLoadingTask } from "pdfjs-dist";
+} from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
+import type { PDFDocumentLoadingTask } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { detectPlatform } from "../app/shortcuts";
 import { isEditorTarget } from "../app/browserGuard";
 import type { FindRequest } from "../find/findExtension";
@@ -43,6 +44,7 @@ interface Session {
   lib: Pdfjs["lib"];
   eventBus: EventBus;
   linkService: PDFLinkService;
+  findController: PDFFindController;
   viewer: PDFViewer;
 }
 
@@ -50,6 +52,11 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 5;
 const KEY_STEP = 1.25;
 const WHEEL_STEP = 1.1;
+/**
+ * pdf.js's fit-width margin (its SCROLLBAR_PADDING): a container no wider
+ * than this would get a negative scale.
+ */
+const FIT_PADDING = 40;
 
 const TOO_LARGE = "Too large to show in Zukai.";
 const PASSWORD = "This PDF is password-protected.";
@@ -186,36 +193,50 @@ export function PdfHost({
   // pdf.js and one viewer for this Tab's life; documents come and go below.
   useEffect(() => {
     let live = true;
+    /** Ends the viewer's own listeners (scroll, resize) with this Tab. */
+    const teardown = new AbortController();
     loadPdfjs().then(
       ({ lib, viewer: v }) => {
         const container = containerRef.current;
         const inner = innerRef.current;
         if (!live || !container || !inner) return;
-        const eventBus = new v.EventBus();
-        const linkService = new v.PDFLinkService({ eventBus });
-        // Web links stay inert; "Open with default app" is the way out.
-        linkService.externalLinkEnabled = false;
-        // Find (the find bar's "find" events); the viewer hands it each
-        // document and draws its highlights in the text layer.
-        const findController = new v.PDFFindController({
-          eventBus,
-          linkService,
-        });
-        const viewer = new v.PDFViewer({
-          container,
-          viewer: inner,
-          eventBus,
-          linkService,
-          findController,
-          textLayerMode: 1, // TextLayerMode.ENABLE
-          annotationMode: lib.AnnotationMode.ENABLE,
-          // Read-only: no annotation editor. Its default (NONE) is a live
-          // mode that installs window keys and document-wide drag/drop.
-          annotationEditorMode: lib.AnnotationEditorType.DISABLE,
-        });
-        linkService.setViewer(viewer);
-        viewerRef.current = viewer;
-        setPdf({ lib, eventBus, linkService, viewer });
+        // pdf.js can throw while it sets up (a webview without something it
+        // needs): the notice then, not a blank Tab.
+        try {
+          const eventBus = new v.EventBus();
+          const linkService = new v.PDFLinkService({ eventBus });
+          // Web links stay inert; "Open with default app" is the way out.
+          linkService.externalLinkEnabled = false;
+          // Find (the find bar's "find" events); the viewer hands it each
+          // document and draws its highlights in the text layer.
+          const findController = new v.PDFFindController({
+            eventBus,
+            linkService,
+          });
+          const options: ConstructorParameters<typeof v.PDFViewer>[0] & {
+            abortSignal: AbortSignal;
+          } = {
+            container,
+            viewer: inner,
+            eventBus,
+            linkService,
+            findController,
+            textLayerMode: 1, // TextLayerMode.ENABLE
+            annotationMode: lib.AnnotationMode.ENABLE,
+            // Read-only: no annotation editor. Its default (NONE) is a live
+            // mode that installs window keys and document-wide drag/drop.
+            annotationEditorMode: lib.AnnotationEditorType.DISABLE,
+            // Not in pdf.js's typings, but read by its constructor.
+            abortSignal: teardown.signal,
+          };
+          const viewer = new v.PDFViewer(options);
+          linkService.setViewer(viewer);
+          viewerRef.current = viewer;
+          setPdf({ lib, eventBus, linkService, findController, viewer });
+        } catch (err) {
+          console.error("set up pdf viewer", err);
+          setNotice(CANT_SHOW);
+        }
       },
       (err: unknown) => {
         console.error("load pdf.js", err);
@@ -224,6 +245,7 @@ export function PdfHost({
     );
     return () => {
       live = false;
+      teardown.abort();
     };
   }, []);
 
@@ -259,6 +281,20 @@ export function PdfHost({
       lastRef.current = { path, pos };
       pdfPositions.set(path, pos);
     };
+    /** Laid out with room for a page: a restore or a fit means something. */
+    const sized = () =>
+      container.clientHeight > 0 && container.clientWidth > FIT_PADDING;
+    /** A restore waiting for the container to have a size. */
+    let pending: { pos: Position | null | undefined } | null = null;
+    /** The width the zoom was last fitted to. */
+    let fittedWidth = 0;
+    const apply = (pos: Position | null | undefined) => {
+      restore(viewer, pos);
+      fittedWidth = container.clientWidth;
+      restoredRef.current = true;
+      if (pos) lastRef.current = { path, pos };
+      report();
+    };
     const onPagesInit = async () => {
       let pos: Position | null | undefined = carried;
       if (!pos) {
@@ -269,11 +305,30 @@ export function PdfHost({
         }
       }
       if (!live) return;
-      restore(viewer, pos);
-      restoredRef.current = true;
-      if (pos) lastRef.current = { path, pos };
-      report();
+      // Hidden, pdf.js can't scroll or fit: wait for a size (below).
+      if (sized()) apply(pos);
+      else pending = { pos };
     };
+    // A size at last applies a waiting restore; a new width refits a
+    // fit-width zoom (window resized, a Split, the sidebar), on the same
+    // place. pdf.js's own observer only tracks the height.
+    const onResize = () => {
+      if (!live || !sized()) return;
+      if (pending) {
+        const { pos } = pending;
+        pending = null;
+        apply(pos);
+        return;
+      }
+      const width = container.clientWidth;
+      if (!restoredRef.current || width === fittedWidth) return;
+      fittedWidth = width;
+      if (viewer.currentScaleValue !== "page-width") return;
+      const pos = positionOf(viewer, container);
+      restore(viewer, pos && { ...pos, zoom: "fit-width" });
+    };
+    const resizes = new ResizeObserver(onResize);
+    resizes.observe(container);
     const onScale = () => {
       report();
       save();
@@ -307,6 +362,7 @@ export function PdfHost({
       save();
       live = false;
       restoredRef.current = false;
+      resizes.disconnect();
       container.removeEventListener("scroll", save);
       eventBus.off("pagesinit", onPagesInit);
       eventBus.off("pagechanging", report);
@@ -398,9 +454,15 @@ export function PdfHost({
         MAX_ZOOM,
       );
       if (to === from) return;
+      // pdf.js takes the pointer relative to the container's offset parent
+      // (it subtracts the container's offsetLeft / offsetTop).
+      const r = container.getBoundingClientRect();
       viewer.updateScale({
         scaleFactor: to / from,
-        origin: [e.clientX, e.clientY],
+        origin: [
+          e.clientX - r.left + container.offsetLeft,
+          e.clientY - r.top + container.offsetTop,
+        ],
       });
     };
     container.addEventListener("wheel", onWheel, { passive: false });
@@ -459,9 +521,16 @@ export function PdfHost({
       input?.select();
       return;
     }
-    // The last search shows its highlights again, without moving.
+    // The last search shows its highlights again, without moving: only on
+    // a find controller that has it. A new one (the Tab shown again, or the
+    // File reloaded) would take it as a new search and go to its first
+    // match, moving (and saving) the reading position.
     const last = findStates.get(tab.id);
-    if (last?.search) dispatchFind(last, "highlightallchange");
+    if (last?.search && pdf?.findController.state) {
+      dispatchFind(last, "highlightallchange");
+    } else {
+      setFindCount(null);
+    }
     setFind({ seq });
   };
 
