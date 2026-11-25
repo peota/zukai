@@ -53,7 +53,7 @@ import {
   GitCompare,
   Loader2,
 } from "lucide-react";
-import { CANVAS_EXT, IMAGE_EXTS } from "../model/kinds";
+import { CANVAS_EXT, IMAGE_EXTS, PDF_EXT } from "../model/kinds";
 
 /** The app's line icons (Lucide, one stroke weight throughout). */
 export type IconName =
@@ -66,6 +66,7 @@ export type IconName =
   | "markdown"
   | "canvas"
   | "image"
+  | "pdf"
   | "data"
   | "table"
   | "code"
@@ -146,6 +147,7 @@ export function fileIcon(name: string): IconName {
   const ext = name.slice(dot).toLowerCase();
   if (ext === ".md" || ext === ".markdown") return "markdown";
   if (ext === CANVAS_EXT) return "canvas";
+  if (ext === PDF_EXT) return "pdf";
   if (IMAGE_EXTS.includes(ext)) return "image";
   if (TABLE_EXTS.includes(ext)) return "table";
   if (DATA_EXTS.includes(ext)) return "data";
@@ -165,6 +167,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   markdown: FileText,
   canvas: PenTool,
   image: Image,
+  pdf: FileText,
   data: Braces,
   table: FileSpreadsheet,
   code: FileCode,

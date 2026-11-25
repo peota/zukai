@@ -33,6 +33,9 @@ function kindRefusal(kind: Kind, target: string): string | null {
   const into = kindOf(target);
   if (into === kind) return null;
   switch (kind) {
+    case "pdf":
+      // Like an image: Task 5 makes this explicit.
+      return IMAGE_READ_ONLY;
     case "diff":
       // Never asked: saveTo stops a diff Tab first.
       return null;
