@@ -127,7 +127,8 @@ pub async fn file_change_extension(
     .await
 }
 
-/// Over `MAX_OPEN_BYTES` the file isn't read: the fingerprint has the real
+/// Over its path's `open_cap` (`MAX_PDF_BYTES` for a PDF, else
+/// `MAX_OPEN_BYTES`) the file isn't read: the fingerprint has the real
 /// mtime and size and an empty hash, which never matches (always "changed").
 #[tauri::command]
 pub async fn file_fingerprint(
