@@ -110,4 +110,21 @@ describe("createPdfPositionStore", () => {
     await store.get("/old.pdf");
     expect(io.read).toHaveBeenCalledTimes(1);
   });
+
+  it("never writes while the read is failing, then merges once it succeeds", async () => {
+    const existing = JSON.stringify({ "/old.pdf": pos({ page: 9 }) });
+    const { io, store } = make(existing);
+    io.read.mockRejectedValue(new Error("locked"));
+    store.set("/new.pdf", { page: 2, offsetInPage: 0, zoom: 1 });
+    await store.flush();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(io.write).not.toHaveBeenCalled();
+    expect((await store.get("/new.pdf"))?.page).toBe(2);
+    io.read.mockResolvedValue(existing);
+    await store.flush();
+    expect(io.write).toHaveBeenCalledTimes(1);
+    const written = parsePositions(io.write.mock.calls[0][0]);
+    expect(written.get("/old.pdf")?.page).toBe(9);
+    expect(written.get("/new.pdf")?.page).toBe(2);
+  });
 });

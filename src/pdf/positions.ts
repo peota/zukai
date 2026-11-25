@@ -86,41 +86,49 @@ export function createPdfPositionStore(
   const saver = createSaver((_id, json) => io.write(json), SAVE_DELAY_MS);
   let map = new Map<string, PdfPosition>();
   let loaded = false;
-  // Serializes the lazy load and every set, so a set made before the load
-  // finishes merges into the loaded map instead of being clobbered by it.
+  // Sets made while the on-disk contents are unknown (not loaded yet, or the
+  // read failed). They are merged into the loaded map once a read succeeds.
+  const pending = new Map<string, PdfPosition>();
+  // Serializes loading and merging, so a set made before the load finishes is
+  // merged into the loaded map instead of clobbering it.
   let chain: Promise<void> = Promise.resolve();
 
-  const ensureLoaded = async (): Promise<void> => {
-    if (loaded) return;
-    try {
-      map = parsePositions(await io.read());
-    } catch {
-      map = new Map();
+  // A failed read leaves the store unloaded (retried on the next call) and
+  // nothing is written, so a transient read error cannot wipe saved positions.
+  const sync = async (): Promise<void> => {
+    if (!loaded) {
+      try {
+        map = parsePositions(await io.read());
+        loaded = true;
+      } catch {
+        return;
+      }
     }
-    loaded = true;
+    if (pending.size === 0) return;
+    for (const [k, v] of pending) map.set(k, v);
+    pending.clear();
+    saver.schedule(SAVE_ID, () => serializePositions(map));
   };
 
-  const enqueue = (fn: () => void): void => {
-    chain = chain.then(ensureLoaded).then(fn);
+  const enqueue = (): void => {
+    chain = chain.then(sync);
   };
 
   return {
     async get(path) {
-      enqueue(() => {});
+      const key = pathKey(path, platform());
+      enqueue();
       await chain;
-      return map.get(pathKey(path, platform()));
+      return pending.get(key) ?? map.get(key);
     },
     set(path, pos) {
-      const key = pathKey(path, platform());
-      const updatedAt = now();
-      enqueue(() => {
-        map.set(key, { ...pos, updatedAt });
-        saver.schedule(SAVE_ID, () => serializePositions(map));
-      });
+      pending.set(pathKey(path, platform()), { ...pos, updatedAt: now() });
+      enqueue();
     },
     async flush() {
+      enqueue();
       await chain;
-      await saver.flush(SAVE_ID);
+      if (loaded) await saver.flush(SAVE_ID);
     },
   };
 }
