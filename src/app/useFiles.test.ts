@@ -693,9 +693,13 @@ describe("useFiles save and save as", () => {
     const pdf = "C:\\d\\doc.pdf";
     disk[pdf] = { text: "%PDF", hash: "d1" };
     const { result } = await mount();
-    await openP(result, pdf);
+    const id = await openP(result, pdf);
     await act(() => result.current.run({ type: "replace" }));
-    expect(result.current.findRequest).toEqual({ mode: "find", seq: 1 });
+    expect(result.current.findRequest).toEqual({
+      mode: "find",
+      seq: 1,
+      tabId: id,
+    });
     await act(() => result.current.run({ type: "zoom", dir: 1 }));
     expect(result.current.fontSize).toBe(14);
   });

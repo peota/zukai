@@ -83,22 +83,42 @@ export const toQuery = (s: FindState) =>
 
 const NO_COUNT: MatchCount = { total: 0, current: 0, capped: false };
 
-function countText(c: MatchCount, search: string): string {
+/** The count label: "", "No results", "3 of 41" (or "1000+" when capped). */
+export function countText(c: MatchCount, search: string): string {
   if (!search) return "";
   if (c.total === 0) return "No results";
   const total = c.capped ? `${c.total}+` : String(c.total);
   return c.capped && c.current === 0 ? total : `${c.current} of ${total}`;
 }
 
-type Toggle = "caseSensitive" | "wholeWord" | "regexp";
-const TOGGLES: { key: Toggle; code: string; label: string; text: string }[] = [
+export type Toggle = "caseSensitive" | "wholeWord" | "regexp";
+export const TOGGLES: {
+  key: Toggle;
+  code: string;
+  label: string;
+  text: string;
+}[] = [
   { key: "caseSensitive", code: "KeyC", label: "Match case", text: "Aa" },
   { key: "wholeWord", code: "KeyW", label: "Whole word", text: "ab" },
   { key: "regexp", code: "KeyR", label: "Regular expression", text: ".*" },
 ];
 
-const iconButton =
+// The bar's look, shared with the PDF find bar (PdfFindBar).
+
+export const iconButton =
   "flex h-7 min-w-7 items-center justify-center rounded-[6px] px-1 text-muted hover:bg-row-hover hover:text-text";
+
+/** The find field; the caller adds its border colour. */
+export const findField =
+  "h-7 min-w-0 flex-1 rounded-[6px] border bg-sunken px-2 font-mono text-ui text-text outline-none focus:border-accent";
+
+/** The floating bar, at the top right of its Tab's area. */
+export const findBarClass =
+  "z-fade-in absolute top-3 right-3 z-10 flex w-[420px] max-w-[calc(100%-24px)] flex-col gap-1.5 rounded-float bg-surface p-2 text-ui text-text shadow-float";
+
+/** The match count beside the field. */
+export const findCountClass =
+  "min-w-14 text-right whitespace-nowrap text-muted tabular-nums";
 
 export function FindBar({
   view,
@@ -220,8 +240,6 @@ export function FindBar({
   };
 
   const invalid = state.regexp && state.search !== "" && !toQuery(state).valid;
-  const field =
-    "h-7 min-w-0 flex-1 rounded-[6px] border bg-sunken px-2 font-mono text-ui text-text outline-none focus:border-accent";
   // Keep focus in the input when clicking the bar's buttons.
   const keepFocus = (e: MouseEvent) => e.preventDefault();
 
@@ -230,7 +248,7 @@ export function FindBar({
       role="search"
       aria-label="Find in text"
       data-find-bar
-      className="z-fade-in absolute top-3 right-3 z-10 flex w-[420px] max-w-[calc(100%-24px)] flex-col gap-1.5 rounded-float bg-surface p-2 text-ui text-text shadow-float"
+      className={findBarClass}
     >
       <div className="flex items-center gap-1">
         <button
@@ -251,17 +269,14 @@ export function FindBar({
           placeholder="Find"
           spellCheck={false}
           aria-invalid={invalid}
-          className={`${field} ${invalid ? "border-danger text-danger focus:border-danger" : "border-hairline"}`}
+          className={`${findField} ${invalid ? "border-danger text-danger focus:border-danger" : "border-hairline"}`}
           value={state.search}
           onChange={(e) =>
             apply({ ...stateRef.current, search: e.target.value }, true)
           }
           onKeyDown={(e) => onKeyDown(e, "find")}
         />
-        <span
-          className="min-w-14 text-right whitespace-nowrap text-muted tabular-nums"
-          aria-live="polite"
-        >
+        <span className={findCountClass} aria-live="polite">
           {invalid ? "" : countText(count, state.search)}
         </span>
         {TOGGLES.map((t) => (
@@ -317,7 +332,7 @@ export function FindBar({
             aria-label="Replace"
             placeholder="Replace"
             spellCheck={false}
-            className={`${field} border-hairline`}
+            className={`${findField} border-hairline`}
             value={state.replace}
             onChange={(e) =>
               apply({ ...stateRef.current, replace: e.target.value }, false)

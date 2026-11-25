@@ -1028,8 +1028,13 @@ export function useWorkspace(): Workspace {
           // The find bar is the plain editor's.
           const tab = s.tabs.find((t) => t.id === s.activeId);
           if (tab?.kind === "pdf") {
-            // The PDF viewer's find bar (PdfHost) has no replace.
-            setFindRequest((r) => ({ mode: "find", seq: (r?.seq ?? 0) + 1 }));
+            // The PDF viewer's find bar (PdfHost) has no replace. It names
+            // its Tab, so it never opens in the other Split half's PDF.
+            setFindRequest((r) => ({
+              mode: "find",
+              seq: (r?.seq ?? 0) + 1,
+              tabId: tab.id,
+            }));
             return;
           }
           if (tab && effectiveMode(tab, settingsRef.current) === "rich") {

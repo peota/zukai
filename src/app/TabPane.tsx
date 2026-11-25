@@ -46,7 +46,7 @@ export interface TabPaneProps
   onPdfInfo?(id: string, seq: number, info: PdfInfo | null): void;
   /** A go-to-page request, for the one PDF Tab it names. */
   goToPage?: { tabId: string; page: number; seq: number } | null;
-  /** Find, for the focused Tab (a PDF Tab's own find bar). */
+  /** Find, for the one PDF Tab it names (a PDF Tab's own find bar). */
   findRequest?: FindRequest | null;
   /** A Markdown Tab's editor (null for any other Tab). */
   mode: MarkdownMode | null;
@@ -234,7 +234,7 @@ export function TabPane(p: TabPaneProps) {
               onInfo={onPdfTabInfo}
               keys={focused}
               onOpenDefault={p.onOpenDefault}
-              findRequest={focused ? p.findRequest : null}
+              findRequest={p.findRequest?.tabId === id ? p.findRequest : null}
               goToPage={p.goToPage?.tabId === id ? p.goToPage : null}
             />
           </Suspense>
