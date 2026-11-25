@@ -122,6 +122,16 @@ export interface ImageInfo {
   bytes: number;
 }
 
+/** What a PDF Tab shows, for the status bar. */
+export interface PdfInfo {
+  /** The current page, 1-based. */
+  page: number;
+  pages: number;
+  /** The scale: 1 is 100%. */
+  zoom: number;
+  bytes: number;
+}
+
 /** closedAt is a ms epoch. */
 export interface ClosedEntry {
   tab: TabState;
