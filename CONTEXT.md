@@ -23,9 +23,9 @@ A Document backed by a path on the user's disk. A File changes on disk only when
 _Avoid_: external file, document (when you mean specifically the on-disk kind).
 
 **Kind**
-What a Document shows: **Text**, **Canvas**, **Image** or **Table** (M2). A Document's Kind is fixed when it's created and never changes. Save As refuses a name whose extension would change the Kind.
-- Files get their Kind from the extension: `.excalidraw` is Canvas, `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.bmp` and `.svg` are Image, everything else is Text. The list lives in `src/model/kinds.ts`. In M2, `.csv` and `.tsv` become Table.
-- Scratchpads are Text (Mod+N, the default) or Canvas (Mod+Shift+N). There are no Table or Image Scratchpads in v1.
+What a Document shows: **Text**, **Canvas**, **Image**, **PDF** or **Table** (M2). A Document's Kind is fixed when it's created and never changes. Save As refuses a name whose extension would change the Kind.
+- Files get their Kind from the extension: `.excalidraw` is Canvas, `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.bmp` and `.svg` are Image, `.pdf` is PDF, everything else is Text. The list lives in `src/model/kinds.ts`. In M2, `.csv` and `.tsv` become Table.
+- Scratchpads are Text (Mod+N, the default) or Canvas (Mod+Shift+N). There are no Table, Image or PDF Scratchpads in v1.
 _Avoid_: type, mode, format.
 
 **Canvas**
@@ -37,6 +37,9 @@ The Kind for drawings, shown in an embedded Excalidraw editor (`@excalidraw/exca
 
 **Image**
 The Kind for pictures: a read-only viewer that fits the window, with zoom (Mod+= / Mod+- / Mod+0) and pan. The status bar shows the dimensions, the format and the size, and the image reloads when the file changes on disk. Bytes are read through Rust under the same grants. SVG is only ever shown as an image (`<img src="blob:…">`), never as live markup, so no script in it runs.
+
+**PDF**
+The Kind for PDFs: a read-only viewer with continuous vertical scroll, fit to width by default, and zoom (Mod+= / Mod+- / Mod+0, or Mod+wheel). PageUp, PageDown, Home and End move by page; Mod+G, or clicking the page number in the status bar, goes to a page. Text can be selected and copied, and Find (Mod+F, F3 / Shift+F3, match case, whole word) searches it, with no replace or regexp. The status bar shows the page, the zoom and the size, with a quiet "Open with default app". The last page, offset and zoom are remembered per file in Zukai's storage (`pdf-positions.json`, the last 500 files), never in the PDF or the Session. The PDF reloads when the file changes on disk and keeps its position. Up to 300 MB, read as bytes through Rust under the same grants; a password-protected, broken or too-large PDF shows a notice with "Open with default app". Scripts in a PDF never run and its external links do nothing. pdf.js is loaded the first time a PDF Tab opens.
 
 **View**
 A way of displaying a Document that doesn't change what it is. A Table has two Views: the **grid** and the **raw text**. Switching View keeps the same Document and the same saving rule.
