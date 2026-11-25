@@ -169,7 +169,7 @@ describe("the Git view toggle", () => {
     ).toEqual({ type: "toggleGit" });
     expect(
       matchShortcut(ev("KeyG", { key: "g", ctrlKey: true }), "windows"),
-    ).toBeNull();
+    ).toEqual({ type: "goToPage" });
   });
   it("Cmd+Shift+G on mac", () => {
     expect(
@@ -183,6 +183,17 @@ describe("the Git view toggle", () => {
         ev("KeyG", { key: "G", ctrlKey: true, shiftKey: true }),
         "mac",
       ),
+    ).toBeNull();
+  });
+});
+
+describe("go to page", () => {
+  it("Mod+G, by platform", () => {
+    expect(
+      matchShortcut(ev("KeyG", { key: "g", metaKey: true }), "mac"),
+    ).toEqual({ type: "goToPage" });
+    expect(
+      matchShortcut(ev("KeyG", { key: "g", ctrlKey: true }), "mac"),
     ).toBeNull();
   });
 });
