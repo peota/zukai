@@ -15,7 +15,7 @@ A slot in the tab bar. A Tab shows exactly one Document.
 The content a Tab shows. Every Document is either a Scratchpad or a File.
 
 **Scratchpad**
-A Document that lives only in Zukai's own storage and has no path on disk. Every new Tab starts as a Scratchpad. Scratchpads are saved continuously and never ask to be saved.
+A Document that lives only in Zukai's own storage and has no path on disk. Every new Tab starts as a Scratchpad. Scratchpads are saved continuously to Zukai's storage; the only time one asks to be saved is when a non-empty one is closed (see **Recently Closed**).
 _Avoid_: note, untitled, temp file.
 
 **File**
@@ -239,9 +239,10 @@ Collapsing a region of text (such as a JSON object) behind a marker in the fold 
 ## Closing
 
 **Recently Closed**
-A list of Tabs the user closed. Mod+Shift+T reopens the most recent one, and a small menu lists the rest. Closing a Tab asks for confirmation only when it is a File Tab with Unsaved changes (Held Tabs never ask).
-- A Scratchpad that is empty when closed is deleted at once and never appears in Recently Closed.
-- A non-empty Scratchpad is kept in Recently Closed for 30 days, then deleted for good.
+A list of Tabs the user closed. Mod+Shift+T reopens the most recent one, and a small menu lists the rest. Closing a Tab asks for confirmation only when it is a File Tab with Unsaved changes (Held Tabs never ask) or an unpinned Scratchpad with something in it.
+- A Scratchpad that is empty when closed (blank text, or a canvas with nothing drawn) is deleted at once, unasked, and never appears in Recently Closed.
+- Closing a non-empty, unpinned Scratchpad asks "Save changes to <Title>?": **Save** is Save As (it closes as the File it became; cancelling the save dialog keeps the Tab open), **Don't save** deletes it for good, never into Recently Closed, and **Cancel** keeps it open.
+- A pinned Scratchpad closes unasked and is kept in Recently Closed (and the Pinned list) for 30 days, then deleted for good.
 - A closed File appears in Recently Closed as a reference to its path. The content stays on disk. It never expires, unless it carries Shadow file text (unsaved text from being Held); then it is kept for 30 days.
 
 ## Quick capture

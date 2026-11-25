@@ -620,12 +620,22 @@ describe("App", () => {
     await waitFor(() => expect(r.getAllByRole("tab")).toHaveLength(2));
     fireEvent.contextMenu(r.getAllByRole("tab")[0]);
     fireEvent.click(r.getByRole("menuitem", { name: "Close all tabs" }));
+    // Each Scratchpad with text asks first.
+    for (const name of ["Scratchpad 1", "Scratchpad 2"]) {
+      await waitFor(() =>
+        expect(r.getByRole("alertdialog")).toHaveTextContent(
+          `Save changes to ${name}?`,
+        ),
+      );
+      fireEvent.click(r.getByRole("button", { name: "Don't save" }));
+    }
     await waitFor(() => {
       const tabs = r.getAllByRole("tab");
       expect(tabs).toHaveLength(1);
       expect(tabs[0]).toHaveTextContent("Scratchpad 1");
     });
-    expect(s.closeScratchpad).toHaveBeenCalledWith("a");
+    expect(s.deleteScratchpad).toHaveBeenCalledWith("a");
+    expect(s.closeScratchpad).not.toHaveBeenCalled();
   });
 
   it("Ctrl+Shift+V shows a Markdown Tab's preview beside it, then alone", async () => {

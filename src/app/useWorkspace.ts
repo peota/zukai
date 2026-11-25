@@ -48,6 +48,19 @@ import { DEFAULT_SETTINGS, type Settings } from "../model/settings";
 import type { FileInfo, MarkdownMode, PreviewMode } from "../model/types";
 import { inShadow } from "../files/fileState";
 import { baseName } from "../files/paths";
+import { parseScene } from "../canvas/scene";
+import type { Kind } from "../model/kinds";
+
+/**
+ * Whether a Scratchpad holds nothing worth asking about on close: blank
+ * text, or a drawing with nothing (left) drawn on it.
+ */
+function nothingToSave(kind: Kind, text: string): boolean {
+  if (text.trim() === "") return true;
+  if (kind !== "canvas") return false;
+  const parsed = parseScene(text);
+  return parsed.ok && parsed.scene.elements.every((e) => e.isDeleted);
+}
 import {
   CANT_KEEP_NOTICE,
   TOO_LARGE_NOTICE,
@@ -793,6 +806,45 @@ export function useWorkspace(): Workspace {
   );
 
   /**
+   * Before a Scratchpad Tab closes: if it has text (and isn't pinned, which
+   * keeps it in the Pinned list), asks whether to save it. Save is Save As:
+   * the Tab becomes a File and closes as one ("close"); a dismissed dialog
+   * keeps it open ("stay"). Don't save deletes it for good ("delete"), never
+   * into Recently Closed.
+   */
+  const confirmScratchpadClose = useCallback(
+    (id: string): Promise<"close" | "delete" | "stay"> => {
+      const turn = promptChain.current.then(async () => {
+        if (closing.current.has(id)) return "close" as const;
+        const text = await loadContent(id);
+        const tab = stateRef.current.tabs.find((t) => t.id === id);
+        if (!tab || tab.file || tab.pinned) return "close" as const;
+        if (nothingToSave(tab.kind, contents.get(id) ?? text)) {
+          return "close" as const;
+        }
+        const choice = await new Promise<CloseChoice>((resolve) => {
+          answerRef.current = resolve;
+          setClosePrompt({ id, name: tab.title });
+        });
+        switch (choice) {
+          case "cancel":
+            return "stay" as const;
+          case "discard":
+            return "delete" as const;
+          case "save":
+            await saveAs(id);
+            return stateRef.current.tabs.find((t) => t.id === id)?.file
+              ? ("close" as const)
+              : ("stay" as const);
+        }
+      });
+      promptChain.current = turn.catch(() => {});
+      return turn;
+    },
+    [contents, loadContent, saveAs],
+  );
+
+  /**
    * Close order: know the content, stop (= final write) its autosave, write
    * anything typed meanwhile, then delete or move the file, then update the
    * Session. Any failure leaves the Tab open so no text is lost; autosave
@@ -818,7 +870,20 @@ export function useWorkspace(): Workspace {
       }
       // While the Tab still takes edits (closing makes it read-only).
       flushRich(id);
-      if (tab.file) {
+      let discard = false;
+      if (!tab.file) {
+        let answer: "close" | "delete" | "stay";
+        try {
+          answer = await confirmScratchpadClose(id);
+        } catch (err) {
+          console.error("close tab aborted", err);
+          return true;
+        }
+        if (answer === "stay") return false;
+        discard = answer === "delete";
+        if (closing.current.has(id)) return true;
+        if (!stateRef.current.tabs.some((t) => t.id === id)) return true;
+      } else {
         let go: boolean;
         try {
           go = await confirmClose(id);
@@ -852,7 +917,8 @@ export function useWorkspace(): Workspace {
         const tab = stateRef.current.tabs.find((t) => t.id === id);
         const isFile = !!tab?.file;
         // A pinned Scratchpad is kept even empty: the Pinned list shows it.
-        const isEmpty = !isFile && !tab?.pinned && disk === "";
+        // Don't save on the close prompt deletes it like an empty one.
+        const isEmpty = !isFile && (discard || (!tab?.pinned && disk === ""));
         try {
           if (isFile) await closeFile(id);
           else await (isEmpty ? deleteScratchpad(id) : closeScratchpad(id));
@@ -883,6 +949,7 @@ export function useWorkspace(): Workspace {
       closeFile,
       commit,
       confirmClose,
+      confirmScratchpadClose,
       contents,
       flushRich,
       loadContent,
