@@ -203,6 +203,92 @@ describe("StatusBar", () => {
     expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 
+  describe("a PDF", () => {
+    const pdf = { page: 12, pages: 340, zoom: 1.25, bytes: 4_404_019 };
+    const pdfBar = (over: Partial<StatusBarProps> = {}) =>
+      setup({
+        kindLabel: "PDF",
+        file: { format: fmt(), readonly: true },
+        pdf,
+        onGoToPage: vi.fn(),
+        onOpenDefault: vi.fn(),
+        ...over,
+      });
+
+    it("shows the page, zoom and file size", () => {
+      pdfBar();
+      expect(screen.getByText("PDF")).toBeInTheDocument();
+      expect(screen.getByText("Page 12 / 340")).toBeInTheDocument();
+      expect(screen.getByText("125%")).toBeInTheDocument();
+      expect(screen.getByText("4.2 MB")).toBeInTheDocument();
+    });
+
+    it("clicking the page, typing past the end and Enter goes to the last page", () => {
+      const p = pdfBar();
+      fireEvent.click(screen.getByText("Page 12 / 340"));
+      const input = screen.getByRole("spinbutton", { name: "Go to page" });
+      fireEvent.change(input, { target: { value: "999" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(p.onGoToPage).toHaveBeenCalledWith(340);
+      expect(screen.getByText("Page 12 / 340")).toBeInTheDocument();
+    });
+
+    it("clamps a page below 1", () => {
+      const p = pdfBar();
+      fireEvent.click(screen.getByText("Page 12 / 340"));
+      const input = screen.getByRole("spinbutton", { name: "Go to page" });
+      fireEvent.change(input, { target: { value: "0" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(p.onGoToPage).toHaveBeenCalledWith(1);
+    });
+
+    it("Esc and blur cancel", () => {
+      const p = pdfBar();
+      fireEvent.click(screen.getByText("Page 12 / 340"));
+      let input = screen.getByRole("spinbutton", { name: "Go to page" });
+      fireEvent.change(input, { target: { value: "5" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(screen.queryByRole("spinbutton")).toBeNull();
+      fireEvent.click(screen.getByText("Page 12 / 340"));
+      input = screen.getByRole("spinbutton", { name: "Go to page" });
+      fireEvent.change(input, { target: { value: "5" } });
+      fireEvent.blur(input);
+      expect(screen.queryByRole("spinbutton")).toBeNull();
+      expect(p.onGoToPage).not.toHaveBeenCalled();
+    });
+
+    it("the go to page signal opens the input", () => {
+      const props: StatusBarProps = {
+        line: 1,
+        col: 1,
+        language: "plaintext",
+        saveStatus: "saved",
+        onPickLanguage: vi.fn(),
+        platformLineEnding: "lf",
+        onEncodingMenu: vi.fn(),
+        onLineEndingMenu: vi.fn(),
+        showFormat: false,
+        onFormat: vi.fn(),
+        kindLabel: "PDF",
+        pdf,
+        onGoToPage: vi.fn(),
+        pageInputSignal: 0,
+      };
+      const { rerender } = render(<StatusBar {...props} />);
+      expect(screen.queryByRole("spinbutton")).toBeNull();
+      rerender(<StatusBar {...props} pageInputSignal={1} />);
+      expect(
+        screen.getByRole("spinbutton", { name: "Go to page" }),
+      ).toBeInTheDocument();
+    });
+
+    it("Open with default app calls onOpenDefault", () => {
+      const p = pdfBar();
+      fireEvent.click(screen.getByText("Open with default app"));
+      expect(p.onOpenDefault).toHaveBeenCalled();
+    });
+  });
+
   it("file sizes read naturally", () => {
     expect(fileSize(512)).toBe("512 B");
     expect(fileSize(1536)).toBe("1.5 KB");

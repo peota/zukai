@@ -72,6 +72,7 @@ import type { RichSync } from "../rich/RichEditor";
 import { useLibrary, type LibraryApi } from "./useLibrary";
 import { useGitSync, type GitSyncApi } from "../git/useGitSync";
 import { isUnder } from "../ui/libraryEntries";
+import { pdfPositions } from "../pdf/positions";
 import {
   closeScratchpad,
   deleteScratchpad,
@@ -408,6 +409,12 @@ export function useWorkspace(): Workspace {
   const beforeExit = useCallback(async () => {
     flushRich();
     await settleInFlight();
+    // A failed position write must never keep the app from closing.
+    try {
+      await pdfPositions.flush();
+    } catch (err) {
+      console.error("PDF positions flush before exit failed", err);
+    }
   }, [flushRich, settleInFlight]);
   useExitHandshake(savers, beforeExit);
   useFlushOnBlur(savers, flushRich);
@@ -1045,6 +1052,9 @@ export function useWorkspace(): Workspace {
           return toggleSidebar();
         case "focusSidebar":
           return focusSidebar();
+        case "goToPage":
+          // The App's own: it opens the status bar's page input.
+          return;
         case "toggleGit":
           // The App's own: the Git panel takes turns with the Ask panel.
           return;

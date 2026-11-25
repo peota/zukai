@@ -25,6 +25,7 @@ import {
 import { effectiveMode } from "./model/markdownMode";
 import type {
   ImageInfo,
+  PdfInfo,
   LanguageId,
   SplitOrientation,
   TabState,
@@ -244,8 +245,17 @@ export default function App() {
   const [panelLoaded, setPanelLoaded] = useState(false);
   if (!panelLoaded && termState.terms.length > 0) setPanelLoaded(true);
 
+  /** Bumped by the go to page command: the status bar opens its page input. */
+  const [pageInputSignal, setPageInputSignal] = useState(0);
+  const activeIsPdf = w.state.tabs.some(
+    (t) => t.id === activeId && t.kind === "pdf",
+  );
   const run = useCallback(
     async (cmd: Command) => {
+      if (cmd.type === "goToPage") {
+        if (activeIsPdf) setPageInputSignal((n) => n + 1);
+        return;
+      }
       if (cmd.type === "openSettings") setSettingsOpen(true);
       else if (cmd.type === "quickOpen") setQuickOpen(true);
       else if (cmd.type === "toggleTerminal") {
@@ -283,6 +293,7 @@ export default function App() {
       showTerm,
       openTerminal,
       termFolder,
+      activeIsPdf,
       agentMenuFrom,
       closeAgentMenu,
       gitOpen,
@@ -343,6 +354,7 @@ export default function App() {
   const active = w.state.tabs.find((t) => t.id === activeId);
   const isCanvas = active?.kind === "canvas";
   const isImage = active?.kind === "image";
+  const isPdf = active?.kind === "pdf";
   const isMarkdown = active?.kind === "text" && active.language === "markdown";
   const activeMode = active ? effectiveMode(active, w.settings) : null;
   /** A Markdown Tab's preview; any other Tab is just edited. */
@@ -404,6 +416,31 @@ export default function App() {
       ),
     [],
   );
+  /** Each PDF Tab's page, zoom and size, keyed like `imageInfo`. */
+  const [pdfInfo, setPdfInfo] = useState<
+    Readonly<Record<string, { seq: number; info: PdfInfo | null }>>
+  >({});
+  const onPdfInfo = useCallback(
+    (id: string, seq: number, info: PdfInfo | null) =>
+      setPdfInfo((m) =>
+        m[id]?.seq === seq && m[id].info === info
+          ? m
+          : { ...m, [id]: { seq, info } },
+      ),
+    [],
+  );
+  /** Go to a page of the active PDF Tab: `seq` makes each request new. */
+  const [goToPage, setGoToPage] = useState<{
+    page: number;
+    seq: number;
+  } | null>(null);
+  const activePdfInfo = pdfInfo[activeId];
+  const shownPdfInfo =
+    isPdf &&
+    active.file?.held !== "missing" &&
+    activePdfInfo?.seq === reloadSeqOf(activeId)
+      ? (activePdfInfo.info ?? undefined)
+      : undefined;
   const activeImageInfo = imageInfo[activeId];
   const shownImageInfo =
     isImage &&
@@ -626,6 +663,8 @@ export default function App() {
       readBytes={fileReadBytes}
       reloadSeq={reloadSeqOf(tab.id)}
       onImageInfo={onImageInfo}
+      onPdfInfo={onPdfInfo}
+      goToPage={goToPage}
       findRequest={w.findRequest}
       mode={effectiveMode(tab, w.settings)}
       bridge={w.bridge}
@@ -910,11 +949,24 @@ export default function App() {
               ? "Canvas"
               : isImage
                 ? "Image"
-                : active?.kind === "diff"
-                  ? "Diff"
-                  : undefined
+                : isPdf
+                  ? "PDF"
+                  : active?.kind === "diff"
+                    ? "Diff"
+                    : undefined
           }
           image={shownImageInfo}
+          pdf={shownPdfInfo}
+          onGoToPage={(page) => {
+            setGoToPage((g) => ({ page, seq: (g?.seq ?? 0) + 1 }));
+            refocus();
+          }}
+          pageInputSignal={pageInputSignal}
+          onOpenDefault={
+            isPdf && active.file
+              ? () => void openWithDefault(active.file!.path)
+              : undefined
+          }
           onPickLanguage={() => (picking ? closePicker() : setPicking(true))}
           platformLineEnding={PLATFORM_ENDING}
           file={
@@ -922,7 +974,10 @@ export default function App() {
               ? {
                   format: active.file.format,
                   readonly:
-                    active.file.held === "readonly" || unreadable || isImage,
+                    active.file.held === "readonly" ||
+                    unreadable ||
+                    isImage ||
+                    isPdf,
                 }
               : undefined
           }

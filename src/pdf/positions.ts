@@ -79,7 +79,10 @@ export function createPdfPositionStore(
   io: {
     read(): Promise<string | null>;
     write(json: string): Promise<void>;
-  } = { read: readPdfPositions, write: writePdfPositions },
+  } = {
+    read: () => readPdfPositions(),
+    write: (json) => writePdfPositions(json),
+  },
   now: () => number = Date.now,
   platform: () => Platform = detectPlatform,
 ): PdfPositionStore {

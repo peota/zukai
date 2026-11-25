@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
 import type { ReactNode } from "react";
 import type {
@@ -6,6 +6,7 @@ import type {
   ImageInfo,
   LanguageId,
   MarkdownMode,
+  PdfInfo,
   PreviewMode,
 } from "../model/types";
 import type { SaveStatus } from "../storage/autosave";
@@ -46,6 +47,14 @@ export interface StatusBarProps {
   kindLabel?: string;
   /** An Image Tab: shown in place of `kindLabel` once the image has loaded. */
   image?: ImageInfo;
+  /** A PDF Tab's page, zoom and size, once a page has shown. */
+  pdf?: PdfInfo;
+  /** Go to this page (already clamped to 1..pages). */
+  onGoToPage?(page: number): void;
+  /** Bumped by the go to page command: opens the page input. */
+  pageInputSignal?: number;
+  /** A PDF Tab's quiet "Open with default app". */
+  onOpenDefault?(): void;
   /**
    * A Markdown Tab's preview switch (Edit, Split, Preview); `hint` is its
    * shortcut, shown in the tooltip.
@@ -131,6 +140,10 @@ export function StatusBar({
   beautifyHint,
   kindLabel,
   image,
+  pdf,
+  onGoToPage,
+  pageInputSignal,
+  onOpenDefault,
   onSettings,
   settingsHint,
   preview,
@@ -180,6 +193,27 @@ export function StatusBar({
           <span>{`${image.width} × ${image.height}`}</span>
           <span>{image.format}</span>
           <span>{fileSize(image.bytes)}</span>
+        </div>
+      ) : kindLabel !== undefined && pdf ? (
+        <div className="ml-auto flex items-center gap-4 px-2.5 py-1">
+          <span>{kindLabel}</span>
+          <PageField
+            pdf={pdf}
+            onGoToPage={onGoToPage}
+            signal={pageInputSignal}
+          />
+          <span>{`${Math.round(pdf.zoom * 100)}%`}</span>
+          <span>{fileSize(pdf.bytes)}</span>
+          {onOpenDefault && (
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={onOpenDefault}
+              className="-my-1 rounded-[5px] px-2 py-1 hover:bg-row-hover hover:text-text"
+            >
+              Open with default app
+            </button>
+          )}
         </div>
       ) : kindLabel !== undefined ? (
         <span className="ml-auto px-2.5 py-1">{kindLabel}</span>
@@ -325,6 +359,77 @@ export function fileSize(bytes: number): string {
   const kb = bytes / 1024;
   if (kb < 1024) return `${Number(kb.toFixed(1))} KB`;
   return `${Number((kb / 1024).toFixed(1))} MB`;
+}
+
+/** "Page 12 / 340": a click (or the go to page command) turns it into an input. */
+function PageField({
+  pdf,
+  onGoToPage,
+  signal,
+}: {
+  pdf: PdfInfo;
+  onGoToPage?(page: number): void;
+  signal?: number;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const seen = useRef(signal);
+  useEffect(() => {
+    if (signal === seen.current) return;
+    seen.current = signal;
+    setDraft(String(pdf.page));
+    setEditing(true);
+  }, [signal, pdf.page]);
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        tabIndex={-1}
+        title="Go to page"
+        onClick={() => {
+          setDraft(String(pdf.page));
+          setEditing(true);
+        }}
+        className="-mx-2 -my-1 rounded-[5px] px-2 py-1 hover:bg-row-hover hover:text-text"
+      >
+        {`Page ${pdf.page} / ${pdf.pages}`}
+      </button>
+    );
+  }
+  const commit = () => {
+    const n = Math.round(Number(draft));
+    setEditing(false);
+    if (draft.trim() !== "" && Number.isFinite(n)) {
+      onGoToPage?.(Math.min(Math.max(n, 1), pdf.pages));
+    }
+  };
+  return (
+    <span className="flex items-center gap-1.5">
+      Page
+      <input
+        type="number"
+        aria-label="Go to page"
+        autoFocus
+        min={1}
+        max={pdf.pages}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            setEditing(false);
+          }
+        }}
+        className="h-5 w-14 rounded-[4px] border border-hairline-strong bg-transparent px-1 text-text outline-none focus:border-accent"
+      />
+      {`/ ${pdf.pages}`}
+    </span>
+  );
 }
 
 function Chip({

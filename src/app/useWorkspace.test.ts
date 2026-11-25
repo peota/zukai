@@ -44,6 +44,11 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({ emit: vi.fn() }));
 
+const pdfFlush = vi.hoisted(() => vi.fn());
+vi.mock("../pdf/positions", () => ({
+  pdfPositions: { flush: pdfFlush },
+}));
+
 vi.mock("./exit", () => ({
   BEFORE_EXIT_EVENT: "zukai://before-exit",
   installExitHandshake: async (flushAll: () => Promise<void>) => {
@@ -296,6 +301,20 @@ describe("useWorkspace reopen and session", () => {
     expect(m.writeSession).toHaveBeenCalled();
     expect(lastSession().tabs.map((t) => t.id)).toEqual(["a", "b"]);
     expect(lastSession().closed).toEqual([]);
+  });
+
+  it("exit flushes the PDF positions", async () => {
+    pdfFlush.mockResolvedValue(undefined);
+    await mount();
+    await h.flushAll!();
+    expect(pdfFlush).toHaveBeenCalled();
+  });
+
+  it("a failing PDF position flush never blocks exit", async () => {
+    pdfFlush.mockRejectedValueOnce(new Error("disk full"));
+    await mount();
+    await expect(h.flushAll!()).resolves.toBeUndefined();
+    expect(console.error).toHaveBeenCalled();
   });
 
   it("exit waits for an in-flight close before flushing", async () => {
