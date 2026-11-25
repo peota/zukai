@@ -8,7 +8,7 @@ import {
 } from "../../files/api";
 import { inShadow } from "../../files/fileState";
 import { baseName, languageOf, stemOf, suggestedName } from "../../files/paths";
-import { CANVAS_EXT, kindOf, type Kind } from "../../model/kinds";
+import { CANVAS_EXT, isViewerKind, kindOf, type Kind } from "../../model/kinds";
 import * as ws from "../../model/workspace";
 import { deleteScratchpad } from "../../storage/api";
 import { logError } from "../workspaceEffects";
@@ -21,6 +21,7 @@ const CANVAS_FILTER = {
 };
 
 export const IMAGE_READ_ONLY = "Images are read-only in Zukai";
+export const PDF_READ_ONLY = "PDFs are read-only in Zukai";
 
 /**
  * Why a Tab of Kind `kind` can't be saved to `target`, or null if it can.
@@ -28,14 +29,12 @@ export const IMAGE_READ_ONLY = "Images are read-only in Zukai";
  * text never into a drawing or an image (it would be unreadable there).
  */
 function kindRefusal(kind: Kind, target: string): string | null {
-  // An image is only ever viewed: its Tab has no bytes to write.
+  // An image or a PDF is only ever viewed: its Tab has no bytes to write.
   if (kind === "image") return IMAGE_READ_ONLY;
+  if (kind === "pdf") return PDF_READ_ONLY;
   const into = kindOf(target);
   if (into === kind) return null;
   switch (kind) {
-    case "pdf":
-      // Like an image: Task 5 makes this explicit.
-      return IMAGE_READ_ONLY;
     case "diff":
       // Never asked: saveTo stops a diff Tab first.
       return null;
@@ -44,7 +43,7 @@ function kindRefusal(kind: Kind, target: string): string | null {
     case "text":
       return into === "canvas"
         ? "Can't save text as a .excalidraw drawing"
-        : `Can't save text as an image (${baseName(target)})`;
+        : `Can't save text as ${into === "pdf" ? "a PDF" : "an image"} (${baseName(target)})`;
   }
 }
 
@@ -165,7 +164,9 @@ export function useSave(c: FilesContext, d: SaveDeps) {
     async (id: string, opts: SaveAsOptions = {}) => {
       const tab = tabOf(id);
       if (!tab || tab.kind === "diff" || refuseUnreadable(id)) return;
-      if (tab.kind === "image") return showNotice(IMAGE_READ_ONLY);
+      if (isViewerKind(tab.kind)) {
+        return showNotice(kindRefusal(tab.kind, "") ?? IMAGE_READ_ONLY);
+      }
       const canvas = tab.kind === "canvas";
       const suggested =
         opts.suggested ??
@@ -195,7 +196,7 @@ export function useSave(c: FilesContext, d: SaveDeps) {
   const save = useCallback(
     async (id: string) => {
       const tab = tabOf(id);
-      if (!tab || tab.kind === "image" || tab.kind === "diff") return;
+      if (!tab || isViewerKind(tab.kind) || tab.kind === "diff") return;
       if (!tab.file) return saveAs(id);
       // The same notice as Keep mine: an explicit save never fails silently.
       const failed = (err: unknown) => {
@@ -257,7 +258,7 @@ export function useSave(c: FilesContext, d: SaveDeps) {
     const skipped: string[] = [];
     for (const { id } of stateRef.current.tabs) {
       const tab = tabOf(id);
-      if (!tab?.file || tab.kind === "image" || !hasPending(id)) continue;
+      if (!tab?.file || isViewerKind(tab.kind) || !hasPending(id)) continue;
       // A Tab restored but never shown: loading it may find a conflict.
       await loadContent(id).catch(logError("load for save"));
       const now = tabOf(id);

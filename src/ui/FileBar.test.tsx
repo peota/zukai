@@ -174,6 +174,19 @@ describe("FileBar", () => {
     expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 
+  it("a PDF Tab has no bar; Missing shows the moved-or-deleted bar", () => {
+    const pdf: TabState = { ...tabWith("readonly"), kind: "pdf" };
+    pdf.file!.path = "/data/doc.pdf";
+    const { view } = setup(pdf);
+    expect(view.container).toBeEmptyDOMElement();
+    view.unmount();
+    setup({ ...pdf, file: { ...pdf.file!, held: "missing" } });
+    expect(
+      screen.getByText("doc.pdf was moved or deleted."),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
   it("an unreadable shadow shows an info bar with no actions", () => {
     setup(tabWith("conflict"), true);
     expect(
