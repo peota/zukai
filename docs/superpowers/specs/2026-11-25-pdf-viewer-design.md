@@ -10,7 +10,7 @@ Users read long PDFs (specs, papers, manuals) in Zukai over several sessions. Th
 
 - A new read-only Kind, **PDF**, for `.pdf` Files.
 - Continuous vertical scroll through all pages, rendered lazily so large documents stay fast.
-- Zoom: Mod+= / Mod+- / Mod+0, like Image, plus Mod+wheel zooming at the pointer. The default is fit width.
+- Zoom: Mod+= / Mod+- / Mod+0, like Image, plus Mod+wheel zooming at the pointer. The default is fit width, never past 200% (owner, after trying it: plain fit width was 261% in a wide window).
 - Moving around: scroll, PageUp/PageDown, Home/End, and jump to page (click the page number in the status bar, or a shortcut).
 - Text selection and copy (Mod+C), through a pdf.js text layer.
 - Find (Mod+F, F3 / Shift+F3) with a match count and highlighted matches.
