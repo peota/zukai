@@ -51,6 +51,7 @@ import { createTextFeed } from "./markdown/MarkdownPreview";
 import { baseName, languageRename } from "./files/paths";
 import { inShadow } from "./files/fileState";
 import { asFileError } from "./app/files/context";
+import { isViewerKind } from "./model/kinds";
 import { Sidebar } from "./ui/Sidebar";
 import { GitPanel } from "./ui/git/GitPanel";
 import { SidebarToggle } from "./ui/SidebarToggle";
@@ -410,11 +411,12 @@ export default function App() {
     activeImageInfo?.seq === reloadSeqOf(activeId)
       ? (activeImageInfo.info ?? undefined)
       : undefined;
-  // An Image Tab's text is never shown, but loading it records the File's
-  // fingerprint and state, so disk changes reach it (and it can go Missing).
+  // An Image or PDF Tab's text is never shown, but loading it records the
+  // File's fingerprint and state, so disk changes reach it (and it can go
+  // Missing).
   const { loadContent } = w;
   const shownImages = visible
-    .filter((t) => t.kind === "image")
+    .filter((t) => isViewerKind(t.kind))
     .map((t) => t.id)
     .join("|");
   useEffect(() => {
@@ -624,6 +626,7 @@ export default function App() {
       readBytes={fileReadBytes}
       reloadSeq={reloadSeqOf(tab.id)}
       onImageInfo={onImageInfo}
+      findRequest={w.findRequest}
       mode={effectiveMode(tab, w.settings)}
       bridge={w.bridge}
       fontSize={w.fontSize}

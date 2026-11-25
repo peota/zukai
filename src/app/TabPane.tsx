@@ -1,5 +1,11 @@
 import { Suspense, lazy, useCallback, useState } from "react";
-import type { ImageInfo, MarkdownMode, TabState } from "../model/types";
+import type {
+  ImageInfo,
+  MarkdownMode,
+  PdfInfo,
+  TabState,
+} from "../model/types";
+import type { FindRequest } from "../find/findExtension";
 import type { TextBridge } from "../editor/EditorHost";
 import type { RichSync } from "../rich/RichEditor";
 import { FileBar, type FileBarProps } from "../ui/FileBar";
@@ -15,6 +21,8 @@ import type { FolderGit } from "../git/api";
 
 /** Milkdown stays out of the main bundle until a note is shown in Rich. */
 const RichEditor = lazy(() => import("../rich/RichEditor"));
+/** pdf.js and its viewer stay out of the main bundle until a PDF is shown. */
+const PdfHost = lazy(() => import("../pdf/PdfHost"));
 
 export interface TabPaneProps
   extends
@@ -34,6 +42,12 @@ export interface TabPaneProps
   onPreviewSplit(r: number): void;
   /** The image's size and format, for the reload `seq` it was read at. */
   onImageInfo(id: string, seq: number, info: ImageInfo | null): void;
+  /** A PDF's page, zoom and size, for the reload `seq` it was read at. */
+  onPdfInfo?(id: string, seq: number, info: PdfInfo | null): void;
+  /** A go-to-page request for the focused PDF Tab. */
+  goToPage?: { page: number; seq: number } | null;
+  /** Find, for the focused Tab (a PDF Tab's own find bar). */
+  findRequest?: FindRequest | null;
   /** A Markdown Tab's editor (null for any other Tab). */
   mode: MarkdownMode | null;
   /** How the rich editor reaches the Tab's text (null until it exists). */
@@ -80,10 +94,11 @@ export function useSlots() {
 
 /**
  * One Tab's area: its file bar, then its text (the editor's slot, with a
- * Markdown preview beside it or instead of it), canvas, image or diff.
+ * Markdown preview beside it or instead of it), canvas, image, PDF or diff.
  */
 export function TabPane(p: TabPaneProps) {
-  const { tab, focused, onFocus, slotRef, onImageInfo, reloadSeq } = p;
+  const { tab, focused, onFocus, slotRef, onImageInfo, onPdfInfo, reloadSeq } =
+    p;
   const id = tab.id;
   const isText = tab.kind === "text";
   const isMarkdown = isText && tab.language === "markdown";
@@ -97,6 +112,10 @@ export function TabPane(p: TabPaneProps) {
   const onInfo = useCallback(
     (info: ImageInfo | null) => onImageInfo(id, reloadSeq, info),
     [onImageInfo, id, reloadSeq],
+  );
+  const onPdfTabInfo = useCallback(
+    (info: PdfInfo | null) => onPdfInfo?.(id, reloadSeq, info),
+    [onPdfInfo, id, reloadSeq],
   );
 
   return (
@@ -204,6 +223,21 @@ export function TabPane(p: TabPaneProps) {
             onInfo={onInfo}
             keys={focused}
           />
+        )}
+        {tab.kind === "pdf" && tab.file && (
+          <Suspense fallback={<div className="size-full bg-editor" />}>
+            <PdfHost
+              key={id}
+              tab={tab}
+              readBytes={p.readBytes}
+              reloadSeq={reloadSeq}
+              onInfo={onPdfTabInfo}
+              keys={focused}
+              onOpenDefault={p.onOpenDefault}
+              findRequest={focused ? p.findRequest : null}
+              goToPage={focused ? p.goToPage : null}
+            />
+          </Suspense>
         )}
       </div>
     </div>
