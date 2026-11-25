@@ -1,5 +1,5 @@
 use crate::files::grants::{self, Grants};
-use crate::storage::{self, Result, StorageError, scratchpads, session, shadow};
+use crate::storage::{self, Result, StorageError, pdf_positions, scratchpads, session, shadow};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
@@ -103,6 +103,16 @@ pub async fn session_write(app: AppHandle, json: String) -> Result<()> {
 #[tauri::command]
 pub async fn session_backup(app: AppHandle) -> Result<()> {
     blocking(app, |b| session::backup(&b)).await
+}
+
+#[tauri::command]
+pub async fn pdf_positions_read(app: AppHandle) -> Result<Option<String>> {
+    blocking(app, |b| pdf_positions::read(&b)).await
+}
+
+#[tauri::command]
+pub async fn pdf_positions_write(app: AppHandle, json: String) -> Result<()> {
+    blocking(app, move |b| pdf_positions::write(&b, &json)).await
 }
 
 #[tauri::command]
