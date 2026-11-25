@@ -270,6 +270,13 @@ const modJ = () =>
   fireEvent.keyDown(window, { key: "j", code: "KeyJ", ctrlKey: true });
 const modB = () =>
   fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
+const modShiftG = () =>
+  fireEvent.keyDown(window, {
+    key: "G",
+    code: "KeyG",
+    ctrlKey: true,
+    shiftKey: true,
+  });
 
 describe("App", () => {
   it("modBTogglesSidebarAndHiddenLayoutUnchanged", async () => {
@@ -450,7 +457,7 @@ describe("App", () => {
       f.fileFingerprintQuick.mockResolvedValue(print);
     }
 
-    it("shows the branch of the repo holding the file; click opens Git there", async () => {
+    it("shows the branch of the repo holding the file; click toggles the Git panel there", async () => {
       h.git.enabled = true;
       h.git.statuses[R] = repo();
       openNote();
@@ -460,8 +467,20 @@ describe("App", () => {
         expect(c?.textContent).toContain("main");
         return c!;
       });
+      expect(r.queryByRole("region", { name: "Git panel" })).toBeNull();
       fireEvent.click(chip);
+      const panel = await r.findByRole("region", { name: "Git panel" });
       expect(h.git.selected).toContain(R);
+      expect(chip.getAttribute("aria-pressed")).toBe("true");
+      // On the right of the editor area, like Ask.
+      const main = r.container.querySelector("main")!;
+      expect(panel.parentElement).toBe(main.parentElement!.parentElement);
+      // The Library sidebar has no Git view of its own any more.
+      expect(r.queryByRole("radiogroup", { name: "Sidebar view" })).toBeNull();
+      fireEvent.click(chip);
+      await waitFor(() =>
+        expect(r.queryByRole("region", { name: "Git panel" })).toBeNull(),
+      );
     });
 
     it("shows the short hash when HEAD is detached", async () => {
@@ -476,13 +495,15 @@ describe("App", () => {
       );
     });
 
-    it("is absent for a scratchpad, a non-repo folder, or git sync off", async () => {
+    it("says Git outside a repo, and is absent with git sync off", async () => {
       h.git.enabled = true;
       h.git.statuses[R] = { kind: "notRepo" };
       openNote();
       const a = render(<App />);
       await waitFor(() => a.getByTestId("editor"));
-      expect(a.container.querySelector("[data-git-chip]")).toBeNull();
+      expect(a.container.querySelector("[data-git-chip]")?.textContent).toBe(
+        "Git",
+      );
       a.unmount();
 
       h.git.statuses[R] = repo();
@@ -497,7 +518,58 @@ describe("App", () => {
       s.readSession.mockResolvedValue(null);
       const c = render(<App />);
       await waitFor(() => c.getByTestId("editor"));
-      expect(c.container.querySelector("[data-git-chip]")).toBeNull();
+      expect(c.container.querySelector("[data-git-chip]")?.textContent).toBe(
+        "Git",
+      );
+    });
+
+    it("Mod+Shift+G shows and hides the Git panel; its × closes it", async () => {
+      h.git.enabled = true;
+      h.git.statuses[R] = repo();
+      openNote();
+      const r = render(<App />);
+      await waitFor(() => r.getByTestId("editor"));
+      act(() => modShiftG());
+      await r.findByRole("region", { name: "Git panel" });
+      act(() => modShiftG());
+      await waitFor(() =>
+        expect(r.queryByRole("region", { name: "Git panel" })).toBeNull(),
+      );
+      act(() => modShiftG());
+      await r.findByRole("region", { name: "Git panel" });
+      fireEvent.click(r.getByRole("button", { name: "Close Git panel" }));
+      await waitFor(() =>
+        expect(r.queryByRole("region", { name: "Git panel" })).toBeNull(),
+      );
+    });
+
+    it("Mod+Shift+G does nothing with git sync off", async () => {
+      h.git.enabled = false;
+      const r = render(<App />);
+      await waitFor(() => r.getByTestId("editor"));
+      act(() => modShiftG());
+      await act(async () => {});
+      expect(r.queryByRole("region", { name: "Git panel" })).toBeNull();
+    });
+
+    it("the Git and Ask panels take turns on the right", async () => {
+      vi.mocked(ask.aiStatus).mockResolvedValueOnce({
+        config: { provider: "anthropic", model: "claude-sonnet-5-5" },
+        hasKey: true,
+        ready: true,
+      });
+      h.git.enabled = true;
+      const r = render(<App />);
+      await waitFor(() => r.getByTestId("editor"));
+      await act(async () => {});
+      act(() => modJ());
+      await r.findByRole("region", { name: "Ask" });
+      act(() => modShiftG());
+      await r.findByRole("region", { name: "Git panel" });
+      expect(r.queryByRole("region", { name: "Ask" })).toBeNull();
+      act(() => modJ());
+      await r.findByRole("region", { name: "Ask" });
+      expect(r.queryByRole("region", { name: "Git panel" })).toBeNull();
     });
   });
 

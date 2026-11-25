@@ -54,6 +54,8 @@ export interface Settings {
   terminalWidth: number;
   /** The Ask panel's width in px. */
   askWidth: number;
+  /** The Git panel's width in px. */
+  gitWidth: number;
 }
 
 export type TerminalPosition = "bottom" | "side";
@@ -65,6 +67,7 @@ export const TERMINAL_POSITIONS: readonly TerminalPosition[] = [
 export const TERMINAL_MIN_HEIGHT = 120;
 export const TERMINAL_MIN_WIDTH = 240;
 export const ASK_MIN_WIDTH = 280;
+export const GIT_MIN_WIDTH = 240;
 
 /** A terminal size in whole pixels, at least `min` and at most 70% of `available`. */
 export function clampTerminalSize(
@@ -111,6 +114,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   terminalHeight: 280,
   terminalWidth: 480,
   askWidth: 400,
+  gitWidth: 320,
 });
 
 const THEMES: readonly string[] = ["system", "light", "dark"];
@@ -181,5 +185,6 @@ export function parseSettings(v: unknown): Settings {
       d.terminalWidth,
     ),
     askWidth: storedSize(v.askWidth, ASK_MIN_WIDTH, d.askWidth),
+    gitWidth: storedSize(v.gitWidth, GIT_MIN_WIDTH, d.gitWidth),
   };
 }

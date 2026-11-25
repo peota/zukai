@@ -128,14 +128,6 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     onRemoveFolder: vi.fn(),
     onOpenTerminal: vi.fn(),
     git: fakeGit(),
-    view: "files",
-    onView: vi.fn(),
-    gitFolder: null,
-    onGitFolder: vi.fn(),
-    unsavedUnder: vi.fn(() => 0),
-    onSaveAll: vi.fn(),
-    onOpenDiff: vi.fn(),
-    onOpenFile: vi.fn(),
     onCloneFolder: vi.fn(async () => null),
     platform: "windows",
     ...over,
@@ -1592,20 +1584,14 @@ describe("Sidebar git", () => {
   const follows = (a: Node, b: Node) =>
     (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 
-  it("git_off_shows_files_without_switch_or_rows", () => {
+  it("git_off_shows_no_git_rows", () => {
     setupGit(
       fakeGit({
         enabled: false,
         anyDirty: true,
         statuses: { [ROOT]: REPO, [ADDED]: NOT_REPO },
       }),
-      // A Git view left showing from before sync went off.
-      { view: "git" },
     );
-    expect(screen.queryByRole("radiogroup", { name: "Sidebar view" })).toBe(
-      null,
-    );
-    expect(screen.queryByRole("region", { name: "Git" })).toBeNull();
     expect(screen.getByLabelText("Search Library")).toBeVisible();
     expect(tree()).toBeVisible();
     expect(screen.queryByRole("button", { name: "Pull" })).toBeNull();
@@ -1614,73 +1600,24 @@ describe("Sidebar git", () => {
     );
   });
 
-  it("files_view_has_the_switch_and_no_git_rows", () => {
-    const onView = vi.fn();
+  it("the_sidebar_is_files_only_with_git_on", () => {
     setupGit(
       fakeGit({
         enabled: true,
         anyDirty: true,
         statuses: { [ROOT]: REPO, [ADDED]: REPO },
       }),
-      { onView },
     );
-    const sw = screen.getByRole("radiogroup", { name: "Sidebar view" });
-    // At the top, above the search field.
-    expect(follows(sw, screen.getByLabelText("Search Library"))).toBe(true);
-    expect(within(sw).getByRole("radio", { name: "Files" })).toHaveAttribute(
-      "aria-checked",
-      "true",
+    // Git lives in its own panel now: no switch, no view, no rows here.
+    expect(screen.queryByRole("radiogroup", { name: "Sidebar view" })).toBe(
+      null,
     );
-    const gitSeg = within(sw).getByRole("radio", { name: /^Git/ });
-    expect(within(gitSeg).getByTitle("Uncommitted changes")).toBeTruthy();
-    // No git row under either heading, no Pull or Push anywhere.
+    expect(screen.queryByRole("region", { name: "Git" })).toBeNull();
+    expect(screen.queryByTitle("Uncommitted changes")).toBeNull();
     expect(screen.queryByRole("group", { name: /git$/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Pull" })).toBeNull();
-    expect(document.querySelector("[data-under-heading]")).toBeNull();
-    fireEvent.click(gitSeg);
-    expect(onView).toHaveBeenCalledWith("git");
-  });
-
-  it("git_view_replaces_everything_below_the_switch", () => {
-    const git = fakeGit({
-      enabled: true,
-      statuses: { [ROOT]: REPO, [ADDED]: REPO },
-    });
-    const onGitFolder = vi.fn();
-    setupGit(git, {
-      view: "git",
-      gitFolder: ADDED,
-      onGitFolder,
-      pinned: [
-        { id: "p1", title: "Pinned one", icon: "scratchpad", open: true },
-      ],
-    });
-    const sw = screen.getByRole("radiogroup", { name: "Sidebar view" });
-    expect(within(sw).getByRole("radio", { name: "Git" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    const view = screen.getByRole("region", { name: "Git" });
-    expect(follows(sw, view)).toBe(true);
-    expect(screen.queryByLabelText("Search Library")).toBeNull();
-    expect(screen.queryByText("PINNED")).toBeNull();
-    expect(screen.queryByText("LIBRARY")).toBeNull();
-    expect(screen.queryByRole("tree")).toBeNull();
-    expect(screen.queryByText("SCRATCHPADS")).toBeNull();
-    // The folder kept for the session shows first.
-    expect(git.select).toHaveBeenLastCalledWith(ADDED);
-    // Picking another one is kept for next time.
-    fireEvent.click(within(view).getByRole("button", { name: /Notes/ }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Library/ }));
-    expect(onGitFolder).toHaveBeenCalledWith(ROOT);
-    // No git row there either.
-    expect(screen.queryByRole("group", { name: /git$/ })).toBeNull();
-  });
-
-  it("git_view_without_a_kept_folder_shows_the_library", () => {
-    const git = fakeGit({ enabled: true, statuses: { [ROOT]: REPO } });
-    setupGit(git, { view: "git", gitFolder: null });
-    expect(git.select).toHaveBeenLastCalledWith(ROOT);
+    expect(screen.getByLabelText("Search Library")).toBeVisible();
+    expect(tree()).toBeVisible();
   });
 
   it("menus_offer_clone_but_not_set_up_sync", () => {
@@ -1708,14 +1645,24 @@ describe("Sidebar git", () => {
     }
   });
 
-  it("git_view_menu_opens_the_clone_dialog", () => {
-    setupGit(fakeGit({ enabled: true, statuses: { [ROOT]: REPO } }), {
-      view: "git",
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Git actions" }));
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: "Add folder from git…" }),
+  it("a_clone_request_opens_the_clone_dialog", () => {
+    const { p, rerender } = setupGit(
+      fakeGit({ enabled: true, statuses: { [ROOT]: REPO } }),
+      { cloneRequest: 0 },
     );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(<Sidebar {...p} cloneRequest={1} />);
+    expect(
+      screen.getByRole("dialog", { name: "Add folder from git" }),
+    ).toBeVisible();
+  });
+
+  it("a_clone_request_opens_the_dialog_with_the_sidebar_closed", () => {
+    const { p, rerender } = setupGit(fakeGit({ enabled: true }), {
+      open: false,
+      cloneRequest: 0,
+    });
+    rerender(<Sidebar {...p} cloneRequest={1} />);
     expect(
       screen.getByRole("dialog", { name: "Add folder from git" }),
     ).toBeVisible();
@@ -1834,35 +1781,32 @@ describe("Sidebar git", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
 
-    it("git_view_clone_item_is_off_while_a_clone_runs", async () => {
+    it("clone_request_is_ignored_while_a_clone_runs", async () => {
       const c = pending();
+      const onCloning = vi.fn();
       const git = fakeGit({ enabled: true, statuses: { [ROOT]: REPO } });
       const { p, rerender } = setupGit(git, {
         onCloneFolder: c.onCloneFolder,
+        onCloning,
+        cloneRequest: 0,
       });
+      expect(onCloning).toHaveBeenLastCalledWith(false);
       await fillAndClone();
-      rerender(<Sidebar {...p} view="git" />);
-      fireEvent.click(screen.getByRole("button", { name: "Git actions" }));
-      fireEvent.click(screen.getByRole("menuitem", { name: CLONE }));
-      expect(screen.getByRole("menuitem", { name: CLONE })).toHaveAttribute(
-        "aria-disabled",
-        "true",
-      );
+      expect(onCloning).toHaveBeenLastCalledWith(true);
+      rerender(<Sidebar {...p} onCloning={onCloning} cloneRequest={1} />);
       expect(screen.queryByRole("dialog")).toBeNull();
       await c.settle(null);
+      expect(onCloning).toHaveBeenLastCalledWith(false);
     });
 
-    it("clone_from_git_view_switches_to_files_with_placeholder", async () => {
+    it("clone_requested_from_the_git_panel_shows_its_placeholder", async () => {
       const c = pending();
-      const onView = vi.fn();
       const git = fakeGit({ enabled: true, statuses: { [ROOT]: REPO } });
       const { p, rerender } = setupGit(git, {
-        view: "git",
-        onView,
         onCloneFolder: c.onCloneFolder,
+        cloneRequest: 0,
       });
-      fireEvent.click(screen.getByRole("button", { name: "Git actions" }));
-      fireEvent.click(screen.getByRole("menuitem", { name: CLONE }));
+      rerender(<Sidebar {...p} cloneRequest={1} />);
       const d = within(
         screen.getByRole("dialog", { name: "Add folder from git" }),
       );
@@ -1872,12 +1816,8 @@ describe("Sidebar git", () => {
       await act(async () => {
         fireEvent.click(d.getByRole("button", { name: "Choose location…" }));
       });
-      // Only pressing Clone leaves the Git view.
-      expect(onView).not.toHaveBeenCalled();
       fireEvent.click(d.getByRole("button", { name: "Clone" }));
       expect(c.onCloneFolder).toHaveBeenCalledTimes(1);
-      expect(onView).toHaveBeenCalledWith("files");
-      rerender(<Sidebar {...p} view="files" />);
       expect(
         screen.getByRole("button", { name: "Cloning notes…" }),
       ).toBeVisible();

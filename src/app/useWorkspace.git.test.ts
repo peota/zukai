@@ -146,50 +146,41 @@ async function mountWith(gitSync: boolean) {
   return r;
 }
 
-describe("useWorkspace Git view", () => {
-  it("starts on Files", async () => {
+describe("useWorkspace Git panel", () => {
+  it("starts closed", async () => {
     const r = await mountWith(true);
-    expect(r.result.current.sidebarView).toBe("files");
-    expect(r.result.current.sidebar.view).toBe("files");
+    expect(r.result.current.gitOpen).toBe(false);
     r.unmount();
   });
 
-  it("turning git sync off while the Git view shows goes back to Files", async () => {
+  it("turning git sync off closes the panel", async () => {
     const r = await mountWith(true);
-    act(() => r.result.current.setSidebarView("git"));
-    expect(r.result.current.sidebarView).toBe("git");
+    act(() => r.result.current.setGitOpen(true));
+    expect(r.result.current.gitOpen).toBe(true);
     act(() => r.result.current.setSettings({ gitSync: false }));
-    await waitFor(() => expect(r.result.current.sidebarView).toBe("files"));
+    await waitFor(() => expect(r.result.current.gitOpen).toBe(false));
+    // Turning it back on doesn't bring the panel back.
+    act(() => r.result.current.setSettings({ gitSync: true }));
+    expect(r.result.current.gitOpen).toBe(false);
     r.unmount();
   });
 
-  it("showGitFor opens the Git view on that folder", async () => {
+  it("showGitFor opens the panel on that folder, leaving the sidebar be", async () => {
     const r = await mountWith(true);
     act(() => r.result.current.showGitFor(WORK));
-    expect(r.result.current.sidebarView).toBe("git");
-    expect(r.result.current.sidebar.open).toBe(true);
+    expect(r.result.current.gitOpen).toBe(true);
+    expect(r.result.current.sidebar.open).toBe(false);
     expect(r.result.current.gitFolder).toBe(WORK);
     expect(r.result.current.git.selected).toBe(WORK);
     r.unmount();
   });
 
-  it("Mod+Shift+G toggles the Git view, opening the sidebar", async () => {
-    const r = await mountWith(true);
-    expect(r.result.current.sidebar.open).toBe(false);
-    await act(() => r.result.current.run({ type: "toggleGitView" }));
-    expect(r.result.current.sidebar.open).toBe(true);
-    expect(r.result.current.sidebarView).toBe("git");
-    await act(() => r.result.current.run({ type: "toggleGitView" }));
-    expect(r.result.current.sidebarView).toBe("files");
-    expect(r.result.current.sidebar.open).toBe(true);
-    r.unmount();
-  });
-
-  it("the toggle does nothing with git sync off", async () => {
+  it("the panel doesn't open with git sync off", async () => {
     const r = await mountWith(false);
-    await act(() => r.result.current.run({ type: "toggleGitView" }));
-    expect(r.result.current.sidebarView).toBe("files");
-    expect(r.result.current.sidebar.open).toBe(false);
+    act(() => r.result.current.setGitOpen(true));
+    expect(r.result.current.gitOpen).toBe(false);
+    act(() => r.result.current.showGitFor(WORK));
+    expect(r.result.current.gitOpen).toBe(false);
     r.unmount();
   });
 

@@ -11,6 +11,7 @@ import type {
 import type { SaveStatus } from "../storage/autosave";
 import { encodingLabel, lineEndingLabel } from "./encodings";
 import { Menu } from "./Menu";
+import { DirtyDot } from "./git/FolderPicker";
 
 export type FormatKind = "beautify" | "minify";
 
@@ -72,15 +73,26 @@ export interface StatusBarProps {
    */
   ask?: { open: boolean; onToggle(): void; hint?: string };
   /**
-   * The branch of the repo holding the active Tab (a short hash when HEAD is
-   * detached); click opens the Git view. Absent outside a repo.
+   * The Git button beside Ask: shows and hides the Git panel. It names the
+   * branch of the repo holding the active Tab (a short hash when HEAD is
+   * detached), else just "Git". Absent while git sync is off.
    */
   git?: {
-    branch: string;
+    branch?: string;
     state: "none" | "rebasing" | "merging";
-    onClick(): void;
+    open: boolean;
+    /** Some repo folder has uncommitted changes: the amber dot. */
+    dirty: boolean;
+    hint?: string;
+    onToggle(): void;
   };
 }
+
+const PANEL_TOGGLE =
+  "flex shrink-0 items-center gap-1.5 rounded-[5px] px-2.5 py-1 ";
+const panelToggle = (open: boolean) =>
+  PANEL_TOGGLE +
+  (open ? "bg-row-sel text-text" : "hover:bg-row-hover hover:text-text");
 
 export const LANGUAGE_LABELS: Record<LanguageId, string> = {
   plaintext: "Plain Text",
@@ -146,22 +158,6 @@ export function StatusBar({
           className="-ml-1 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
         >
           <Icon name="settings" size={14} />
-        </button>
-      )}
-      {git && (
-        <button
-          type="button"
-          tabIndex={-1}
-          data-git-chip
-          title={`${git.branch}: show in Git`}
-          onClick={git.onClick}
-          className={`${CHIP} flex min-w-0 items-center gap-1.5`}
-        >
-          <Icon name="gitBranch" size={13} className="shrink-0 text-faint" />
-          <span className="truncate">{git.branch}</span>
-          {git.state !== "none" && (
-            <span className="shrink-0">{git.state}</span>
-          )}
         </button>
       )}
       {kindLabel === undefined && !rich ? (
@@ -243,32 +239,57 @@ export function StatusBar({
           )}
         </div>
       )}
-      {ask && (
+      {(git || ask) && (
         <>
           <span
             aria-hidden="true"
             className="h-4 w-px shrink-0 bg-hairline-strong"
           />
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-pressed={ask.open}
-            title={ask.hint ? `Ask (${ask.hint})` : "Ask"}
-            onClick={ask.onToggle}
-            className={
-              "-mr-1 flex shrink-0 items-center gap-1.5 rounded-[5px] px-2.5 py-1 " +
-              (ask.open
-                ? "bg-row-sel text-text"
-                : "hover:bg-row-hover hover:text-text")
-            }
-          >
-            <Icon
-              name="ask"
-              size={14}
-              className={ask.open ? "text-accent" : "text-faint"}
-            />
-            Ask
-          </button>
+          {/* The right panels' toggles, under where those panels dock. */}
+          <div className="-mr-1 flex min-w-0 shrink-0 items-center gap-1">
+            {git && (
+              <button
+                type="button"
+                tabIndex={-1}
+                data-git-chip
+                aria-pressed={git.open}
+                title={
+                  (git.branch ? `${git.branch}: Git` : "Git") +
+                  (git.hint ? ` (${git.hint})` : "")
+                }
+                onClick={git.onToggle}
+                className={panelToggle(git.open)}
+              >
+                <Icon
+                  name="gitBranch"
+                  size={13}
+                  className={git.open ? "text-accent" : "text-faint"}
+                />
+                <span className="max-w-[16ch] truncate">
+                  {git.branch ?? "Git"}
+                </span>
+                {git.state !== "none" && <span>{git.state}</span>}
+                {git.dirty && <DirtyDot />}
+              </button>
+            )}
+            {ask && (
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-pressed={ask.open}
+                title={ask.hint ? `Ask (${ask.hint})` : "Ask"}
+                onClick={ask.onToggle}
+                className={panelToggle(ask.open)}
+              >
+                <Icon
+                  name="ask"
+                  size={14}
+                  className={ask.open ? "text-accent" : "text-faint"}
+                />
+                Ask
+              </button>
+            )}
+          </div>
         </>
       )}
       {formatAt && kindLabel === undefined && (

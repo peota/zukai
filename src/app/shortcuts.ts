@@ -36,8 +36,8 @@ export type Command =
   | { type: "newTerminal" }
   /** Shows or hides the Ask panel (only once an AI provider is ready). */
   | { type: "toggleAsk" }
-  /** The sidebar's Files | Git switch: to Git, or back to Files. */
-  | { type: "toggleGitView" };
+  /** Shows or hides the Git panel (only while git sync is on). */
+  | { type: "toggleGit" };
 
 export type KeyInfo = Pick<
   KeyboardEvent,
@@ -142,7 +142,7 @@ export function matchShortcut(e: KeyInfo, p: Platform): Command | null {
       case "m":
         return { type: "toggleRichMarkdown" };
       case "g":
-        return { type: "toggleGitView" };
+        return { type: "toggleGit" };
     }
     return null;
   }

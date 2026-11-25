@@ -30,7 +30,7 @@ const ALL: Record<Command["type"], true> = {
   toggleTerminal: true,
   newTerminal: true,
   toggleAsk: true,
-  toggleGitView: true,
+  toggleGit: true,
 };
 
 describe("the shortcut list", () => {
@@ -65,13 +65,13 @@ describe("the shortcut list", () => {
   it("lists the Git view toggle", () => {
     expect(SHORTCUTS).toContainEqual({
       group: "View",
-      action: "Show / hide Git view",
+      action: "Toggle Git panel",
       keys: [["Mod", "Shift", "G"]],
-      command: "toggleGitView",
+      command: "toggleGit",
     });
     const keys = (p: "windows" | "mac") =>
       shortcutsFor(p)
-        .filter((s) => s.command === "toggleGitView")
+        .filter((s) => s.command === "toggleGit")
         .flatMap((s) => s.keys.map((k) => formatKeys(k, p)));
     expect(keys("windows")).toEqual(["Ctrl+Shift+G"]);
     expect(keys("mac")).toEqual(["⇧⌘G"]);

@@ -186,9 +186,9 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "View",
-    action: "Show / hide Git view",
+    action: "Toggle Git panel",
     keys: [["Mod", "Shift", "G"]],
-    command: "toggleGitView",
+    command: "toggleGit",
   },
   {
     group: "View",

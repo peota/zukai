@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, MouseEvent, PointerEvent } from "react";
+import type { KeyboardEvent, MouseEvent } from "react";
 import { linkKind, renderMarkdown } from "../markdown/render";
-import { ASK_MIN_WIDTH, clampTerminalSize } from "../model/settings";
+import { ASK_MIN_WIDTH } from "../model/settings";
+import { PanelResizeEdge } from "../ui/PanelResizeEdge";
 import { CloseIcon, Icon, fileIcon } from "../ui/icons";
 import type { Turn } from "./conversation";
 import type { UseAsk } from "./useAsk";
@@ -27,80 +28,6 @@ const MESSAGES = {
   noNote: "Ask works on text notes for now.",
   tooLong: "This note is too long to ask about.",
 } as const;
-
-/** The arrow keys' step, in px. */
-const KEY_STEP = 16;
-
-/** The panel's left edge: drag (or arrow keys) to resize, like the terminal's. */
-function ResizeEdge({
-  width,
-  onWidth,
-}: {
-  width: number;
-  onWidth(px: number): void;
-}) {
-  const press = useRef<{ pointerId: number; at: number; width: number } | null>(
-    null,
-  );
-  // 70% of the row the panel sits in: the same base as its CSS maxWidth.
-  const clamp = (el: HTMLElement, px: number) =>
-    clampTerminalSize(
-      px,
-      ASK_MIN_WIDTH,
-      el.closest<HTMLElement>("[data-z-ask-panel]")?.parentElement
-        ?.clientWidth || window.innerWidth,
-    );
-
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    press.current = { pointerId: e.pointerId, at: e.clientX, width };
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // No capture: moves over the edge still resize.
-    }
-  };
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    const p = press.current;
-    if (!p || p.pointerId !== e.pointerId) return;
-    if ((e.buttons & 1) === 0) {
-      press.current = null; // the release was missed
-      return;
-    }
-    // Dragging left makes the panel wider.
-    onWidth(clamp(e.currentTarget, p.width + p.at - e.clientX));
-  };
-  const end = (e: PointerEvent<HTMLDivElement>) => {
-    if (press.current?.pointerId === e.pointerId) press.current = null;
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const step =
-      e.key === "ArrowLeft" ? KEY_STEP : e.key === "ArrowRight" ? -KEY_STEP : 0;
-    if (step === 0) return;
-    e.preventDefault();
-    onWidth(clamp(e.currentTarget, width + step));
-  };
-
-  return (
-    <div className="relative w-px shrink-0 bg-hairline">
-      <div
-        role="separator"
-        aria-label="Resize Ask panel"
-        aria-orientation="vertical"
-        aria-valuenow={width}
-        title="Drag to resize"
-        tabIndex={0}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={end}
-        onPointerCancel={end}
-        onKeyDown={onKeyDown}
-        className="absolute top-0 bottom-0 -left-[3px] z-10 w-[7px] cursor-col-resize outline-none hover:bg-accent-soft focus-visible:bg-accent-soft"
-      />
-    </div>
-  );
-}
 
 /** A finished answer's Copy action; says Copied for a moment. */
 function CopyButton({ text }: { text: string }) {
@@ -305,11 +232,16 @@ export function AskPanel({
   return (
     <section
       aria-label="Ask"
-      data-z-ask-panel=""
+      data-z-right-panel=""
       className="z-ask relative flex min-h-0 min-w-0 shrink-0 flex-row bg-editor"
       style={{ width, minWidth: ASK_MIN_WIDTH, maxWidth: "70%" }}
     >
-      <ResizeEdge width={width} onWidth={onWidth} />
+      <PanelResizeEdge
+        label="Resize Ask panel"
+        width={width}
+        min={ASK_MIN_WIDTH}
+        onWidth={onWidth}
+      />
       <div className="sr-only" aria-live="polite">
         {announce}
       </div>
