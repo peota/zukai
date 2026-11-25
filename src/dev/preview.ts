@@ -153,9 +153,24 @@ const flow = JSON.stringify({
 
 const logo = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 32 32"><path d="M4 7h8l4 10 4-10h8L18 27h-4z" fill="#3b74ee"/></svg>`;
 
+// A one-page PDF (no xref table; pdf.js rebuilds it), for the PDF view.
+const pdf = [
+  "%PDF-1.4",
+  "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj",
+  "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj",
+  "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj",
+  "4 0 obj<</Length 56>>stream",
+  "BT /F1 24 Tf 72 700 Td (Runbook: redis failover) Tj ET",
+  "endstream endobj",
+  "5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj",
+  "trailer<</Root 1 0 R/Size 6>>",
+  "%%EOF",
+].join("\n");
+
 const files: Record<string, string> = {
   [join(ROOT, "flow.excalidraw")]: flow,
   [join(ROOT, "logo.svg")]: logo,
+  [join(ROOT, "runbook.pdf")]: pdf,
   [join(ROOT, "incidents\\2026-11-12 redis failover.md")]: md,
   [join(ROOT, "incidents\\checkout-latency.csv")]: csv,
   [join(ROOT, "snippets\\k8s.sh")]: sh,
@@ -568,6 +583,7 @@ function demoSession(params: URLSearchParams): string {
       fileTab("f2", "incidents\\2026-11-12 redis failover.md", "markdown"),
       { ...fileTab("f3", "flow.excalidraw", "plaintext"), kind: "canvas" },
       { ...fileTab("f4", "logo.svg", "plaintext"), kind: "image" },
+      { ...fileTab("f5", "runbook.pdf", "plaintext"), kind: "pdf" },
     ],
     activeId: params.get("tab") ?? "f2",
     closed: [],
