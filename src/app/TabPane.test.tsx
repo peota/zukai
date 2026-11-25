@@ -4,7 +4,12 @@ import { TabPane, type TabPaneProps } from "./TabPane";
 import type { TabState } from "../model/types";
 
 const seen = vi.hoisted(() => ({
-  calls: [] as { id: string; goToPage: unknown; findRequest: unknown }[],
+  calls: [] as {
+    id: string;
+    goToPage: unknown;
+    findRequest: unknown;
+    zoomRequest: unknown;
+  }[],
 }));
 
 vi.mock("../pdf/PdfHost", () => ({
@@ -12,11 +17,13 @@ vi.mock("../pdf/PdfHost", () => ({
     tab: { id: string };
     goToPage: unknown;
     findRequest: unknown;
+    zoomRequest: unknown;
   }) => {
     seen.calls.push({
       id: p.tab.id,
       goToPage: p.goToPage,
       findRequest: p.findRequest,
+      zoomRequest: p.zoomRequest,
     });
     return null;
   },
@@ -36,6 +43,7 @@ function pane(
   focused: boolean,
   goToPage: TabPaneProps["goToPage"],
   findRequest: TabPaneProps["findRequest"] = null,
+  zoomRequest: TabPaneProps["zoomRequest"] = null,
 ) {
   return (
     <TabPane
@@ -44,6 +52,7 @@ function pane(
         focused,
         goToPage,
         findRequest,
+        zoomRequest,
         tabs: [],
         slotRef: () => {},
         reloadSeq: 0,
@@ -91,5 +100,26 @@ describe("TabPane find", () => {
     render(pane("a", true, null, req));
     await vi.waitFor(() => expect(seen.calls.length).toBeGreaterThan(0));
     expect(seen.calls[seen.calls.length - 1]?.findRequest).toEqual(req);
+  });
+});
+
+describe("TabPane zoom", () => {
+  it("a zoom request for PDF B never reaches PDF A when A's pane gets focus", async () => {
+    seen.calls.length = 0;
+    // Split: A unfocused, B focused; the user zooms B from the status bar.
+    const req = { tabId: "b", zoom: "in" as const, seq: 6 };
+    const { rerender } = render(pane("a", false, null, null, req));
+    // Focus moves to A.
+    rerender(pane("a", true, null, null, req));
+    await vi.waitFor(() => expect(seen.calls.length).toBeGreaterThan(0));
+    expect(seen.calls.every((c) => c.zoomRequest === null)).toBe(true);
+  });
+
+  it("a zoom request for this Tab reaches it", async () => {
+    seen.calls.length = 0;
+    const req = { tabId: "a", zoom: 1.5, seq: 7 };
+    render(pane("a", true, null, null, req));
+    await vi.waitFor(() => expect(seen.calls.length).toBeGreaterThan(0));
+    expect(seen.calls[seen.calls.length - 1]?.zoomRequest).toEqual(req);
   });
 });

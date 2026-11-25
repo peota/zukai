@@ -14,7 +14,7 @@ import {
   PdfFindBar,
   type PdfFindState,
 } from "../find/PdfFindBar";
-import type { PdfInfo, TabState } from "../model/types";
+import type { PdfInfo, PdfZoom, TabState } from "../model/types";
 import { loadPdfjs, pdfAssetParams, type Pdfjs } from "./pdfjs";
 import { pdfPositions, type PdfPosition } from "./positions";
 import "./pdf.css";
@@ -36,6 +36,8 @@ export interface PdfHostProps {
   findRequest?: FindRequest | null;
   /** Go to a page (from the status bar); acted on when `seq` changes. */
   goToPage?: { page: number; seq: number } | null;
+  /** Zoom (from the status bar); acted on when `seq` changes. */
+  zoomRequest?: { zoom: PdfZoom; seq: number } | null;
 }
 
 type Position = Omit<PdfPosition, "updatedAt">;
@@ -77,6 +79,14 @@ function fitWidth(viewer: PDFViewer) {
 function setZoom(viewer: PDFViewer, zoom: number) {
   fitting.set(viewer, false);
   viewer.currentScale = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+}
+
+/** A step in or out, fit width, or a scale: the keys' and the status bar's. */
+function applyZoom(viewer: PDFViewer, zoom: PdfZoom) {
+  if (zoom === "fit") fitWidth(viewer);
+  else if (zoom === "in") setZoom(viewer, viewer.currentScale * KEY_STEP);
+  else if (zoom === "out") setZoom(viewer, viewer.currentScale / KEY_STEP);
+  else setZoom(viewer, zoom);
 }
 
 const TOO_LARGE = "Too large to show in Zukai.";
@@ -188,6 +198,7 @@ export function PdfHost({
   onOpenDefault,
   findRequest,
   goToPage,
+  zoomRequest,
 }: PdfHostProps) {
   const path = tab.file?.path ?? "";
   const missing = tab.file?.held === "missing";
@@ -205,6 +216,11 @@ export function PdfHost({
   const restoredRef = useRef(false);
   /** The last position known for a path: what a reload restores. */
   const lastRef = useRef<{ path: string; pos: Position } | null>(null);
+  /**
+   * Reports the shown document's page and zoom again: a zoom to the scale
+   * it already has fires no scale event, yet may end fitting.
+   */
+  const reportRef = useRef<() => void>(() => {});
   const onInfoRef = useRef(onInfo);
   useLayoutEffect(() => {
     onInfoRef.current = onInfo;
@@ -290,9 +306,11 @@ export function PdfHost({
         page: viewer.currentPageNumber,
         pages: viewer.pagesCount,
         zoom: viewer.currentScale,
+        fitted: fitting.get(viewer) ?? false,
         bytes,
       });
     };
+    reportRef.current = report;
     /** Never before the restore, and never while hidden. */
     const save = () => {
       if (!restoredRef.current) return;
@@ -412,18 +430,19 @@ export function PdfHost({
       const otherMod = mac ? e.ctrlKey : e.metaKey;
       if (mod && !otherMod && !e.altKey) {
         if (e.key === "=" || e.key === "+" || e.code === "NumpadAdd") {
-          setZoom(viewer, viewer.currentScale * KEY_STEP);
+          applyZoom(viewer, "in");
         } else if (e.key === "-" || e.code === "NumpadSubtract") {
-          setZoom(viewer, viewer.currentScale / KEY_STEP);
+          applyZoom(viewer, "out");
         } else if (
           e.key === "0" ||
           e.code === "Digit0" ||
           e.code === "Numpad0"
         ) {
-          fitWidth(viewer);
+          applyZoom(viewer, "fit");
         } else {
           return;
         }
+        reportRef.current();
         e.preventDefault();
         return;
       }
@@ -495,6 +514,17 @@ export function PdfHost({
       viewer.pagesCount,
     );
   }, [goToPage]);
+
+  // Zoom: only a request made while shown (a new `seq`).
+  const zoomSeq = useRef(zoomRequest?.seq ?? 0);
+  useEffect(() => {
+    if (!zoomRequest || zoomRequest.seq === zoomSeq.current) return;
+    zoomSeq.current = zoomRequest.seq;
+    const viewer = viewerRef.current;
+    if (!viewer || !restoredRef.current) return;
+    applyZoom(viewer, zoomRequest.zoom);
+    reportRef.current();
+  }, [zoomRequest]);
 
   // pdf.js's match count, for the find bar.
   useEffect(() => {

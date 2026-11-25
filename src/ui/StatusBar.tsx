@@ -7,6 +7,7 @@ import type {
   LanguageId,
   MarkdownMode,
   PdfInfo,
+  PdfZoom,
   PreviewMode,
 } from "../model/types";
 import type { SaveStatus } from "../storage/autosave";
@@ -51,6 +52,8 @@ export interface StatusBarProps {
   pdf?: PdfInfo;
   /** Go to this page (already clamped to 1..pages). */
   onGoToPage?(page: number): void;
+  /** Zoom the PDF: a step in or out, fit width, or a scale. */
+  onZoom?(zoom: PdfZoom): void;
   /** Bumped by the go to page command: opens the page input. */
   pageInputSignal?: number;
   /** A PDF Tab's quiet "Open with default app". */
@@ -142,6 +145,7 @@ export function StatusBar({
   image,
   pdf,
   onGoToPage,
+  onZoom,
   pageInputSignal,
   onOpenDefault,
   onSettings,
@@ -157,6 +161,10 @@ export function StatusBar({
     setFormatAt(null);
     onFormatClose?.();
   }, [onFormatClose]);
+  const [zoomAt, setZoomAt] = useState<DOMRect | null>(null);
+  const closeZoom = useCallback(() => setZoomAt(null), []);
+  // Another Tab (or none shown): its zoom menu goes with it.
+  if (zoomAt && !pdf) setZoomAt(null);
   const scratchEnding = platformLineEnding === "crlf" ? "CRLF" : "LF";
 
   return (
@@ -197,12 +205,54 @@ export function StatusBar({
       ) : kindLabel !== undefined && pdf ? (
         <div className="ml-auto flex items-center gap-4 px-2.5 py-1">
           <span>{kindLabel}</span>
-          <PageField
-            pdf={pdf}
-            onGoToPage={onGoToPage}
-            signal={pageInputSignal}
-          />
-          <span>{`${Math.round(pdf.zoom * 100)}%`}</span>
+          <div className="flex items-center gap-0.5">
+            <StepButton
+              label="Previous page"
+              icon="chevronLeft"
+              disabled={pdf.page <= 1}
+              onClick={() => onGoToPage?.(pdf.page - 1)}
+            />
+            <PageField
+              pdf={pdf}
+              onGoToPage={onGoToPage}
+              signal={pageInputSignal}
+            />
+            <StepButton
+              label="Next page"
+              icon="chevronRight"
+              disabled={pdf.page >= pdf.pages}
+              onClick={() => onGoToPage?.(pdf.page + 1)}
+            />
+          </div>
+          <div className="flex items-center gap-0.5">
+            <StepButton
+              label="Zoom out"
+              icon="minus"
+              onClick={() => onZoom?.("out")}
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              data-menu-anchor="zoom"
+              aria-label="Zoom"
+              aria-haspopup="menu"
+              aria-expanded={zoomAt !== null}
+              title="Zoom"
+              onClick={(e) =>
+                zoomAt
+                  ? closeZoom()
+                  : setZoomAt(e.currentTarget.getBoundingClientRect())
+              }
+              className="-my-1 min-w-[6ch] rounded-[5px] px-1.5 py-1 text-center tabular-nums hover:bg-row-hover hover:text-text aria-expanded:bg-row-sel aria-expanded:text-text"
+            >
+              {`${Math.round(pdf.zoom * 100)}%`}
+            </button>
+            <StepButton
+              label="Zoom in"
+              icon="plus"
+              onClick={() => onZoom?.("in")}
+            />
+          </div>
           <span>{fileSize(pdf.bytes)}</span>
           {onOpenDefault && (
             <button
@@ -330,6 +380,31 @@ export function StatusBar({
           </div>
         </>
       )}
+      {zoomAt && pdf && (
+        <Menu
+          label="Zoom"
+          x={zoomAt.left}
+          y={zoomAt.top - 4}
+          side="above"
+          ignoreSelector='[data-menu-anchor="zoom"]'
+          onDismiss={closeZoom}
+          items={[
+            {
+              label: "Fit width",
+              checked: pdf.fitted,
+              onSelect: () => onZoom?.("fit"),
+            },
+            ...ZOOMS.map((z, i) => ({
+              label: `${Math.round(z * 100)}%`,
+              separated: i === 0,
+              checked:
+                !pdf.fitted &&
+                Math.round(pdf.zoom * 100) === Math.round(z * 100),
+              onSelect: () => onZoom?.(z),
+            })),
+          ]}
+        />
+      )}
       {formatAt && kindLabel === undefined && (
         <Menu
           label="Format"
@@ -361,6 +436,36 @@ export function fileSize(bytes: number): string {
   return `${Number((kb / 1024).toFixed(1))} MB`;
 }
 
+/** The zoom menu's scales, under Fit width. */
+const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+
+/** A small, quiet icon button: a PDF's page and zoom steps. */
+function StepButton({
+  label,
+  icon,
+  disabled = false,
+  onClick,
+}: {
+  label: string;
+  icon: "chevronLeft" | "chevronRight" | "minus" | "plus";
+  disabled?: boolean;
+  onClick(): void;
+}) {
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="-my-1 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint"
+    >
+      <Icon name={icon} size={14} />
+    </button>
+  );
+}
+
 /** "Page 12 / 340": a click (or the go to page command) turns it into an input. */
 function PageField({
   pdf,
@@ -390,7 +495,7 @@ function PageField({
           setDraft(String(pdf.page));
           setEditing(true);
         }}
-        className="-mx-2 -my-1 rounded-[5px] px-2 py-1 hover:bg-row-hover hover:text-text"
+        className="-my-1 rounded-[5px] px-1.5 py-1 tabular-nums hover:bg-row-hover hover:text-text"
       >
         {`Page ${pdf.page} / ${pdf.pages}`}
       </button>
@@ -404,7 +509,7 @@ function PageField({
     }
   };
   return (
-    <span className="flex items-center gap-1.5">
+    <span className="flex items-center gap-1.5 px-1.5">
       Page
       <input
         type="number"
