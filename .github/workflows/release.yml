@@ -2,12 +2,17 @@ name: release
 
 # Push a tag like v0.1.0 to build every platform and open a draft GitHub
 # release with the installers attached. Review the draft, then publish it.
-# Running it by hand builds everything but creates no release.
+# Running it by hand, or a PR that touches it, builds everything but
+# creates no release.
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/**"
 
 permissions:
   contents: write
