@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, type Settings } from "../model/settings";
 import { SettingsDialog, type SettingsDialogProps } from "./SettingsDialog";
 
+function openSection(name: string) {
+  fireEvent.click(screen.getByRole("tab", { name }));
+}
+
 function setup(over: Partial<SettingsDialogProps> = {}) {
   const props: SettingsDialogProps = {
     settings: { ...DEFAULT_SETTINGS } as Settings,
@@ -18,7 +22,7 @@ function setup(over: Partial<SettingsDialogProps> = {}) {
 }
 
 describe("SettingsDialog", () => {
-  it("shows the current settings on the General tab", () => {
+  it("shows the current settings, section by section", () => {
     setup({
       settings: {
         theme: "dark",
@@ -53,12 +57,14 @@ describe("SettingsDialog", () => {
     expect(
       screen.getByRole("spinbutton", { name: "Editor font size" }),
     ).toHaveValue(18);
+    openSection("Editor");
     expect(
       screen.getByRole("checkbox", { name: "Word wrap in new tabs" }),
     ).toBeChecked();
     expect(
       screen.getByRole("checkbox", { name: "Line numbers" }),
     ).not.toBeChecked();
+    openSection("Files");
     const autosave = screen.getByRole("checkbox", {
       name: "Save files automatically",
     });
@@ -70,6 +76,7 @@ describe("SettingsDialog", () => {
 
   it("chooses how Markdown notes open", () => {
     const { props } = setup();
+    openSection("Editor");
     expect(
       screen.getByRole("radiogroup", { name: "Open Markdown notes in" }),
     ).toBeInTheDocument();
@@ -87,12 +94,14 @@ describe("SettingsDialog", () => {
     const { props } = setup();
     fireEvent.click(screen.getByRole("radio", { name: "Light" }));
     expect(props.onSettings).toHaveBeenCalledWith({ theme: "light" });
+    openSection("Editor");
     fireEvent.click(
       screen.getByRole("checkbox", { name: "Word wrap in new tabs" }),
     );
     expect(props.onSettings).toHaveBeenCalledWith({ wrapNewTabs: true });
     fireEvent.click(screen.getByRole("checkbox", { name: "Line numbers" }));
     expect(props.onSettings).toHaveBeenCalledWith({ lineNumbers: false });
+    openSection("Files");
     fireEvent.click(
       screen.getByRole("checkbox", { name: "Save files automatically" }),
     );
@@ -150,6 +159,24 @@ describe("SettingsDialog", () => {
       screen.getByRole("button", { name: "Reset interface font size" }),
     );
     expect(props.onSettings).toHaveBeenLastCalledWith({ uiFontSize: 14 });
+  });
+
+  it("moves between sections with the arrow keys", () => {
+    setup();
+    const appearance = screen.getByRole("tab", { name: "Appearance" });
+    expect(appearance).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(appearance, { key: "ArrowDown" });
+    expect(screen.getByRole("tab", { name: "Editor" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Editor" }), {
+      key: "ArrowUp",
+    });
+    fireEvent.keyDown(appearance, { key: "ArrowUp" });
+    expect(
+      screen.getByRole("tab", { name: "Keyboard shortcuts" }),
+    ).toHaveAttribute("aria-selected", "true");
   });
 
   it("lists shortcuts for the platform, searchable", () => {

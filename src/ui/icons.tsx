@@ -291,8 +291,8 @@ export function MoreIcon() {
   return <MoreHorizontal size={15} strokeWidth={1.8} aria-hidden="true" />;
 }
 
-export function SearchIcon() {
-  return <Search size={14} strokeWidth={1.8} aria-hidden="true" />;
+export function SearchIcon({ size = 14 }: { size?: number }) {
+  return <Search size={size} strokeWidth={1.8} aria-hidden="true" />;
 }
 
 export function CloseIcon({ size = 14 }: { size?: number }) {
