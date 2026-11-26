@@ -75,6 +75,14 @@ fn log_startup(app: &AppHandle, message: &str) {
     }
 }
 
+/// Whether this copy can replace itself with a new version. On Linux only an
+/// AppImage can: a .deb or Arch install belongs to the package manager, so
+/// those users are sent to the release page instead.
+#[tauri::command]
+fn update_can_install() -> bool {
+    !cfg!(target_os = "linux") || std::env::var_os("APPIMAGE").is_some()
+}
+
 /// Ask the frontend to flush and exit; force the exit if it never answers.
 fn request_exit(app: &AppHandle) {
     let _ = app.emit(BEFORE_EXIT_EVENT, ());
@@ -186,6 +194,8 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(files::grants::Grants::default())
         .manage(files::watch::Watcher::default())
         .manage(files::open_paths::LaunchPaths::default())
@@ -216,6 +226,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            update_can_install,
             commands::scratchpad_read,
             commands::scratchpad_write,
             commands::scratchpad_delete,

@@ -172,6 +172,20 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({ emit: vi.fn() }));
 
+vi.mock("./app/useUpdater", () => ({
+  RELEASES_URL: "https://example.invalid/releases",
+  useUpdater: () => ({
+    status: "idle",
+    currentVersion: "0.1.0",
+    newVersion: null,
+    progress: null,
+    error: null,
+    canInstall: true,
+    checkNow: vi.fn(),
+    install: vi.fn(),
+  }),
+}));
+
 vi.mock("./terminal/api", () => ({
   terminalAgents: vi.fn(),
   terminalOpen: vi.fn(),
