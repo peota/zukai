@@ -604,6 +604,9 @@ describe("useFiles save and save as", () => {
       await act(() => result.current.saveAs("a"));
       expect(result.current.notice).toMatch(/^Can't save text as /);
     }
+    f.filePickSave.mockResolvedValue("C:\\d\\x.pdf");
+    await act(() => result.current.saveAs("a"));
+    expect(result.current.notice).toBe("Can't save text as a PDF (x.pdf)");
     // A drawing only goes into a .excalidraw file.
     await act(() => result.current.run({ type: "newCanvas" }));
     const id = result.current.state.activeId;
@@ -637,6 +640,68 @@ describe("useFiles save and save as", () => {
     });
     expect(f.fileSaveAs).not.toHaveBeenCalled();
     expect(f.fileWrite).not.toHaveBeenCalled();
+  });
+
+  it("a PDF Tab never reads its text: loading takes its fingerprint", async () => {
+    const pdf = "C:\\d\\doc.pdf";
+    disk[pdf] = { text: "%PDF", hash: "d1" };
+    const { result } = await mount();
+    const id = await openP(result, pdf);
+    expect(fileTabOf(result, pdf)!.kind).toBe("pdf");
+    await expect(result.current.loadContent(id)).resolves.toBe("");
+    expect(f.fileRead).not.toHaveBeenCalled();
+    expect(f.fileFingerprint).toHaveBeenCalledWith(pdf);
+    expect(fileTabOf(result, pdf)!.file!.fingerprint).toEqual(fp("d1"));
+  });
+
+  it("a PDF Tab whose file is gone is Missing", async () => {
+    const pdf = "C:\\d\\doc.pdf";
+    disk[pdf] = { text: "%PDF", hash: "d1" };
+    const { result } = await mount();
+    await openP(result, pdf);
+    delete disk[pdf];
+    act(() => h.fileChanged!({ path: pdf, kind: "removed" }));
+    await waitFor(() =>
+      expect(fileTabOf(result, pdf)!.file!.held).toBe("missing"),
+    );
+    expect(f.fileRead).not.toHaveBeenCalled();
+  });
+
+  it("a PDF Tab is never saved, shadowed or written", async () => {
+    const pdf = "C:\\d\\doc.pdf";
+    disk[pdf] = { text: "%PDF", hash: "d1" };
+    const { result } = await mount();
+    const id = await openP(result, pdf);
+    f.filePickSave.mockResolvedValue("C:\\d\\copy.pdf");
+    await act(() => result.current.saveAs(id));
+    expect(result.current.notice).toBe("PDFs are read-only in Zukai");
+    expect(f.filePickSave).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.run({ type: "save" });
+      await result.current.saveToOriginal(id);
+      await result.current.keepMine(id);
+    });
+    act(() => result.current.setContent(id, "x"));
+    await settle();
+    await act(() => result.current.closeTab(id));
+    expect(f.fileWrite).not.toHaveBeenCalled();
+    expect(f.fileSaveAs).not.toHaveBeenCalled();
+    expect(f.shadowWrite).not.toHaveBeenCalled();
+  });
+
+  it("the replace command on a PDF Tab opens find only", async () => {
+    const pdf = "C:\\d\\doc.pdf";
+    disk[pdf] = { text: "%PDF", hash: "d1" };
+    const { result } = await mount();
+    const id = await openP(result, pdf);
+    await act(() => result.current.run({ type: "replace" }));
+    expect(result.current.findRequest).toEqual({
+      mode: "find",
+      seq: 1,
+      tabId: id,
+    });
+    await act(() => result.current.run({ type: "zoom", dir: 1 }));
+    expect(result.current.fontSize).toBe(14);
   });
 
   it("a disk change reloads an Image Tab (a new replace for its reloadSeq)", async () => {
@@ -2295,21 +2360,62 @@ describe("useFiles close prompt", () => {
     expect(result.current.state.closed.map((e) => e.tab.id)).toEqual([b, a]);
   });
 
-  it("never prompts for a held Tab or a Scratchpad", async () => {
+  it("never prompts for a held Tab", async () => {
     const { result } = await mount(false);
     const id = await openP(result);
     act(() => result.current.setContent(id, "mine"));
     disk[P] = { text: "theirs", hash: "h2" };
     act(() => h.fileChanged!({ path: P, kind: "changed" }));
     await waitFor(() => expect(fileTabOf(result)!.file!.held).toBe("conflict"));
-    act(() => result.current.setContent("a", "alpha!"));
     // A prompt would never be answered: this would not resolve.
-    await act(() => result.current.closeTabs([id, "a"]));
+    await act(() => result.current.closeTabs([id]));
     expect(result.current.closePrompt).toBeNull();
-    expect(result.current.state.closed.map((e) => e.tab.id)).toEqual(["a", id]);
-    expect(result.current.state.closed[1].tab.file?.held).toBe("conflict");
+    expect(result.current.state.closed.map((e) => e.tab.id)).toEqual([id]);
+    expect(result.current.state.closed[0].tab.file?.held).toBe("conflict");
     expect(shadows[id]).toBe("mine");
-    expect(scratch.a).toBe("alpha!");
+  });
+
+  it("asks before closing a Scratchpad with text; Save is Save As", async () => {
+    const target = "C:\\d\\kept.txt";
+    f.filePickSave.mockResolvedValue(target);
+    const { result } = await mount(false);
+    act(() => result.current.setContent("a", "alpha!"));
+    let closed!: Promise<void>;
+    act(() => {
+      closed = result.current.closeTab("a");
+    });
+    await waitFor(() =>
+      expect(result.current.closePrompt).toEqual({
+        id: "a",
+        name: "Scratchpad 1",
+      }),
+    );
+    act(() => result.current.answerClosePrompt("save"));
+    await act(() => closed);
+    expect(f.filePickSave).toHaveBeenCalledWith("Scratchpad 1.txt");
+    expect(disk[target].text).toBe("alpha!");
+    expect(scratch.a).toBeUndefined();
+    expect(result.current.state.tabs.map((t) => t.id)).not.toContain("a");
+    // It closed as the File it became.
+    expect(result.current.state.closed[0].tab.file?.path).toBe(target);
+  });
+
+  it("a cancelled save dialog on the Scratchpad prompt keeps the Tab open", async () => {
+    const { result } = await mount(false);
+    act(() => result.current.setContent("a", "alpha!"));
+    let closed!: Promise<void>;
+    act(() => {
+      closed = result.current.closeTab("a");
+    });
+    await waitFor(() => expect(result.current.closePrompt).not.toBeNull());
+    act(() => result.current.answerClosePrompt("save"));
+    await act(() => closed);
+    expect(f.filePickSave).toHaveBeenCalled();
+    expect(result.current.state.tabs.map((t) => t.id)).toContain("a");
+    expect(
+      result.current.state.tabs.find((t) => t.id === "a")!.file,
+    ).toBeUndefined();
+    expect(s.deleteScratchpad).not.toHaveBeenCalled();
   });
 
   it("an unsaved File whose disk changed while closed closes as a conflict, unasked", async () => {

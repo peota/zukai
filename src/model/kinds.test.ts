@@ -1,15 +1,27 @@
 import { describe, expect, it } from "vitest";
 import rust from "../../src-tauri/src/files/exec.rs?raw";
-import { EXEC_EXTS, isExecPath, kindOf } from "./kinds";
+import { EXEC_EXTS, isExecPath, isViewerKind, kindOf } from "./kinds";
 
 describe("kindOf", () => {
   it("kindOfByExtension", () => {
     expect(kindOf("a.EXCALIDRAW")).toBe("canvas");
     expect(kindOf("x.PNG")).toBe("image");
     expect(kindOf("x.svg")).toBe("image");
+    expect(kindOf("C:\\docs\\Spec.PDF")).toBe("pdf");
     expect(kindOf("x.md")).toBe("text");
     expect(kindOf("Makefile")).toBe("text");
     expect(kindOf("C:\\d.png\\Makefile")).toBe("text");
+  });
+});
+
+describe("isViewerKind", () => {
+  it("is true for the read-only Kinds that never keep text", () => {
+    expect(isViewerKind("pdf")).toBe(true);
+    expect(isViewerKind("image")).toBe(true);
+    expect(isViewerKind("text")).toBe(false);
+    expect(isViewerKind("canvas")).toBe(false);
+    expect(isViewerKind("diff")).toBe(false);
+    expect(isViewerKind(undefined)).toBe(false);
   });
 });
 

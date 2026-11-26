@@ -1,0 +1,37 @@
+@import "pdfjs-dist/legacy/web/pdf_viewer.css";
+
+/*
+ * pdf.js's stylesheet sets `color-scheme: light dark` on :root, which would
+ * follow the OS instead of Zukai's theme. Put the app's scheme back (dark
+ * themes set theirs with a more specific rule).
+ */
+:root:not([data-theme="dark"]) {
+  color-scheme: light;
+}
+
+/* The viewer sits on the editor ground; no pdf.js chrome. */
+.zukai-pdf {
+  --page-margin: 12px auto;
+  --page-border: 0 solid transparent;
+  --pdfViewer-padding-bottom: 12px;
+  background: var(--z-editor);
+}
+
+/* Pages float on the ground with a subtle shadow. */
+.zukai-pdf .pdfViewer .page {
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.06),
+    0 2px 8px rgb(0 0 0 / 0.12);
+}
+
+/* Selected text uses the accent, in the text layer and the drawn selection. */
+.zukai-pdf .textLayer ::selection {
+  background: var(--z-accent-soft);
+  color: transparent;
+}
+.zukai-pdf .textLayer.selectionRendering ::selection {
+  background: transparent;
+}
+.zukai-pdf .pdfViewer .canvasWrapper .selection {
+  background: var(--z-accent-soft);
+}

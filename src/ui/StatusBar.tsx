@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
 import type { ReactNode } from "react";
 import type {
@@ -6,12 +6,15 @@ import type {
   ImageInfo,
   LanguageId,
   MarkdownMode,
+  PdfInfo,
+  PdfZoom,
   PreviewMode,
 } from "../model/types";
 import type { SaveStatus } from "../storage/autosave";
 import { encodingLabel, lineEndingLabel } from "./encodings";
 import { Menu } from "./Menu";
 import { DirtyDot } from "./git/FolderPicker";
+import { MAX_ZOOM, MIN_ZOOM } from "../pdf/zoom";
 
 export type FormatKind = "beautify" | "minify";
 
@@ -46,6 +49,16 @@ export interface StatusBarProps {
   kindLabel?: string;
   /** An Image Tab: shown in place of `kindLabel` once the image has loaded. */
   image?: ImageInfo;
+  /** A PDF Tab's page, zoom and size, once a page has shown. */
+  pdf?: PdfInfo;
+  /** Go to this page (already clamped to 1..pages). */
+  onGoToPage?(page: number): void;
+  /** Zoom the PDF: a step in or out, fit width, or a scale. */
+  onZoom?(zoom: PdfZoom): void;
+  /** Bumped by the go to page command: opens the page input. */
+  pageInputSignal?: number;
+  /** A PDF Tab's quiet "Open with default app". */
+  onOpenDefault?(): void;
   /**
    * A Markdown Tab's preview switch (Edit, Split, Preview); `hint` is its
    * shortcut, shown in the tooltip.
@@ -131,6 +144,11 @@ export function StatusBar({
   beautifyHint,
   kindLabel,
   image,
+  pdf,
+  onGoToPage,
+  onZoom,
+  pageInputSignal,
+  onOpenDefault,
   onSettings,
   settingsHint,
   preview,
@@ -144,6 +162,10 @@ export function StatusBar({
     setFormatAt(null);
     onFormatClose?.();
   }, [onFormatClose]);
+  const [zoomAt, setZoomAt] = useState<DOMRect | null>(null);
+  const closeZoom = useCallback(() => setZoomAt(null), []);
+  // Another Tab (or none shown): its zoom menu goes with it.
+  if (zoomAt && !pdf) setZoomAt(null);
   const scratchEnding = platformLineEnding === "crlf" ? "CRLF" : "LF";
 
   return (
@@ -180,6 +202,71 @@ export function StatusBar({
           <span>{`${image.width} × ${image.height}`}</span>
           <span>{image.format}</span>
           <span>{fileSize(image.bytes)}</span>
+        </div>
+      ) : kindLabel !== undefined && pdf ? (
+        <div className="ml-auto flex items-center gap-4 px-2.5 py-1">
+          <span>{kindLabel}</span>
+          <div className="flex items-center gap-0.5">
+            <StepButton
+              label="Previous page"
+              icon="chevronLeft"
+              disabled={pdf.page <= 1}
+              onClick={() => onGoToPage?.(pdf.page - 1)}
+            />
+            <PageField
+              pdf={pdf}
+              onGoToPage={onGoToPage}
+              signal={pageInputSignal}
+            />
+            <StepButton
+              label="Next page"
+              icon="chevronRight"
+              disabled={pdf.page >= pdf.pages}
+              onClick={() => onGoToPage?.(pdf.page + 1)}
+            />
+          </div>
+          <div className="flex items-center gap-0.5">
+            <StepButton
+              label="Zoom out"
+              icon="minus"
+              disabled={pdf.zoom <= MIN_ZOOM + ZOOM_EPSILON}
+              onClick={() => onZoom?.("out")}
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              data-menu-anchor="zoom"
+              aria-label="Zoom"
+              aria-haspopup="menu"
+              aria-expanded={zoomAt !== null}
+              title="Zoom"
+              onClick={(e) =>
+                zoomAt
+                  ? closeZoom()
+                  : setZoomAt(e.currentTarget.getBoundingClientRect())
+              }
+              className="-my-1 min-w-[6ch] rounded-[5px] px-1.5 py-1 text-center tabular-nums hover:bg-row-hover hover:text-text aria-expanded:bg-row-sel aria-expanded:text-text"
+            >
+              {`${Math.round(pdf.zoom * 100)}%`}
+            </button>
+            <StepButton
+              label="Zoom in"
+              icon="plus"
+              disabled={pdf.zoom >= MAX_ZOOM - ZOOM_EPSILON}
+              onClick={() => onZoom?.("in")}
+            />
+          </div>
+          <span>{fileSize(pdf.bytes)}</span>
+          {onOpenDefault && (
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={onOpenDefault}
+              className="-my-1 rounded-[5px] px-2 py-1 hover:bg-row-hover hover:text-text"
+            >
+              Open with default app
+            </button>
+          )}
         </div>
       ) : kindLabel !== undefined ? (
         <span className="ml-auto px-2.5 py-1">{kindLabel}</span>
@@ -296,6 +383,31 @@ export function StatusBar({
           </div>
         </>
       )}
+      {zoomAt && pdf && (
+        <Menu
+          label="Zoom"
+          x={zoomAt.left}
+          y={zoomAt.top - 4}
+          side="above"
+          ignoreSelector='[data-menu-anchor="zoom"]'
+          onDismiss={closeZoom}
+          items={[
+            {
+              label: "Fit width",
+              checked: pdf.fitted,
+              onSelect: () => onZoom?.("fit"),
+            },
+            ...ZOOMS.map((z, i) => ({
+              label: `${Math.round(z * 100)}%`,
+              separated: i === 0,
+              checked:
+                !pdf.fitted &&
+                Math.round(pdf.zoom * 100) === Math.round(z * 100),
+              onSelect: () => onZoom?.(z),
+            })),
+          ]}
+        />
+      )}
       {formatAt && kindLabel === undefined && (
         <Menu
           label="Format"
@@ -325,6 +437,110 @@ export function fileSize(bytes: number): string {
   const kb = bytes / 1024;
   if (kb < 1024) return `${Number(kb.toFixed(1))} KB`;
   return `${Number((kb / 1024).toFixed(1))} MB`;
+}
+
+/** A zoom this close to a limit is at it (scales come back inexact). */
+const ZOOM_EPSILON = 1e-3;
+
+/** The zoom menu's scales, under Fit width. */
+const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+
+/** A small, quiet icon button: a PDF's page and zoom steps. */
+function StepButton({
+  label,
+  icon,
+  disabled = false,
+  onClick,
+}: {
+  label: string;
+  icon: "chevronLeft" | "chevronRight" | "minus" | "plus";
+  disabled?: boolean;
+  onClick(): void;
+}) {
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="-my-1 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-faint"
+    >
+      <Icon name={icon} size={14} />
+    </button>
+  );
+}
+
+/** "Page 12 / 340": a click (or the go to page command) turns it into an input. */
+function PageField({
+  pdf,
+  onGoToPage,
+  signal,
+}: {
+  pdf: PdfInfo;
+  onGoToPage?(page: number): void;
+  signal?: number;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const seen = useRef(signal);
+  useEffect(() => {
+    if (signal === seen.current) return;
+    seen.current = signal;
+    setDraft(String(pdf.page));
+    setEditing(true);
+  }, [signal, pdf.page]);
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        tabIndex={-1}
+        title="Go to page"
+        onClick={() => {
+          setDraft(String(pdf.page));
+          setEditing(true);
+        }}
+        className="-my-1 rounded-[5px] px-1.5 py-1 tabular-nums hover:bg-row-hover hover:text-text"
+      >
+        {`Page ${pdf.page} / ${pdf.pages}`}
+      </button>
+    );
+  }
+  const commit = () => {
+    const n = Math.round(Number(draft));
+    setEditing(false);
+    if (draft.trim() !== "" && Number.isFinite(n)) {
+      onGoToPage?.(Math.min(Math.max(n, 1), pdf.pages));
+    }
+  };
+  return (
+    <span className="flex items-center gap-1.5 px-1.5">
+      Page
+      <input
+        type="number"
+        aria-label="Go to page"
+        autoFocus
+        min={1}
+        max={pdf.pages}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            setEditing(false);
+          }
+        }}
+        className="h-5 w-14 rounded-[4px] border border-hairline-strong bg-transparent px-1 text-text outline-none focus:border-accent"
+      />
+      {`/ ${pdf.pages}`}
+    </span>
+  );
 }
 
 function Chip({

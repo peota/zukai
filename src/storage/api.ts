@@ -38,6 +38,13 @@ export const writeSession = (json: string): Promise<void> =>
 export const backupSession = (): Promise<void> =>
   invoke<void>("session_backup");
 
+/** Per-PDF reading positions: opaque JSON, parsed defensively by the caller. */
+export const readPdfPositions = (): Promise<string | null> =>
+  invoke<string | null>("pdf_positions_read");
+
+export const writePdfPositions = (json: string): Promise<void> =>
+  invoke<void>("pdf_positions_write", { json });
+
 /** Append a startup milestone to the diagnostic startup.log. */
 export const startupMark = (event: string): Promise<void> =>
   invoke<void>("app_startup_mark", { event });

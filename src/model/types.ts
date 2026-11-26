@@ -122,6 +122,21 @@ export interface ImageInfo {
   bytes: number;
 }
 
+/** What a PDF Tab shows, for the status bar. */
+export interface PdfInfo {
+  /** The current page, 1-based. */
+  page: number;
+  pages: number;
+  /** The scale: 1 is 100%. */
+  zoom: number;
+  /** The zoom is the fitted one (fit width), not one the user chose. */
+  fitted: boolean;
+  bytes: number;
+}
+
+/** A zoom asked for from the status bar: a step, fit width, or a scale. */
+export type PdfZoom = "in" | "out" | "fit" | number;
+
 /** closedAt is a ms epoch. */
 export interface ClosedEntry {
   tab: TabState;

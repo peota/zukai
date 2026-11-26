@@ -31,6 +31,7 @@ const ALL: Record<Command["type"], true> = {
   newTerminal: true,
   agentMenu: true,
   toggleGit: true,
+  goToPage: true,
 };
 
 describe("the shortcut list", () => {
