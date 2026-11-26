@@ -216,7 +216,7 @@ mod tests {
             .iter()
             .filter_map(|t| s.score(t, &query).map(|m| (m.score, *t)))
             .collect();
-        hits.sort_by(|a, b| b.0.cmp(&a.0));
+        hits.sort_by_key(|h| std::cmp::Reverse(h.0));
         hits.into_iter().map(|h| h.1).collect()
     }
 
