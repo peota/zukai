@@ -19,7 +19,7 @@ export function Group({
       <h3 className="m-0 mb-1 text-ui-xs font-semibold tracking-[0.06em] text-faint">
         {title.toUpperCase()}
       </h3>
-      <div className="flex flex-col [&>*+*]:border-t [&>*+*]:border-hairline">
+      <div className="flex flex-col [&>*+*]:border-t [&>*+*]:border-hairline-strong">
         {children}
       </div>
     </section>
