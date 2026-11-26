@@ -1,0 +1,21 @@
+# Repackages the .deb built by CI (.github/workflows/release.yml) as an
+# Arch Linux package. CI fills in pkgver and places the .deb as zukai.deb.
+# Install with: sudo pacman -U zukai-<version>-1-x86_64.pkg.tar.zst
+
+pkgname=zukai
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Lightweight desktop scratchpad: text, infinite canvas and CSV tables in one app"
+arch=('x86_64')
+url="https://github.com/peota/zukai"
+license=('unknown')
+depends=('webkit2gtk-4.1' 'gtk3' 'hicolor-icon-theme' 'xdg-utils')
+options=('!strip' '!debug')
+source=("zukai.deb")
+sha256sums=('SKIP')
+noextract=("zukai.deb")
+
+package() {
+  bsdtar -xOf "$srcdir/zukai.deb" 'data.tar.*' | bsdtar -xf - -C "$pkgdir"
+  chmod -R u=rwX,go=rX "$pkgdir/usr"
+}
