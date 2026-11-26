@@ -378,14 +378,26 @@ mod tests {
         let digits: String = (0..150)
             .map(|i| char::from(b'0' + (i * 7 % 10) as u8))
             .collect();
-        t.0.write(id, &format!("{}{NL}", "#".repeat(4000)));
+        // About 4 KB, as lines of 500: macOS holds at most 1024 bytes of an
+        // unfinished line before the shell's line editor takes over, and a
+        // longer one stalls the write.
+        t.0.write(id, &format!("{}{NL}", "#".repeat(500)).repeat(8));
         t.0.write(id, &format!("echo z{NL}"));
         for key in format!("echo q{digits}q{NL}exit{NL}").chars() {
             t.0.write(id, &key.to_string());
         }
         let (text, events) = collect(&t.0, id, &rx, Duration::from_secs(30));
-        assert!(matches!(events.last(), Some(TerminalEvent::Exit { .. })));
         let text = strip_ansi(&text);
+        let tail: String = {
+            let chars: Vec<char> = text.chars().collect();
+            chars[chars.len().saturating_sub(2000)..].iter().collect()
+        };
+        assert!(
+            matches!(events.last(), Some(TerminalEvent::Exit { .. })),
+            "no exit after {} events; last event: {:?}; output tail: {tail:?}",
+            events.len(),
+            events.last()
+        );
         let want = format!("q{digits}q");
         assert!(
             text.lines().any(|line| line.trim() == want),
