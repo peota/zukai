@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: ["**"]
-    tags: ["v*"]
     paths:
       - "src-tauri/tauri.conf.json"
       - ".github/workflows/installers.yml"
