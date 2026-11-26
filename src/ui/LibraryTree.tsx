@@ -313,7 +313,7 @@ export function LibraryTree({
               onContextMenu={(ev) => openMenu(ev, e)}
               {...dragHandlers(e)}
               className={
-                "mt-2 flex h-[30px] cursor-default items-center gap-2 rounded-[6px] pr-1 whitespace-nowrap " +
+                "mt-2 flex h-8 cursor-default items-center gap-2 rounded-[6px] pr-1 whitespace-nowrap " +
                 motion +
                 (missing ? "text-faint " : "text-muted ") +
                 (target
@@ -379,7 +379,7 @@ export function LibraryTree({
               onContextMenu={(ev) => openMenu(ev, e)}
               {...dragHandlers(e)}
               className={
-                "relative flex h-[30px] cursor-default items-center gap-2 rounded-[6px] pr-2 whitespace-nowrap " +
+                "relative flex h-8 cursor-default items-center gap-2 rounded-[6px] pr-2 whitespace-nowrap " +
                 motion +
                 (blocked ? "text-faint " : "text-text ") +
                 (target

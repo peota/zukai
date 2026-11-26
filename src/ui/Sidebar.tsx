@@ -802,7 +802,7 @@ function SidebarPanel({
         );
       }}
       style={{ paddingLeft: 8 }}
-      className="mt-2 flex h-[30px] w-full cursor-default items-center gap-2 rounded-[6px] pr-1 text-left whitespace-nowrap text-muted hover:bg-row-hover"
+      className="mt-2 flex h-8 w-full cursor-default items-center gap-2 rounded-[6px] pr-1 text-left whitespace-nowrap text-muted hover:bg-row-hover"
     >
       <span className="flex w-3.5 shrink-0 justify-center text-faint">
         <Icon
@@ -871,11 +871,11 @@ function SidebarPanel({
       data-tauri-drag-region=""
       className={
         "group/side relative flex h-full shrink-0 flex-col border-r border-hairline bg-side px-2 text-ui-lg select-none " +
-        (platform === "mac" ? "pt-11" : "pt-2.5")
+        (platform === "mac" ? "pt-11" : "pt-3")
       }
     >
-      <label className="mx-0.5 mb-1 flex h-8 shrink-0 items-center gap-2 rounded-[8px] border border-hairline bg-sunken px-2.5 text-ui text-faint focus-within:border-accent">
-        <SearchIcon />
+      <label className="mx-0.5 mb-2 flex h-9 shrink-0 items-center gap-2.5 rounded-[8px] border border-hairline bg-sunken px-3 text-ui-lg text-faint focus-within:border-accent">
+        <SearchIcon size={16} />
         <input
           type="search"
           value={search.query}

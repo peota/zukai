@@ -13,7 +13,7 @@ export function SectionHeading({
   children?: ReactNode;
 }) {
   return (
-    <div className="mt-2 flex h-7 shrink-0 items-center gap-0.5 pr-0.5 pl-2 text-ui-xs font-semibold tracking-[0.06em] text-faint">
+    <div className="mt-4 mb-0.5 flex h-7 shrink-0 items-center gap-0.5 pr-0.5 pl-2 text-ui-xs font-semibold tracking-[0.06em] text-faint">
       <span className="flex-1">{label}</span>
       {children}
     </div>
