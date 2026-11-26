@@ -193,8 +193,8 @@ components:
     backgroundColor: "{colors.paper-sunken}"
     textColor: "{colors.paper-text}"
     rounded: "{rounded.lg}"
-    padding: "0 10px"
-    height: "32px"
+    padding: "0 12px"
+    height: "36px"
   tab:
     backgroundColor: "transparent"
     textColor: "{colors.paper-muted}"
@@ -249,7 +249,7 @@ components:
     backgroundColor: "{colors.paper-surface}"
     textColor: "{colors.paper-text}"
     rounded: "{rounded.dialog}"
-    width: "600px"
+    width: "860px"
 ---
 
 # Design System: Zukai
