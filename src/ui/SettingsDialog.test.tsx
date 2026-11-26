@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, type Settings } from "../model/settings";
 import { SettingsDialog, type SettingsDialogProps } from "./SettingsDialog";
+import type { Updater } from "../app/useUpdater";
 
 function openSection(name: string) {
   fireEvent.click(screen.getByRole("tab", { name }));
@@ -174,9 +175,10 @@ describe("SettingsDialog", () => {
       key: "ArrowUp",
     });
     fireEvent.keyDown(appearance, { key: "ArrowUp" });
-    expect(
-      screen.getByRole("tab", { name: "Keyboard shortcuts" }),
-    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "About" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
   it("lists shortcuts for the platform, searchable", () => {
@@ -229,5 +231,73 @@ describe("SettingsDialog", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "w", ctrlKey: true });
     window.removeEventListener("keydown", onWindowKey);
     expect(onWindowKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("SettingsDialog About", () => {
+  const updater = (over: Partial<Updater> = {}): Updater => ({
+    status: "idle",
+    currentVersion: "0.1.0",
+    newVersion: null,
+    progress: null,
+    error: null,
+    canInstall: true,
+    checkNow: vi.fn(() => Promise.resolve()),
+    install: vi.fn(() => Promise.resolve()),
+    ...over,
+  });
+
+  it("shows the version and checks on request", () => {
+    const u = updater();
+    setup({ updater: u, initialSection: "about" });
+    expect(screen.getByText("0.1.0")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(u.checkNow).toHaveBeenCalledWith(true);
+  });
+
+  it("marks About and installs an available update", () => {
+    const u = updater({ status: "available", newVersion: "0.2.0" });
+    setup({ updater: u });
+    const tab = screen.getByRole("tab", { name: /About/ });
+    expect(within(tab).getByLabelText("Update available")).toBeInTheDocument();
+    fireEvent.click(tab);
+    expect(screen.getByText(/Zukai 0\.2\.0 is available/)).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Install and restart" }),
+    );
+    expect(u.install).toHaveBeenCalled();
+  });
+
+  it("sends a package-manager install to the release page", () => {
+    const onOpenReleases = vi.fn();
+    setup({
+      updater: updater({
+        status: "available",
+        newVersion: "0.2.0",
+        canInstall: false,
+      }),
+      onOpenReleases,
+      initialSection: "about",
+    });
+    expect(
+      screen.queryByRole("button", { name: "Install and restart" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open release page" }));
+    expect(onOpenReleases).toHaveBeenCalled();
+  });
+
+  it("shows download progress", () => {
+    setup({
+      updater: updater({
+        status: "downloading",
+        newVersion: "0.2.0",
+        progress: 0.42,
+      }),
+      initialSection: "about",
+    });
+    expect(screen.getByText("Downloading 0.2.0… 42%")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Install and restart" }),
+    ).toBeDisabled();
   });
 });

@@ -29,17 +29,17 @@ jobs:
             os: windows-latest
             args: ""
             bundle: src-tauri/target/release/bundle
-            files: nsis/*.exe
+            files: nsis/*.exe nsis/*.exe.sig
           - name: macos
             os: macos-latest
             args: --target universal-apple-darwin
             bundle: src-tauri/target/universal-apple-darwin/release/bundle
-            files: dmg/*.dmg
+            files: dmg/*.dmg macos/*.app.tar.gz macos/*.app.tar.gz.sig
           - name: linux
             os: ubuntu-22.04
             args: ""
             bundle: src-tauri/target/release/bundle
-            files: deb/*.deb appimage/*.AppImage
+            files: deb/*.deb appimage/*.AppImage appimage/*.AppImage.sig
     steps:
       - uses: actions/checkout@v4
 
@@ -77,8 +77,24 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm tauri build ${{ matrix.args }}
+      - name: Build
+        shell: bash
+        run: |
+          # The update files are signed with the key the app trusts. A tag
+          # build needs it; a test build without it skips those files.
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              echo "::error::The TAURI_SIGNING_PRIVATE_KEY secret is missing"
+              exit 1
+            fi
+            echo "::warning::No signing key: building without update files"
+            pnpm tauri build ${{ matrix.args }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          else
+            pnpm tauri build ${{ matrix.args }}
+          fi
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Ad-hoc signature: without any signature, macOS reports a downloaded
           # Apple Silicon app as "damaged" instead of from an unknown developer.
           APPLE_SIGNING_IDENTITY: ${{ matrix.name == 'macos' && '-' || '' }}
@@ -88,7 +104,8 @@ jobs:
         working-directory: ${{ matrix.bundle }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/out"
-          cp ${{ matrix.files }} "$GITHUB_WORKSPACE/out/"
+          shopt -s nullglob
+          for f in ${{ matrix.files }}; do cp "$f" "$GITHUB_WORKSPACE/out/"; done
           ls -l "$GITHUB_WORKSPACE/out"
 
       - uses: actions/upload-artifact@v4
@@ -143,6 +160,38 @@ jobs:
           pattern: release-*
           path: out
           merge-multiple: true
+
+      - name: Write latest.json for the in-app updater
+        run: |
+          ls -l out
+          python3 - <<'PY'
+          import datetime, json, os, pathlib
+          out = pathlib.Path("out")
+          tag = os.environ["GITHUB_REF_NAME"]
+          base = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{tag}"
+
+          def entry(pattern):
+              [sig] = out.glob(pattern + ".sig")
+              name = sig.name[: -len(".sig")]
+              return {"signature": sig.read_text().strip(), "url": f"{base}/{name}"}
+
+          mac = entry("*.app.tar.gz")
+          manifest = {
+              "version": tag.removeprefix("v"),
+              "notes": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/tag/{tag}",
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": {
+                  "windows-x86_64": entry("*-setup.exe"),
+                  "darwin-aarch64": mac,
+                  "darwin-x86_64": mac,
+                  "linux-x86_64": entry("*.AppImage"),
+              },
+          }
+          (out / "latest.json").write_text(json.dumps(manifest, indent=2))
+          print((out / "latest.json").read_text())
+          PY
+          # The signatures live in latest.json; the release doesn't need them.
+          rm out/*.sig
 
       - name: Create the draft release
         env:

@@ -39,7 +39,9 @@ jobs:
           workspaces: src-tauri
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm tauri build
+      # Update files need the signing key; releases build them (release.yml).
+      - run: pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        shell: bash
 
       - uses: actions/upload-artifact@v4
         with:

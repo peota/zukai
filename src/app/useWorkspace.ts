@@ -16,6 +16,7 @@ import { createKeyedLock } from "./keyedLock";
 import { useFiles, type FilesApi } from "./files";
 import {
   filePathsOf,
+  flushAll,
   logError,
   restoreSession,
   useCombinedSaveStatus,
@@ -159,6 +160,8 @@ export interface Workspace extends FilesApi {
   /** The latest Mod+F / Mod+H request; `seq` changes on every press. */
   findRequest: FindRequest | null;
   saveStatus: SaveStatus;
+  /** Writes everything an exit would, without exiting (before an update installs). */
+  flushForExit(): Promise<void>;
   ready: boolean;
   /** The Library sidebar's contents and operations. */
   library: LibraryApi;
@@ -417,6 +420,12 @@ export function useWorkspace(): Workspace {
     }
   }, [flushRich, settleInFlight]);
   useExitHandshake(savers, beforeExit);
+  // Everything an exit writes, without exiting: an update install quits the
+  // app on its own, so it runs this first.
+  const flushForExit = useCallback(async () => {
+    await beforeExit();
+    await flushAll(savers);
+  }, [beforeExit, savers]);
   useFlushOnBlur(savers, flushRich);
 
   const newTabWrap = useCallback(() => settingsRef.current.wrapNewTabs, []);
@@ -1292,6 +1301,7 @@ export function useWorkspace(): Workspace {
   return {
     ...filesApi,
     saveAll: saveAllFlushed,
+    flushForExit,
     state,
     loadContent,
     setContent,

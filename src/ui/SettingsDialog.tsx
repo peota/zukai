@@ -19,11 +19,12 @@ import type {
   Settings,
   ThemePref,
 } from "../model/settings";
-import { Keyboard, Palette, PenLine, FolderOpen } from "lucide-react";
+import { Info, Keyboard, Palette, PenLine, FolderOpen } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BUTTON, Group, Row } from "./settingsRows";
 import { CloseIcon, Icon } from "./icons";
 import type { MarkdownMode } from "../model/types";
+import type { Updater } from "../app/useUpdater";
 
 export interface SettingsDialogProps {
   settings: Settings;
@@ -34,15 +35,22 @@ export interface SettingsDialogProps {
   onSettings(patch: Partial<Settings>): void;
   onFontSize(px: number): void;
   onClose(): void;
+  /** Version and updates, shown under About. */
+  updater?: Updater;
+  /** Opens the release page (for copies that can't update themselves). */
+  onOpenReleases?(): void;
+  /** The section shown first. */
+  initialSection?: Section;
 }
 
-type Section = "appearance" | "editor" | "files" | "shortcuts";
+export type Section = "appearance" | "editor" | "files" | "shortcuts" | "about";
 
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "editor", label: "Editor", icon: PenLine },
   { id: "files", label: "Files", icon: FolderOpen },
   { id: "shortcuts", label: "Keyboard shortcuts", icon: Keyboard },
+  { id: "about", label: "About", icon: Info },
 ];
 
 const THEMES: { id: ThemePref; label: string }[] = [
@@ -64,8 +72,11 @@ export function SettingsDialog({
   onSettings,
   onFontSize,
   onClose,
+  updater,
+  onOpenReleases,
+  initialSection = "appearance",
 }: SettingsDialogProps) {
-  const [section, setSection] = useState<Section>("appearance");
+  const [section, setSection] = useState<Section>(initialSection);
   const current = SECTIONS.find((x) => x.id === section)!;
 
   // Keys stay in the dialog: no app shortcut runs behind it.
@@ -128,6 +139,7 @@ export function SettingsDialog({
                 icon={x.icon}
                 selected={section === x.id}
                 onSelect={() => setSection(x.id)}
+                dot={x.id === "about" && updater?.newVersion != null}
               >
                 {x.label}
               </SectionTab>
@@ -156,6 +168,8 @@ export function SettingsDialog({
           >
             {section === "shortcuts" ? (
               <Shortcuts platform={platform} />
+            ) : section === "about" ? (
+              <About updater={updater} onOpenReleases={onOpenReleases} />
             ) : section === "appearance" ? (
               <Appearance
                 settings={settings}
@@ -180,12 +194,15 @@ function SectionTab({
   icon: I,
   selected,
   onSelect,
+  dot = false,
   children,
 }: {
   id: Section;
   icon: LucideIcon;
   selected: boolean;
   onSelect(): void;
+  /** Marks a section that needs a look (an update to install). */
+  dot?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -210,6 +227,12 @@ function SectionTab({
         className={"shrink-0 " + (selected ? "text-accent" : "")}
       />
       {children}
+      {dot && (
+        <span
+          aria-label="Update available"
+          className="ml-auto size-2 shrink-0 rounded-full bg-accent"
+        />
+      )}
     </button>
   );
 }
@@ -635,6 +658,79 @@ function Files({
         </Row>
       </Group>
     </>
+  );
+}
+
+/** What the update row says for each state. */
+function updateHint(u: Updater): string {
+  switch (u.status) {
+    case "checking":
+      return "Checking for updates…";
+    case "current":
+      return "Zukai is up to date.";
+    case "downloading":
+      return u.progress == null
+        ? `Downloading ${u.newVersion}…`
+        : `Downloading ${u.newVersion}… ${Math.round(u.progress * 100)}%`;
+    case "installing":
+      return `Installing ${u.newVersion}. Zukai will restart.`;
+    case "error":
+      return `Couldn't update: ${u.error ?? "unknown error"}`;
+    default:
+      if (u.newVersion == null)
+        return "Zukai checks for updates every few hours.";
+      return u.canInstall
+        ? `Zukai ${u.newVersion} is available. Your notes are saved before it restarts.`
+        : `Zukai ${u.newVersion} is available. Get it from the release page or your package manager.`;
+  }
+}
+
+function About({
+  updater: u,
+  onOpenReleases,
+}: Pick<SettingsDialogProps, "updater" | "onOpenReleases">) {
+  if (!u) return null;
+  const working =
+    u.status === "checking" ||
+    u.status === "downloading" ||
+    u.status === "installing";
+  const hasUpdate = u.newVersion != null;
+  return (
+    <Group title="Updates">
+      <Row label="Version">
+        <span className="font-mono text-ui-lg text-muted">
+          {u.currentVersion ?? "…"}
+        </span>
+      </Row>
+      <Row
+        label={hasUpdate ? `Zukai ${u.newVersion}` : "Updates"}
+        hint={<span role="status">{updateHint(u)}</span>}
+      >
+        {hasUpdate && u.canInstall ? (
+          <button
+            type="button"
+            disabled={working}
+            onClick={() => void u.install()}
+            className="flex h-8 items-center rounded-[6px] bg-accent px-3 font-medium text-accent-fg hover:brightness-110 disabled:pointer-events-none disabled:opacity-40"
+          >
+            {u.status === "error" ? "Try again" : "Install and restart"}
+          </button>
+        ) : hasUpdate ? (
+          <button type="button" onClick={onOpenReleases} className={BUTTON}>
+            Open release page
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={working}
+            onClick={() => void u.checkNow(true)}
+            className={BUTTON}
+          >
+            Check for updates
+          </button>
+        )}
+      </Row>
+    </Group>
   );
 }
 

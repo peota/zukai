@@ -79,6 +79,8 @@ export interface StatusBarProps {
   };
   /** The gear at the far left; its tooltip shows `settingsHint`. */
   onSettings?(): void;
+  /** A newer Zukai is out: the gear carries a dot. */
+  updateVersion?: string | null;
   settingsHint?: string;
   /**
    * The Agent button at the far right: it opens the New terminal menu above
@@ -151,6 +153,7 @@ export function StatusBar({
   onOpenDefault,
   onSettings,
   settingsHint,
+  updateVersion,
   preview,
   markdownMode,
   agent,
@@ -174,12 +177,25 @@ export function StatusBar({
         <button
           type="button"
           tabIndex={-1}
-          aria-label="Settings"
-          title={settingsHint ? `Settings (${settingsHint})` : "Settings"}
+          aria-label={
+            updateVersion
+              ? `Settings, Zukai ${updateVersion} available`
+              : "Settings"
+          }
+          title={
+            (settingsHint ? `Settings (${settingsHint})` : "Settings") +
+            (updateVersion ? ` · Zukai ${updateVersion} is available` : "")
+          }
           onClick={onSettings}
-          className="-ml-1 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
+          className="relative -ml-1 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
         >
           <Icon name="settings" size={14} />
+          {updateVersion && (
+            <span
+              data-testid="update-dot"
+              className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-accent shadow-[0_0_0_1.5px_var(--z-chrome)]"
+            />
+          )}
         </button>
       )}
       {kindLabel === undefined && !rich ? (
