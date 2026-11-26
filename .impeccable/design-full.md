@@ -156,7 +156,7 @@ spacing:
   sm: "6px"
   md: "10px"
   lg: "16px"
-  row: "30px"
+  row: "32px"
   tabbar: "40px"
   statusbar: "32px"
   sidebar: "260px"
@@ -270,7 +270,7 @@ Motion is nearly absent: floating pieces fade and settle in, a folder chevron tu
 - One accent, with every tint of it derived by color-mix so each theme and accent pair agrees.
 - 1px hairlines for every docked separation; shadows only on things that float.
 - System UI face at 13px in chrome, 14px in the sidebar, 15px/1.65 in notes; mono only for code.
-- Lucide line icons at one stroke weight; 30px rows with 6px rounded selection pills.
+- Lucide line icons at one stroke weight; 32px rows with 6px rounded selection pills.
 
 ## Colors
 
@@ -278,7 +278,7 @@ Tinted neutrals in five palettes, a single user accent, and quiet status and syn
 
 ### Primary
 
-- **Accent** (the user's choice; default Accent Blue, `#2563eb` on light grounds, `#5b8def` on dark): selection pills' active icon, keyboard focus, links, the caret, checked boxes, the pressed state of toolbar tools and find toggles, the active tab's icon, the Settings tab underline, drop targets. Each accent has a light-ground and a dark-ground value; on dark grounds violet, green, orange and pink take a near-black foreground of their own hue instead of white.
+- **Accent** (the user's choice; default Accent Blue, `#2563eb` on light grounds, `#5b8def` on dark): selection pills' active icon, keyboard focus, links, the caret, checked boxes, the pressed state of toolbar tools and find toggles, the active tab's icon, the selected Settings section's icon, drop targets. Each accent has a light-ground and a dark-ground value; on dark grounds violet, green, orange and pink take a near-black foreground of their own hue instead of white.
 - **Accent derivations** (computed, never hand-picked): soft at 22% (text selection, editor selection, current-line number, match highlight in pickers), tint at 12% (pressed tool background, selected table cell, table-controls pill), 42% for the current search match, 14% for selection matches, 70% for the focus ring, 40% for a link's underline.
 
 ### Neutral
@@ -339,7 +339,7 @@ Palette character: Paper is cool zinc; Solar Light is warm parchment (`#fbf8f2` 
 
 A fixed desktop shell, not a responsive page. Left to right: the Library sidebar (260px default, resizable from 180px to 480px by a 6px handle on its right edge, 16px per arrow-key step), then the main column. Top to bottom in the main column: a 40px tab bar, an optional file bar (8px by 16px), the rich toolbar (at least 36px, wrapping its hairline-separated groups in a narrow Split, its first tool inset 50px to align with the text), the editor, and a 32px status bar with 16px sides.
 
-The tab bar holds tabs 34px tall, 120px to 220px wide (380px for a joined Split tab), 2px apart, rising from 6px top padding so the active tab meets the editor. The sidebar stacks a 32px search field, Pinned (up to 35% of the height), the Library tree, and Scratchpads (up to 40%), with 8px side padding and rows 30px tall. Note content gets 56px side padding, 32px top and 64px bottom; the text editor's lines get 14px left and 32px right padding inside a 14px vertical content inset.
+The tab bar holds tabs 34px tall, 120px to 220px wide (380px for a joined Split tab), 2px apart, rising from 6px top padding so the active tab meets the editor. The sidebar stacks a 36px search field (16px icon, UI-large text), Pinned (up to 35% of the height), the Library tree, and Scratchpads (up to 40%), with 8px side padding, section headings 16px apart, and rows 32px tall. Note content gets 56px side padding, 32px top and 64px bottom; the text editor's lines get 14px left and 32px right padding inside a 14px vertical content inset.
 
 Rhythm is a 4px base with 6px and 10px steps in dense controls: menu rows 6px by 10px inside a 6px panel inset, icon buttons 24px or 28px, settings rows at least 44px. Long content scrolls inside its region; the window itself never scrolls.
 
@@ -398,7 +398,7 @@ Small and unobtrusive; never oversized.
 ### Navigation
 
 - **Tab bar:** tabs sit on the chrome in muted ink with a 15px faint icon; hover takes the row-hover fill; the active tab takes the editor ground, text ink and an accent icon, with 8px top corners and an 8px concave flare at each bottom corner in the editor ground, so it joins the page as one shape (the flares drop while the tab is dragged). A Split shows as one tab with a hairline between its two titles. Dragging lifts the tab with the float shadow.
-- **Library tree:** 30px rows, 6px corners, 14px chevrons that rotate 90 degrees in 150ms, 16px Lucide icons; the active file gets the row-selected fill and an accent icon; folders read in muted ink, files in text ink. Drop targets get a row-selected fill and a 1px inset accent ring. Nested rows carry 1px hairline indent guides under each ancestor's chevron. The heading's New file, New folder, New canvas, Collapse all and ⋯ buttons fade in (150ms) while the sidebar is hovered or holds focus, and stay up while the Library is empty or unavailable.
+- **Library tree:** 32px rows, 6px corners, 14px chevrons that rotate 90 degrees in 150ms, 16px Lucide icons; the active file gets the row-selected fill and an accent icon; folders read in muted ink, files in text ink. Drop targets get a row-selected fill and a 1px inset accent ring. Nested rows carry 1px hairline indent guides under each ancestor's chevron. The heading's New file, New folder, New canvas, Collapse all and ⋯ buttons fade in (150ms) while the sidebar is hovered or holds focus, and stay up while the Library is empty or unavailable.
 - **Recent, Pinned and Scratchpads:** the same row grammar; open items read muted, closed ones faint. The row-selected fill marks the active Tab only at its home (its tree row, or its Scratchpads row); in Recent and Pinned the active item takes text ink and an accent icon without a fill, so one Tab never shows two selected rows. Scratchpads dock at the sidebar's foot under a full-width hairline.
 - **Git panel:** docks on the right of the editor area, beside the editor and terminal column; Mod+Shift+G or the status bar's Git button shows and hides it, and it starts closed each launch. A 1px hairline left edge that resizes it (7px hit area, accent-soft on hover or focus; 240px minimum, 70% maximum, 320px default, remembered), a 36px chrome header with "Git" in 600 text ink and a 24px faint ×, then the Git view on the sidebar ground with 8px sides. The Library sidebar holds no git UI.
 - **Git view:** inside the Git panel, on the chrome like the tree (no card, no shadow). Top to bottom:
@@ -410,7 +410,7 @@ Small and unobtrusive; never oversized.
   - Empty states are one calm muted line: "Install git to sync folders.", "This folder is inside the git repo at …", or "This folder isn't synced yet." over the Set up sync form (a muted Remote URL label, a 28px sunken field, a faint hint, a muted note, a primary Set up). A first read slower than 300ms shows a faint spinner line.
 - **Branch menu:** a Menu-styled float (surface, Float shadow, 10px corners, 6px inset, 256px wide) hung 4px under the branch button and nudged up to stay 8px inside the window. Past 8 branches it opens with a 32px sunken filter field (search icon, "Find or create a branch", accent border on focus). Rows are the menu's 6px pills, centered, with a 16px lead column: a faint plus for New branch…, an accent check on the current branch. LOCAL and ON REMOTE headings use the menu heading style; remote rows show a faint `origin/` before the name; long names truncate with the full name in a tooltip. The list scrolls past min(360px, 60vh). New branch… turns the top into a 32px name field with a faint hint, or a danger border and danger caption for an invalid or taken name. A refused switch shows one muted caption line under the top ("You have uncommitted changes…" or "Save or close N unsaved files first." with an accent Save all that takes keyboard focus); mid-rebase every row is faint and a faint line says why.
 - **Add folder from git dialog:** a sunken URL field and primary/ghost buttons (6px corners) in a 440px, 12px-cornered dialog over a 40% scrim.
-- **Settings tabs:** text tabs with a 2px accent underline when selected.
+- **Settings dialog:** 860×680 max, 12px corners. A 216px section nav on the sidebar ground (Appearance, Editor, Files, Keyboard shortcuts; 36px rows with 16px Lucide icons, row-selected fill and an accent icon when selected, Up/Down to move) beside the content: a 64px header with the section name (UI + 4px, 600) and close, then groups titled in the Label style, 36px apart. Rows are at least 56px, UI-large label with a caption-faint hint under it, control at the end; theme pickers stack under their label as 112×64 tiles. Rows in a group split by hairlines.
 
 ### Menus and pickers
 

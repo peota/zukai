@@ -156,7 +156,7 @@ spacing:
   sm: "6px"
   md: "10px"
   lg: "16px"
-  row: "30px"
+  row: "32px"
   tabbar: "40px"
   statusbar: "32px"
   sidebar: "260px"
@@ -259,7 +259,7 @@ components:
 Name: Zukai
 Colors: primary: accent-blue #2563eb; neutral: paper-chrome #f4f4f5; status: danger #be123c; syntax: syn-keyword #8b3fd9; primary: accent-blue-dark #5b8def; primary: accent-violet #7c3aed (+82 more in the sidecar)
 Fonts: Segoe UI Variable Text (display, headline, title, body, ui, sidebar, caption, label); JetBrains Mono (code)
-Spacing: hair 1px, xs 4px, sm 6px, md 10px, lg 16px, row 30px, tabbar 40px, statusbar 32px, sidebar 260px, column 720px
+Spacing: hair 1px, xs 4px, sm 6px, md 10px, lg 16px, row 32px, tabbar 40px, statusbar 32px, sidebar 260px, column 720px
 Radius: xs 4px, sm 5px, md 6px, track 7px, lg 8px, float 10px, dialog 12px, full 999px
 North Star: "The Receding Frame"
 Rules:

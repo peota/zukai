@@ -140,7 +140,7 @@ export function TabList({
                 }
               }}
               className={
-                "flex h-[30px] cursor-default items-center gap-2 rounded-[6px] px-2 whitespace-nowrap outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] " +
+                "flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2 whitespace-nowrap outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] " +
                 // The active item's fill belongs to its home row (the tree or
                 // Scratchpads); a shortcut list marks it by ink and icon alone,
                 // so the screen never shows two selected rows for one Tab.

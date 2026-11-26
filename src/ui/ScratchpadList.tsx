@@ -37,9 +37,12 @@ export function ScratchpadList({
   return (
     // Docked at the sidebar's foot under a full-width hairline: these live
     // outside the Library, and the tree scrolls behind the edge.
-    <section className="-mx-2 flex max-h-[40%] min-h-0 shrink-0 flex-col border-t border-hairline px-2">
+    <section className="-mx-2 mt-1 flex max-h-[40%] min-h-0 shrink-0 flex-col border-t border-hairline px-2 [&>div:first-child]:mt-3">
       <SectionHeading label="SCRATCHPADS" />
-      <ul aria-label="Scratchpads" className="min-h-0 overflow-y-auto pb-2">
+      <ul
+        aria-label="Scratchpads"
+        className="flex min-h-0 flex-col gap-px overflow-y-auto pb-3"
+      >
         {items.map((item) => {
           const active = item.id === activeId;
           return (
@@ -82,7 +85,7 @@ export function ScratchpadList({
               }}
               {...dragHandlers(item.id)}
               className={
-                "flex h-[30px] cursor-default items-center gap-2 rounded-[6px] px-2 whitespace-nowrap text-muted outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] " +
+                "flex h-8 shrink-0 cursor-default items-center gap-2 rounded-[6px] px-2 whitespace-nowrap text-muted outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] " +
                 (active ? "bg-row-sel text-text " : "hover:bg-row-hover ") +
                 (item.id === draggedId ? "opacity-40" : "")
               }

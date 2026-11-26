@@ -19,7 +19,9 @@ import type {
   Settings,
   ThemePref,
 } from "../model/settings";
-import { BUTTON, Row } from "./settingsRows";
+import { Keyboard, Palette, PenLine, FolderOpen } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { BUTTON, Group, Row } from "./settingsRows";
 import { CloseIcon, Icon } from "./icons";
 import type { MarkdownMode } from "../model/types";
 
@@ -34,7 +36,14 @@ export interface SettingsDialogProps {
   onClose(): void;
 }
 
-type Section = "general" | "shortcuts";
+type Section = "appearance" | "editor" | "files" | "shortcuts";
+
+const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
+  { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "editor", label: "Editor", icon: PenLine },
+  { id: "files", label: "Files", icon: FolderOpen },
+  { id: "shortcuts", label: "Keyboard shortcuts", icon: Keyboard },
+];
 
 const THEMES: { id: ThemePref; label: string }[] = [
   { id: "system", label: "System" },
@@ -56,7 +65,8 @@ export function SettingsDialog({
   onFontSize,
   onClose,
 }: SettingsDialogProps) {
-  const [section, setSection] = useState<Section>("general");
+  const [section, setSection] = useState<Section>("appearance");
+  const current = SECTIONS.find((x) => x.id === section)!;
 
   // Keys stay in the dialog: no app shortcut runs behind it.
   const onKeyDown = (e: KeyboardEvent) => {
@@ -65,6 +75,19 @@ export function SettingsDialog({
       e.preventDefault();
       onClose();
     }
+  };
+
+  // Up / Down move between sections, as in any vertical tab list.
+  const onNavKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const i = SECTIONS.findIndex((x) => x.id === section);
+    const n = SECTIONS.length;
+    const next = SECTIONS[(i + (e.key === "ArrowDown" ? 1 : n - 1)) % n];
+    setSection(next.id);
+    e.currentTarget
+      .querySelector<HTMLElement>(`[data-section="${next.id}"]`)
+      ?.focus();
   };
 
   return (
@@ -85,48 +108,67 @@ export function SettingsDialog({
           // Into the dialog on open, unless something in it already has it.
           if (el && !el.contains(document.activeElement)) el.focus();
         }}
-        className="z-fade-in flex h-[min(620px,85vh)] w-[min(600px,calc(100vw-32px))] flex-col rounded-[12px] bg-surface text-ui text-text shadow-float outline-none"
+        className="z-fade-in flex h-[min(680px,88vh)] w-[min(860px,calc(100vw-32px))] overflow-hidden rounded-[12px] bg-surface text-ui text-text shadow-float outline-none"
       >
-        <div className="flex shrink-0 items-center gap-1 border-b border-hairline px-4 pt-3">
+        <nav className="flex w-[216px] shrink-0 flex-col border-r border-hairline bg-side px-3 pt-5 pb-3">
+          <h2 className="m-0 mb-4 px-2.5 text-ui-lg font-semibold text-text">
+            Settings
+          </h2>
           <div
             role="tablist"
             aria-label="Settings sections"
-            className="flex flex-1 gap-1"
+            aria-orientation="vertical"
+            onKeyDown={onNavKey}
+            className="flex flex-col gap-0.5"
           >
-            <SectionTab
-              selected={section === "general"}
-              onSelect={() => setSection("general")}
-            >
-              General
-            </SectionTab>
-            <SectionTab
-              selected={section === "shortcuts"}
-              onSelect={() => setSection("shortcuts")}
-            >
-              Keyboard shortcuts
-            </SectionTab>
+            {SECTIONS.map((x) => (
+              <SectionTab
+                key={x.id}
+                id={x.id}
+                icon={x.icon}
+                selected={section === x.id}
+                onSelect={() => setSection(x.id)}
+              >
+                {x.label}
+              </SectionTab>
+            ))}
           </div>
-          <button
-            type="button"
-            aria-label="Close settings"
-            title="Close (Esc)"
-            onClick={onClose}
-            className="mb-2 flex size-7 items-center justify-center rounded-[6px] text-faint hover:bg-row-hover hover:text-text"
+        </nav>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex h-16 shrink-0 items-center gap-3 pr-4 pl-8">
+            <h2 className="m-0 flex-1 text-[calc(var(--z-ui-font)+4px)] font-semibold text-text">
+              {current.label}
+            </h2>
+            <button
+              type="button"
+              aria-label="Close settings"
+              title="Close (Esc)"
+              onClick={onClose}
+              className="flex size-8 items-center justify-center rounded-[6px] text-faint hover:bg-row-hover hover:text-text"
+            >
+              <CloseIcon size={16} />
+            </button>
+          </div>
+          <div
+            role="tabpanel"
+            aria-label={current.label}
+            className="min-h-0 flex-1 overflow-y-auto px-8 pt-2 pb-8"
           >
-            <CloseIcon size={16} />
-          </button>
-        </div>
-        <div role="tabpanel" className="min-h-0 overflow-y-auto px-5 py-4">
-          {section === "general" ? (
-            <General
-              settings={settings}
-              fontSize={fontSize}
-              onSettings={onSettings}
-              onFontSize={onFontSize}
-            />
-          ) : (
-            <Shortcuts platform={platform} />
-          )}
+            {section === "shortcuts" ? (
+              <Shortcuts platform={platform} />
+            ) : section === "appearance" ? (
+              <Appearance
+                settings={settings}
+                fontSize={fontSize}
+                onSettings={onSettings}
+                onFontSize={onFontSize}
+              />
+            ) : section === "editor" ? (
+              <Editor settings={settings} onSettings={onSettings} />
+            ) : (
+              <Files settings={settings} onSettings={onSettings} />
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -134,10 +176,14 @@ export function SettingsDialog({
 }
 
 function SectionTab({
+  id,
+  icon: I,
   selected,
   onSelect,
   children,
 }: {
+  id: Section;
+  icon: LucideIcon;
   selected: boolean;
   onSelect(): void;
   children: ReactNode;
@@ -146,15 +192,23 @@ function SectionTab({
     <button
       type="button"
       role="tab"
+      data-section={id}
       aria-selected={selected}
+      tabIndex={selected ? 0 : -1}
       onClick={onSelect}
       className={
-        "-mb-px border-b-2 px-2 pb-2.5 font-medium " +
+        "flex h-9 items-center gap-2.5 rounded-[6px] px-2.5 text-left text-ui-lg outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--z-accent)] " +
         (selected
-          ? "border-accent text-text"
-          : "border-transparent text-muted hover:text-text")
+          ? "bg-row-sel text-text"
+          : "text-muted hover:bg-row-hover hover:text-text")
       }
     >
+      <I
+        size={16}
+        strokeWidth={1.6}
+        aria-hidden="true"
+        className={"shrink-0 " + (selected ? "text-accent" : "")}
+      />
       {children}
     </button>
   );
@@ -234,7 +288,7 @@ function Segmented<T extends string>({
     <div
       role="radiogroup"
       aria-label={label}
-      className="flex gap-px rounded-[7px] bg-row-hover p-0.5"
+      className="flex gap-px rounded-[8px] bg-row-hover p-[3px]"
     >
       {options.map((o) => (
         <button
@@ -244,7 +298,7 @@ function Segmented<T extends string>({
           aria-checked={value === o.id}
           onClick={() => onChange(o.id)}
           className={
-            "rounded-[5px] px-3 py-1 " +
+            "h-7 rounded-[6px] px-3.5 " +
             (value === o.id
               ? "bg-surface text-text shadow-tab"
               : "text-muted hover:text-text")
@@ -270,7 +324,7 @@ function Swatches<T extends string>({
   onChange(v: T): void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex gap-2">
+    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-3">
       {options.map((o) => (
         <button
           key={o.id}
@@ -278,16 +332,16 @@ function Swatches<T extends string>({
           role="radio"
           aria-checked={value === o.id}
           onClick={() => onChange(o.id)}
-          className="group flex w-[84px] flex-col items-center gap-1.5 rounded-[8px] p-1 text-ui-sm text-muted aria-checked:text-text"
+          className="group flex w-[112px] flex-col items-start gap-2 rounded-[8px] text-ui text-muted outline-none hover:text-text aria-checked:text-text"
         >
           <span
             aria-hidden="true"
-            className="flex h-12 w-full overflow-hidden rounded-[6px] shadow-[0_0_0_1px_var(--z-hairline-strong)] group-aria-checked:shadow-[0_0_0_2px_var(--z-accent)]"
+            className="flex h-16 w-full overflow-hidden rounded-[8px] shadow-[0_0_0_1px_var(--z-hairline-strong)] group-aria-checked:shadow-[0_0_0_2px_var(--z-accent)] group-focus-visible:shadow-[0_0_0_2px_var(--z-accent-soft)]"
             style={{ background: o.chrome }}
           >
-            <span className="w-5 shrink-0" />
+            <span className="w-6 shrink-0" />
             <span
-              className="mt-2 flex flex-1 flex-col gap-1 rounded-tl-[4px] p-1.5"
+              className="mt-2.5 flex flex-1 flex-col gap-1.5 rounded-tl-[5px] p-2"
               style={{ background: o.editor }}
             >
               <span
@@ -352,7 +406,7 @@ function SizeStepper({
           if (ok) onChange(n);
         }}
         onBlur={() => setTyped(null)}
-        className="w-12 h-7 rounded-[6px] border border-hairline bg-sunken px-1.5 text-center text-text outline-none focus:shadow-[inset_0_0_0_1px_var(--z-accent-soft)] [&::-webkit-inner-spin-button]:appearance-none"
+        className="h-8 w-14 rounded-[6px] border border-hairline bg-sunken px-2 text-center text-text outline-none focus:border-accent [&::-webkit-inner-spin-button]:appearance-none"
       />
       <button
         type="button"
@@ -363,7 +417,7 @@ function SizeStepper({
       >
         <Icon name="plus" size={14} />
       </button>
-      <span className="w-5 text-faint">px</span>
+      <span className="w-6 text-center text-faint">px</span>
       <button
         type="button"
         aria-label={`Reset ${label.toLowerCase()}`}
@@ -380,197 +434,207 @@ function SizeStepper({
   );
 }
 
-function General({
+type SectionProps = Pick<
+  SettingsDialogProps,
+  "settings" | "fontSize" | "onSettings" | "onFontSize"
+>;
+
+function Appearance({
   settings,
   fontSize,
   onSettings,
   onFontSize,
-}: Pick<
-  SettingsDialogProps,
-  "settings" | "fontSize" | "onSettings" | "onFontSize"
->) {
+}: SectionProps) {
   return (
-    <div className="flex flex-col">
-      <Row label="Mode">
-        <Segmented
-          label="Theme"
-          value={settings.theme}
-          options={THEMES}
-          onChange={(theme) => onSettings({ theme })}
-        />
-      </Row>
-      <Row label="Light theme">
-        <Swatches
-          label="Light theme"
-          value={settings.lightTheme}
-          options={LIGHT_THEME_OPTIONS}
-          onChange={(lightTheme) =>
-            onSettings(
-              settings.theme === "dark"
-                ? { lightTheme, theme: "light" }
-                : { lightTheme },
-            )
-          }
-        />
-      </Row>
-      <Row label="Dark theme">
-        <Swatches
-          label="Dark theme"
-          value={settings.darkTheme}
-          options={DARK_THEME_OPTIONS}
-          onChange={(darkTheme) =>
-            onSettings(
-              settings.theme === "light"
-                ? { darkTheme, theme: "dark" }
-                : { darkTheme },
-            )
-          }
-        />
-      </Row>
-      <Row label="Accent">
-        <div role="radiogroup" aria-label="Accent" className="flex gap-1.5">
-          {ACCENT_OPTIONS.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              role="radio"
-              aria-label={a.label}
-              title={a.label}
-              aria-checked={settings.accent === a.id}
-              onClick={() => onSettings({ accent: a.id })}
-              className="flex size-7 items-center justify-center rounded-full border-2 border-transparent aria-checked:border-text"
-            >
-              <span
-                className="size-[18px] rounded-full"
-                style={{ background: a.color }}
-              />
-            </button>
-          ))}
-        </div>
-      </Row>
-      <div className="my-2 h-px bg-hairline" />
-      <Row label="Open Markdown notes in">
-        <Segmented
-          label="Open Markdown notes in"
-          value={settings.markdownDefault}
-          options={MARKDOWN_MODES}
-          onChange={(markdownDefault) => onSettings({ markdownDefault })}
-        />
-      </Row>
-      <Row label="Interface font size">
-        <SizeStepper
+    <>
+      <Group title="Theme">
+        <Row label="Mode" hint="Light or dark, or follow the system.">
+          <Segmented
+            label="Theme"
+            value={settings.theme}
+            options={THEMES}
+            onChange={(theme) => onSettings({ theme })}
+          />
+        </Row>
+        <Row label="Light theme" stack>
+          <Swatches
+            label="Light theme"
+            value={settings.lightTheme}
+            options={LIGHT_THEME_OPTIONS}
+            onChange={(lightTheme) =>
+              onSettings(
+                settings.theme === "dark"
+                  ? { lightTheme, theme: "light" }
+                  : { lightTheme },
+              )
+            }
+          />
+        </Row>
+        <Row label="Dark theme" stack>
+          <Swatches
+            label="Dark theme"
+            value={settings.darkTheme}
+            options={DARK_THEME_OPTIONS}
+            onChange={(darkTheme) =>
+              onSettings(
+                settings.theme === "light"
+                  ? { darkTheme, theme: "dark" }
+                  : { darkTheme },
+              )
+            }
+          />
+        </Row>
+        <Row label="Accent" hint="Selection, focus, links and checks.">
+          <div role="radiogroup" aria-label="Accent" className="flex gap-1.5">
+            {ACCENT_OPTIONS.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                role="radio"
+                aria-label={a.label}
+                title={a.label}
+                aria-checked={settings.accent === a.id}
+                onClick={() => onSettings({ accent: a.id })}
+                className="flex size-8 items-center justify-center rounded-full border-2 border-transparent aria-checked:border-text"
+              >
+                <span
+                  className="size-5 rounded-full"
+                  style={{ background: a.color }}
+                />
+              </button>
+            ))}
+          </div>
+        </Row>
+      </Group>
+      <Group title="Text size">
+        <Row
           label="Interface font size"
-          value={settings.uiFontSize}
-          min={MIN_UI_FONT_SIZE}
-          max={MAX_UI_FONT_SIZE}
-          defaultValue={DEFAULT_UI_FONT_SIZE}
-          onChange={(uiFontSize) => onSettings({ uiFontSize })}
-        />
-      </Row>
-      <Row label="Editor font size">
-        <SizeStepper
-          label="Editor font size"
-          value={fontSize}
-          min={MIN_FONT_SIZE}
-          max={MAX_FONT_SIZE}
-          defaultValue={DEFAULT_FONT_SIZE}
-          onChange={onFontSize}
-        />
-      </Row>
-      <Row
-        label={
-          <>
-            <label htmlFor="z-wrap-new">Word wrap in new tabs</label>
-            <span id="z-wrap-new-hint" className="block text-ui-xs text-faint">
-              Alt+Z still toggles it in each tab.
-            </span>
-          </>
-        }
-      >
-        <input
-          id="z-wrap-new"
-          aria-describedby="z-wrap-new-hint"
-          type="checkbox"
-          checked={settings.wrapNewTabs}
-          onChange={(e) => onSettings({ wrapNewTabs: e.target.checked })}
-          className="size-4 accent-[var(--z-accent)]"
-        />
-      </Row>
-      <Row label={<label htmlFor="z-line-numbers">Line numbers</label>}>
-        <input
-          id="z-line-numbers"
-          type="checkbox"
-          checked={settings.lineNumbers}
-          onChange={(e) => onSettings({ lineNumbers: e.target.checked })}
-          className="size-4 accent-[var(--z-accent)]"
-        />
-      </Row>
-      <Row
-        label={
-          <>
+          hint="Sidebar, tabs, menus and dialogs."
+        >
+          <SizeStepper
+            label="Interface font size"
+            value={settings.uiFontSize}
+            min={MIN_UI_FONT_SIZE}
+            max={MAX_UI_FONT_SIZE}
+            defaultValue={DEFAULT_UI_FONT_SIZE}
+            onChange={(uiFontSize) => onSettings({ uiFontSize })}
+          />
+        </Row>
+        <Row label="Editor font size" hint="Notes and files in the editor.">
+          <SizeStepper
+            label="Editor font size"
+            value={fontSize}
+            min={MIN_FONT_SIZE}
+            max={MAX_FONT_SIZE}
+            defaultValue={DEFAULT_FONT_SIZE}
+            onChange={onFontSize}
+          />
+        </Row>
+      </Group>
+    </>
+  );
+}
+
+function Editor({
+  settings,
+  onSettings,
+}: Pick<SettingsDialogProps, "settings" | "onSettings">) {
+  return (
+    <>
+      <Group title="Markdown">
+        <Row label="Open Markdown notes in">
+          <Segmented
+            label="Open Markdown notes in"
+            value={settings.markdownDefault}
+            options={MARKDOWN_MODES}
+            onChange={(markdownDefault) => onSettings({ markdownDefault })}
+          />
+        </Row>
+      </Group>
+      <Group title="Text">
+        <Row
+          label={<label htmlFor="z-wrap-new">Word wrap in new tabs</label>}
+          hint="Alt+Z still toggles it in each tab."
+          hintId="z-wrap-new-hint"
+        >
+          <input
+            id="z-wrap-new"
+            aria-describedby="z-wrap-new-hint"
+            type="checkbox"
+            checked={settings.wrapNewTabs}
+            onChange={(e) => onSettings({ wrapNewTabs: e.target.checked })}
+            className="size-[18px] accent-[var(--z-accent)]"
+          />
+        </Row>
+        <Row label={<label htmlFor="z-line-numbers">Line numbers</label>}>
+          <input
+            id="z-line-numbers"
+            type="checkbox"
+            checked={settings.lineNumbers}
+            onChange={(e) => onSettings({ lineNumbers: e.target.checked })}
+            className="size-[18px] accent-[var(--z-accent)]"
+          />
+        </Row>
+      </Group>
+    </>
+  );
+}
+
+function Files({
+  settings,
+  onSettings,
+}: Pick<SettingsDialogProps, "settings" | "onSettings">) {
+  return (
+    <>
+      <Group title="Saving">
+        <Row
+          label={
             <label htmlFor="z-autosave-files">Save files automatically</label>
-            <span
-              id="z-autosave-files-hint"
-              className="block text-ui-xs text-faint"
-            >
-              Scratchpads always save themselves. When off, a file changes on
-              disk only when you save it.
-            </span>
-          </>
-        }
-      >
-        <input
-          id="z-autosave-files"
-          aria-describedby="z-autosave-files-hint"
-          type="checkbox"
-          checked={settings.autosaveFiles}
-          onChange={(e) => onSettings({ autosaveFiles: e.target.checked })}
-          className="size-4 accent-[var(--z-accent)]"
-        />
-      </Row>
-      <Row
-        label={
-          <>
-            <label htmlFor="z-git-sync">Git sync</label>
-            <span id="z-git-sync-hint" className="block text-ui-xs text-faint">
-              Show git status and Pull, Commit and Push for library folders.
-            </span>
-          </>
-        }
-      >
-        <input
-          id="z-git-sync"
-          aria-describedby="z-git-sync-hint"
-          type="checkbox"
-          checked={settings.gitSync}
-          onChange={(e) => onSettings({ gitSync: e.target.checked })}
-          className="size-4 accent-[var(--z-accent)]"
-        />
-      </Row>
-      <Row
-        label={
-          <>
-            <label htmlFor="z-reveal-active">Reveal the open file</label>
-            <span
-              id="z-reveal-active-hint"
-              className="block text-ui-xs text-faint"
-            >
-              Switching tabs opens the file's folders in the sidebar and scrolls
-              to it.
-            </span>
-          </>
-        }
-      >
-        <input
-          id="z-reveal-active"
-          aria-describedby="z-reveal-active-hint"
-          type="checkbox"
-          checked={settings.revealActiveFile}
-          onChange={(e) => onSettings({ revealActiveFile: e.target.checked })}
-          className="size-4 accent-[var(--z-accent)]"
-        />
-      </Row>
-    </div>
+          }
+          hint="Scratchpads always save themselves. When off, a file changes on disk only when you save it."
+          hintId="z-autosave-files-hint"
+        >
+          <input
+            id="z-autosave-files"
+            aria-describedby="z-autosave-files-hint"
+            type="checkbox"
+            checked={settings.autosaveFiles}
+            onChange={(e) => onSettings({ autosaveFiles: e.target.checked })}
+            className="size-[18px] accent-[var(--z-accent)]"
+          />
+        </Row>
+      </Group>
+      <Group title="Library">
+        <Row
+          label={<label htmlFor="z-reveal-active">Reveal the open file</label>}
+          hint="Switching tabs opens the file's folders in the sidebar and scrolls to it."
+          hintId="z-reveal-active-hint"
+        >
+          <input
+            id="z-reveal-active"
+            aria-describedby="z-reveal-active-hint"
+            type="checkbox"
+            checked={settings.revealActiveFile}
+            onChange={(e) => onSettings({ revealActiveFile: e.target.checked })}
+            className="size-[18px] accent-[var(--z-accent)]"
+          />
+        </Row>
+        <Row
+          label={<label htmlFor="z-git-sync">Git sync</label>}
+          hint="Show git status and Pull, Commit and Push for library folders."
+          hintId="z-git-sync-hint"
+        >
+          <input
+            id="z-git-sync"
+            aria-describedby="z-git-sync-hint"
+            type="checkbox"
+            checked={settings.gitSync}
+            onChange={(e) => onSettings({ gitSync: e.target.checked })}
+            className="size-[18px] accent-[var(--z-accent)]"
+          />
+        </Row>
+      </Group>
+    </>
   );
 }
 
@@ -603,7 +667,7 @@ function Shortcuts({ platform }: { platform: Platform }) {
         spellCheck={false}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        className="h-8 w-full rounded-[7px] border border-hairline bg-sunken px-2.5 text-text outline-none placeholder:text-faint focus:border-accent [&::-webkit-search-cancel-button]:hidden"
+        className="h-10 w-full rounded-[8px] border border-hairline bg-sunken px-3.5 text-ui-lg text-text outline-none placeholder:text-faint focus:border-accent [&::-webkit-search-cancel-button]:hidden"
       />
       {rows.length === 0 ? (
         <p className="m-0 py-2 text-faint">No shortcut matches</p>
@@ -615,7 +679,7 @@ function Shortcuts({ platform }: { platform: Platform }) {
                 <th
                   colSpan={2}
                   scope="colgroup"
-                  className="pt-4 pb-1.5 text-left text-ui-xs font-semibold tracking-[0.06em] text-faint"
+                  className="pt-7 pb-2 text-left text-ui-xs font-semibold tracking-[0.06em] text-faint"
                 >
                   {g.toUpperCase()}
                 </th>
@@ -627,12 +691,14 @@ function Shortcuts({ platform }: { platform: Platform }) {
                     key={`${r.group}:${r.action}`}
                     className="border-t border-hairline first:border-t-0"
                   >
-                    <td className="py-2 pr-4 text-text">{r.action}</td>
-                    <td className="py-2 text-right whitespace-nowrap">
+                    <td className="py-2.5 pr-4 text-ui-lg text-text">
+                      {r.action}
+                    </td>
+                    <td className="py-2.5 text-right whitespace-nowrap">
                       {r.shown.map((k, i) => (
                         <span key={k}>
                           {i > 0 && <span className="px-1 text-faint">or</span>}
-                          <kbd className="rounded-[5px] border border-hairline border-b-hairline-strong bg-sunken px-1.5 py-0.5 font-[inherit] text-ui-sm text-muted">
+                          <kbd className="rounded-[5px] border border-hairline border-b-hairline-strong bg-sunken px-2 py-1 font-[inherit] text-ui-sm text-muted">
                             {k}
                           </kbd>
                         </span>
