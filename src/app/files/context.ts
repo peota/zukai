@@ -14,6 +14,7 @@ import type {
   WorkspaceState,
 } from "../../model/types";
 import { sameContent } from "../../files/fileState";
+import { isViewerKind, type Kind } from "../../model/kinds";
 import * as ws from "../../model/workspace";
 import type { Saver } from "../../storage/autosave";
 import type { KeyedLock } from "../keyedLock";
@@ -91,6 +92,14 @@ export function asFileError(err: unknown): FileError {
   return { kind: "io", message: String(err) };
 }
 
+/** What a PDF Tab's File says about its format: it has no text. */
+const PDF_FORMAT: FileFormat = {
+  encoding: "utf-8",
+  bom: false,
+  lineEnding: "lf",
+  mixed: false,
+};
+
 export async function readDisk(path: string): Promise<DiskRead> {
   try {
     return { kind: "ok", read: await fileRead(path) };
@@ -101,6 +110,28 @@ export async function readDisk(path: string): Promise<DiskRead> {
       if (fp === null) return { kind: "missing" };
     }
     return { kind: "failed", err: e };
+  }
+}
+
+/**
+ * `readDisk` for a Tab of Kind `kind`. A PDF Tab is never decoded as text (it
+ * can be huge): only whether its File is there, and its fingerprint. (A diff
+ * pane reads a PDF with plain `readDisk`, which says it isn't text.)
+ */
+export async function readTabDisk(
+  path: string,
+  kind: Kind | undefined,
+): Promise<DiskRead> {
+  if (kind !== "pdf") return readDisk(path);
+  try {
+    const fingerprint = await fileFingerprint(path);
+    if (fingerprint === null) return { kind: "missing" };
+    return {
+      kind: "ok",
+      read: { text: "", format: PDF_FORMAT, readable: true, fingerprint },
+    };
+  } catch (err) {
+    return { kind: "failed", err: asFileError(err) };
   }
 }
 
@@ -246,8 +277,8 @@ export function useFilesContext(x: FilesInternals) {
    */
   const keepAside = useCallback(
     (id: string) => {
-      // An Image Tab's text is a lossy decode of its bytes: never kept.
-      if (stateRef.current.tabs.find((t) => t.id === id)?.kind === "image") {
+      // A viewer Tab's text is a lossy decode (or nothing): never kept.
+      if (isViewerKind(stateRef.current.tabs.find((t) => t.id === id)?.kind)) {
         return;
       }
       const schedule = () => {

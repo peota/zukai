@@ -610,7 +610,7 @@ describe("useLibrary", () => {
     const { result } = await mount([
       { ...fileTab("fu", plain), language: "plaintext" },
     ]);
-    for (const name of ["flow.excalidraw", "pic.png"]) {
+    for (const name of ["flow.excalidraw", "pic.png", "spec.pdf"]) {
       let err: string | null = null;
       await act(async () => {
         err = await result.current.library.rename(plain, name);

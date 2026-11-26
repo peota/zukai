@@ -1,10 +1,11 @@
 /**
- * What a Tab edits: text, an Excalidraw drawing, or a read-only image; or
+ * What a Tab edits: text, an Excalidraw drawing, or a read-only image or PDF; or
  * what it shows: a read-only diff of a File against its last commit.
  */
-export type Kind = "text" | "canvas" | "image" | "diff";
+export type Kind = "text" | "canvas" | "image" | "pdf" | "diff";
 
 export const CANVAS_EXT = ".excalidraw";
+export const PDF_EXT = ".pdf";
 export const IMAGE_EXTS: readonly string[] = [
   ".png",
   ".jpg",
@@ -102,7 +103,13 @@ export function kindOf(path: string): Kind {
   if (dot < 0) return "text";
   const ext = name.slice(dot).toLowerCase();
   if (ext === CANVAS_EXT) return "canvas";
+  if (ext === PDF_EXT) return "pdf";
   return IMAGE_EXTS.includes(ext) ? "image" : "text";
+}
+
+/** Read-only Kinds whose text is never kept, shadowed or saved. */
+export function isViewerKind(kind: Kind | undefined): boolean {
+  return kind === "image" || kind === "pdf";
 }
 
 /**

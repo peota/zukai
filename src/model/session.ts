@@ -1,4 +1,4 @@
-import { kindOf, type Kind } from "./kinds";
+import { kindOf, PDF_EXT, type Kind } from "./kinds";
 import type {
   ClosedEntry,
   FileFormat,
@@ -133,7 +133,7 @@ function isFileInfo(v: unknown): v is FileInfo {
   );
 }
 
-const KINDS: readonly string[] = ["text", "canvas", "image"];
+const KINDS: readonly string[] = ["text", "canvas", "image", "pdf"];
 
 function isTabState(v: unknown): v is TabState {
   if (!isObject(v)) return false;
@@ -296,6 +296,19 @@ function withKind(t: unknown): unknown {
   return { ...t, kind: path === "" ? "text" : kindOf(path) };
 }
 
+/** A PDF opened before the Kind existed was a text Tab: it becomes a viewer. */
+function withPdfKind(t: unknown): unknown {
+  if (!isObject(t) || t.kind !== "text") return t;
+  const file = t.file;
+  if (!isObject(file) || typeof file.path !== "string") return t;
+  if (!file.path.toLowerCase().endsWith(PDF_EXT)) return t;
+  const { markdownMode: _m, hidden: _h, preview: _p, ...rest } = t;
+  void _m;
+  void _h;
+  void _p;
+  return { ...rest, kind: "pdf" };
+}
+
 export function parseSessionFile(json: string | null): SessionFile | null {
   if (json === null) return null;
   let data: unknown;
@@ -323,7 +336,9 @@ export function parseSessionFile(json: string | null): SessionFile | null {
   const fix = (t: unknown) =>
     withHidden(
       withMarkdownMode(
-        withPreview(withPin(withViewport(migrate ? withKind(t) : t))),
+        withPreview(
+          withPin(withViewport(withPdfKind(migrate ? withKind(t) : t))),
+        ),
       ),
     );
   const tabs: unknown[] = data.tabs.map(fix);

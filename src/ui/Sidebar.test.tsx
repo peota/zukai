@@ -176,6 +176,13 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: "Collapse all" })).toBeDisabled();
   });
 
+  it("shows a pdf icon for .pdf files", () => {
+    const tree = makeTree();
+    tree.children[IDEAS.path] = [file(p("Ideas", "spec.pdf"))];
+    setup({ tree });
+    expect(iconOf(row("spec.pdf"))).toBe("pdf");
+  });
+
   it("rendersTreeWithIconsAndScratchpads", () => {
     const { p } = setup();
     expect(screen.getByPlaceholderText("Search Library")).toBeInTheDocument();

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 import type { TabState } from "../model/types";
 import { baseName } from "../files/paths";
-import { isExecPath } from "../model/kinds";
+import { isExecPath, isViewerKind } from "../model/kinds";
 import { encodingLabel } from "./encodings";
 
 export interface FileBarProps {
@@ -39,8 +39,8 @@ export function FileBar(p: FileBarProps) {
     );
   }
   const reveal = p.revealLabel ?? "Show in Explorer";
-  if (p.tab.kind === "image") {
-    // An image is never edited: nothing to save, no text to re-read. A
+  if (isViewerKind(p.tab.kind)) {
+    // An image or PDF is never edited: nothing to save, no text to re-read. A
     // missing one has nothing to show in the file manager either.
     return file.held === "missing" ? (
       <Bar kind="err" actions={<BarButton disabled>{reveal}</BarButton>}>

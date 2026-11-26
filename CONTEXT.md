@@ -15,7 +15,7 @@ A slot in the tab bar. A Tab shows exactly one Document.
 The content a Tab shows. Every Document is either a Scratchpad or a File.
 
 **Scratchpad**
-A Document that lives only in Zukai's own storage and has no path on disk. Every new Tab starts as a Scratchpad. Scratchpads are saved continuously and never ask to be saved.
+A Document that lives only in Zukai's own storage and has no path on disk. Every new Tab starts as a Scratchpad. Scratchpads are saved continuously to Zukai's storage; the only time one asks to be saved is when a non-empty one is closed (see **Recently Closed**).
 _Avoid_: note, untitled, temp file.
 
 **File**
@@ -23,9 +23,9 @@ A Document backed by a path on the user's disk. A File changes on disk only when
 _Avoid_: external file, document (when you mean specifically the on-disk kind).
 
 **Kind**
-What a Document shows: **Text**, **Canvas**, **Image** or **Table** (M2). A Document's Kind is fixed when it's created and never changes. Save As refuses a name whose extension would change the Kind.
-- Files get their Kind from the extension: `.excalidraw` is Canvas, `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.bmp` and `.svg` are Image, everything else is Text. The list lives in `src/model/kinds.ts`. In M2, `.csv` and `.tsv` become Table.
-- Scratchpads are Text (Mod+N, the default) or Canvas (Mod+Shift+N). There are no Table or Image Scratchpads in v1.
+What a Document shows: **Text**, **Canvas**, **Image**, **PDF** or **Table** (M2). A Document's Kind is fixed when it's created and never changes. Save As refuses a name whose extension would change the Kind.
+- Files get their Kind from the extension: `.excalidraw` is Canvas, `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.bmp` and `.svg` are Image, `.pdf` is PDF, everything else is Text. The list lives in `src/model/kinds.ts`. In M2, `.csv` and `.tsv` become Table.
+- Scratchpads are Text (Mod+N, the default) or Canvas (Mod+Shift+N). There are no Table, Image or PDF Scratchpads in v1.
 _Avoid_: type, mode, format.
 
 **Canvas**
@@ -37,6 +37,9 @@ The Kind for drawings, shown in an embedded Excalidraw editor (`@excalidraw/exca
 
 **Image**
 The Kind for pictures: a read-only viewer that fits the window, with zoom (Mod+= / Mod+- / Mod+0) and pan. The status bar shows the dimensions, the format and the size, and the image reloads when the file changes on disk. Bytes are read through Rust under the same grants. SVG is only ever shown as an image (`<img src="blob:…">`), never as live markup, so no script in it runs.
+
+**PDF**
+The Kind for PDFs: a read-only viewer with continuous vertical scroll, fit to width by default (never past 200%, and refitted when the window resizes), and zoom (Mod+= / Mod+- / Mod+0 to fit again, or Mod+wheel). PageUp, PageDown, Home and End move by page; Mod+G, or clicking the page number in the status bar, goes to a page. Text can be selected and copied, and Find (Mod+F, F3 / Shift+F3, match case, whole word) searches it, with no replace or regexp. The status bar shows the page (with previous and next page buttons), the zoom (with zoom out and zoom in buttons; clicking it picks Fit width or 50% to 300%) and the size, with a quiet "Open with default app". The last page, offset and zoom are remembered per file in Zukai's storage (`pdf-positions.json`, the last 500 files), never in the PDF or the Session. The PDF reloads when the file changes on disk and keeps its position. Up to 300 MB, read as bytes through Rust under the same grants; a password-protected, broken or too-large PDF shows a notice with "Open with default app". Scripts in a PDF never run and its external links do nothing. pdf.js is loaded the first time a PDF Tab opens.
 
 **View**
 A way of displaying a Document that doesn't change what it is. A Table has two Views: the **grid** and the **raw text**. Switching View keeps the same Document and the same saving rule.
@@ -239,9 +242,10 @@ Collapsing a region of text (such as a JSON object) behind a marker in the fold 
 ## Closing
 
 **Recently Closed**
-A list of Tabs the user closed. Mod+Shift+T reopens the most recent one, and a small menu lists the rest. Closing a Tab asks for confirmation only when it is a File Tab with Unsaved changes (Held Tabs never ask).
-- A Scratchpad that is empty when closed is deleted at once and never appears in Recently Closed.
-- A non-empty Scratchpad is kept in Recently Closed for 30 days, then deleted for good.
+A list of Tabs the user closed. Mod+Shift+T reopens the most recent one, and a small menu lists the rest. Closing a Tab asks for confirmation only when it is a File Tab with Unsaved changes (Held Tabs never ask) or an unpinned Scratchpad with something in it.
+- A Scratchpad that is empty when closed (blank text, or a canvas with nothing drawn) is deleted at once, unasked, and never appears in Recently Closed.
+- Closing a non-empty, unpinned Scratchpad asks "Save changes to <Title>?": **Save** is Save As (it closes as the File it became; cancelling the save dialog keeps the Tab open), **Don't save** deletes it for good, never into Recently Closed, and **Cancel** keeps it open.
+- A pinned Scratchpad closes unasked and is kept in Recently Closed (and the Pinned list) for 30 days, then deleted for good.
 - A closed File appears in Recently Closed as a reference to its path. The content stays on disk. It never expires, unless it carries Shadow file text (unsaved text from being Held); then it is kept for 30 days.
 
 ## Quick capture

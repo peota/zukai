@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { shadowWrite } from "../../files/api";
 import { inShadow } from "../../files/fileState";
 import { baseName } from "../../files/paths";
+import { isViewerKind } from "../../model/kinds";
 import type { FileInfo } from "../../model/types";
 import * as ws from "../../model/workspace";
 import { reopenScratchpad } from "../../storage/api";
@@ -9,7 +10,7 @@ import { logError } from "../workspaceEffects";
 import {
   fileInfoOf,
   openFailure,
-  readDisk,
+  readTabDisk,
   settledFile,
   unsavedDisk,
   type FilesContext,
@@ -46,9 +47,9 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
           markUnreadable(id, false);
           return;
         }
-        // An Image never has text of its own to keep (and a Missing one
+        // A viewer Tab never has text of its own to keep (and a Missing one
         // reopens from the disk, not from a lossy decode).
-        if (!inShadow(file) || tab.kind === "image") {
+        if (!inShadow(file) || isViewerKind(tab.kind)) {
           // Its text is on disk: nothing to keep, and the entry never expires.
           if (file.held !== null) patchFile(id, { ...file, held: null });
           return dropShadow(id);
@@ -87,10 +88,9 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
       let text: string | null = null;
       let info = file;
       let disk: string | undefined;
-      const image =
-        stateRef.current.closed.find((e) => e.tab.id === id)?.tab.kind ===
-        "image";
-      if (inShadow(file) && !image) {
+      const kind = stateRef.current.closed.find((e) => e.tab.id === id)?.tab
+        .kind;
+      if (inShadow(file) && !isViewerKind(kind)) {
         const kept = await readShadow(id, file);
         // Unreadable: the entry stays, with its shadow, for a later try.
         if (kept === undefined) {
@@ -107,7 +107,7 @@ export function useCloseReopen(c: FilesContext, d: CloseReopenDeps) {
         }
       }
       if (text === null) {
-        const r = await readDisk(file.path);
+        const r = await readTabDisk(file.path, kind);
         if (r.kind === "failed") {
           showNotice(openFailure(baseName(file.path), r.err));
           return false;

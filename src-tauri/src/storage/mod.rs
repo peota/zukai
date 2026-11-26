@@ -1,4 +1,5 @@
 pub mod atomic;
+pub mod pdf_positions;
 pub mod scratchpads;
 pub mod session;
 pub mod shadow;

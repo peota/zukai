@@ -15,7 +15,7 @@ import { logError } from "../workspaceEffects";
 import {
   fileInfoOf,
   openFailure,
-  readDisk,
+  readTabDisk,
   sameFingerprint,
   type DiskRead,
   type FilesContext,
@@ -114,7 +114,7 @@ export function useDiskChanges(
         case "reload":
           return reloadLocked(
             id,
-            () => readDisk(cur.path),
+            () => readTabDisk(cur.path, tabOf(id)?.kind),
             contents.get(id) ?? "",
           );
         case "conflict":

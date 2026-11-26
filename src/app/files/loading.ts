@@ -7,6 +7,7 @@ import {
 } from "../../files/api";
 import { inShadow, sameContent } from "../../files/fileState";
 import { baseName } from "../../files/paths";
+import { isViewerKind } from "../../model/kinds";
 import type {
   FileInfo,
   Fingerprint,
@@ -21,7 +22,7 @@ import {
   asFileError,
   fileInfoOf,
   openFailure,
-  readDisk,
+  readTabDisk,
   settledFile,
   unsavedDisk,
   type FilesContext,
@@ -81,9 +82,9 @@ export function useLoading(c: FilesContext) {
 
   const readFileText = useCallback(
     async (id: string, file: FileInfo): Promise<string> => {
-      // An Image has no shadow: it always reads its File.
-      const image = tabOf(id)?.kind === "image";
-      if (inShadow(file) && !image) {
+      const kind = tabOf(id)?.kind;
+      // An Image or PDF has no shadow: it always reads its File.
+      if (inShadow(file) && !isViewerKind(kind)) {
         const kept = await readShadow(id, file);
         if (kept === undefined) {
           // It stays held or unsaved as it was (that is what the Session
@@ -105,7 +106,7 @@ export function useLoading(c: FilesContext) {
         }
         // No shadow after all: the File's own text, and nothing unsaved.
       }
-      const r = await readDisk(file.path);
+      const r = await readTabDisk(file.path, kind);
       const cur = tabOf(id)?.file ?? file;
       if (r.kind === "ok") {
         patchFile(id, fileInfoOf(cur.path, r.read));
@@ -185,7 +186,8 @@ export function useLoading(c: FilesContext) {
       const shadowed = new Set(ids);
       const holdIfShadowed = async (tab: TabState): Promise<TabState> => {
         const file = tab.file;
-        if (!file || !shadowed.has(tab.id) || tab.kind === "image") return tab;
+        if (!file || !shadowed.has(tab.id) || isViewerKind(tab.kind))
+          return tab;
         if (inShadow(file)) return tab;
         let disk: Fingerprint | null | undefined;
         try {

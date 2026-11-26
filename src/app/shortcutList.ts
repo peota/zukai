@@ -186,6 +186,12 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "View",
+    action: "Go to page (PDF)",
+    keys: [["Mod", "G"]],
+    command: "goToPage",
+  },
+  {
+    group: "View",
     action: "Toggle Git panel",
     keys: [["Mod", "Shift", "G"]],
     command: "toggleGit",

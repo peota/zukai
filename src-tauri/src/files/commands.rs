@@ -127,7 +127,8 @@ pub async fn file_change_extension(
     .await
 }
 
-/// Over `MAX_OPEN_BYTES` the file isn't read: the fingerprint has the real
+/// Over its path's `open_cap` (`MAX_PDF_BYTES` for a PDF, else
+/// `MAX_OPEN_BYTES`) the file isn't read: the fingerprint has the real
 /// mtime and size and an empty hash, which never matches (always "changed").
 #[tauri::command]
 pub async fn file_fingerprint(
@@ -225,7 +226,7 @@ pub async fn file_pick_save(
     .await
 }
 
-/// A granted File's raw bytes (an Image), at most `MAX_OPEN_BYTES`.
+/// A granted File's raw bytes (an Image or a PDF), at most `open_cap` of its path.
 pub(crate) fn read_bytes_checked(g: &Grants, path: &str) -> Result<Vec<u8>, FileError> {
     Ok(io::read_bytes(&g.check(path)?)?.0)
 }

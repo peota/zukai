@@ -1,3 +1,4 @@
+import { isViewerKind } from "../../model/kinds";
 import { useCallback } from "react";
 import {
   fileFingerprint,
@@ -14,6 +15,7 @@ import { logError } from "../workspaceEffects";
 import {
   asFileError,
   readDisk,
+  readTabDisk,
   sameFormat,
   type DiskRead,
   type FilesContext,
@@ -55,7 +57,7 @@ export function useBarActions(c: FilesContext, d: BarDeps) {
 
   const keepMine = useCallback(
     async (id: string) => {
-      if (tabOf(id)?.kind === "image" || refuseUnreadable(id)) return;
+      if (isViewerKind(tabOf(id)?.kind) || refuseUnreadable(id)) return;
       const text = await loadContent(id);
       await lock(id, async () => {
         const file = tabOf(id)?.file;
@@ -93,7 +95,7 @@ export function useBarActions(c: FilesContext, d: BarDeps) {
       await lock(id, () => {
         const path = tabOf(id)?.file?.path;
         return path
-          ? reloadLocked(id, () => readDisk(path))
+          ? reloadLocked(id, () => readTabDisk(path, tabOf(id)?.kind))
           : Promise.resolve();
       });
     },
@@ -102,8 +104,8 @@ export function useBarActions(c: FilesContext, d: BarDeps) {
 
   const saveToOriginal = useCallback(
     async (id: string) => {
-      // An Image Tab's text isn't its bytes: never write it back.
-      if (tabOf(id)?.kind === "image" || refuseUnreadable(id)) return;
+      // A viewer Tab's text isn't its bytes: never write it back.
+      if (isViewerKind(tabOf(id)?.kind) || refuseUnreadable(id)) return;
       const text = await loadContent(id);
       await lock(id, async () => {
         const file = tabOf(id)?.file;

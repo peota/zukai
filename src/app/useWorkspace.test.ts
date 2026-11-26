@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../storage/api";
 import { useWorkspace } from "./useWorkspace";
 import { nextScratchpadTitle } from "../model/workspace";
+import type { CloseChoice } from "../ui/SaveChangesDialog";
 
 const h = vi.hoisted(() => ({
   flushAll: null as null | (() => Promise<void>),
@@ -42,6 +43,11 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({ emit: vi.fn() }));
+
+const pdfFlush = vi.hoisted(() => vi.fn());
+vi.mock("../pdf/positions", () => ({
+  pdfPositions: { flush: pdfFlush },
+}));
 
 vi.mock("./exit", () => ({
   BEFORE_EXIT_EVENT: "zukai://before-exit",
@@ -125,12 +131,27 @@ async function mount() {
 const tabIds = (r: { current: ReturnType<typeof useWorkspace> }) =>
   r.current.state.tabs.map((t) => t.id);
 
+/** Closes `id`, answering its "Save changes?" prompt with `choice`. */
+async function closeAnswering(
+  r: { current: ReturnType<typeof useWorkspace> },
+  id: string,
+  choice: CloseChoice = "discard",
+) {
+  let closed!: Promise<void>;
+  act(() => {
+    closed = r.current.closeTab(id);
+  });
+  await waitFor(() => expect(r.current.closePrompt).not.toBeNull());
+  act(() => r.current.answerClosePrompt(choice));
+  await act(() => closed);
+}
+
 describe("useWorkspace close", () => {
   it("keeps the Tab open when the final write fails", async () => {
     const { result } = await mount();
     m.writeScratchpad.mockRejectedValue(new Error("disk full"));
     act(() => result.current.setContent("a", "alpha!"));
-    await act(() => result.current.closeTab("a"));
+    await closeAnswering(result, "a");
     expect(tabIds(result)).toEqual(["a", "b"]);
     expect(m.closeScratchpad).not.toHaveBeenCalled();
     expect(m.deleteScratchpad).not.toHaveBeenCalled();
@@ -139,6 +160,8 @@ describe("useWorkspace close", () => {
 
   it("keeps the Tab open and resumes autosave when the move fails", async () => {
     const { result } = await mount();
+    // Pinned: it closes unasked, into Recently Closed.
+    act(() => result.current.setPinned("a", true));
     m.closeScratchpad.mockRejectedValueOnce(new Error("locked"));
     await act(() => result.current.closeTab("a"));
     expect(tabIds(result)).toEqual(["a", "b"]);
@@ -148,15 +171,26 @@ describe("useWorkspace close", () => {
     );
   });
 
-  it("moves a non-empty Tab to Recently Closed and deletes an empty one", async () => {
+  it("asks before closing a non-empty Tab; Don't save deletes it for good", async () => {
     const { result } = await mount();
-    await act(() => result.current.closeTab("a"));
-    expect(m.closeScratchpad).toHaveBeenCalledWith("a");
-    expect(result.current.state.closed.map((e) => e.tab.id)).toEqual(["a"]);
+    let closed!: Promise<void>;
+    act(() => {
+      closed = result.current.closeTab("a");
+    });
+    await waitFor(() =>
+      expect(result.current.closePrompt).toMatchObject({ id: "a" }),
+    );
+    act(() => result.current.answerClosePrompt("discard"));
+    await act(() => closed);
+    expect(m.deleteScratchpad).toHaveBeenCalledWith("a");
+    expect(m.closeScratchpad).not.toHaveBeenCalled();
+    expect(result.current.state.closed).toEqual([]);
 
+    // An empty one closes unasked, deleted.
     await act(() => result.current.closeTab("b"));
+    expect(result.current.closePrompt).toBeNull();
     expect(m.deleteScratchpad).toHaveBeenCalledWith("b");
-    expect(m.closeScratchpad).toHaveBeenCalledTimes(1);
+    expect(m.closeScratchpad).not.toHaveBeenCalled();
     // The window is never empty.
     expect(result.current.state.tabs).toHaveLength(1);
     expect(tabIds(result)).not.toContain("b");
@@ -166,14 +200,37 @@ describe("useWorkspace close", () => {
     disk.b = "note";
     const { result } = await mount();
     expect(m.readScratchpad).not.toHaveBeenCalledWith("b");
-    await act(() => result.current.closeTab("b"));
+    // Its text is known only once loaded: then it asks.
+    await closeAnswering(result, "b");
     const readB = m.readScratchpad.mock.calls.findIndex(([id]) => id === "b");
     expect(readB).toBeGreaterThanOrEqual(0);
     expect(m.readScratchpad.mock.invocationCallOrder[readB]).toBeLessThan(
-      order(m.closeScratchpad),
+      order(m.deleteScratchpad),
     );
-    expect(m.closeScratchpad).toHaveBeenCalledWith("b");
+    expect(m.deleteScratchpad).toHaveBeenCalledWith("b");
+  });
+
+  it("Cancel keeps the Tab open and its text", async () => {
+    const { result } = await mount();
+    await closeAnswering(result, "a", "cancel");
+    expect(tabIds(result)).toEqual(["a", "b"]);
+    expect(result.current.closePrompt).toBeNull();
     expect(m.deleteScratchpad).not.toHaveBeenCalled();
+    expect(m.closeScratchpad).not.toHaveBeenCalled();
+    expect(disk.a).toBe("alpha");
+  });
+
+  it("a pinned or blank Tab closes unasked", async () => {
+    const { result } = await mount();
+    act(() => result.current.setPinned("a", true));
+    await act(() => result.current.closeTab("a"));
+    expect(result.current.closePrompt).toBeNull();
+    expect(m.closeScratchpad).toHaveBeenCalledWith("a");
+
+    act(() => result.current.setContent("b", "  \n"));
+    await act(() => result.current.closeTab("b"));
+    expect(result.current.closePrompt).toBeNull();
+    expect(tabIds(result)).not.toContain("b");
   });
 
   it("writes text typed during the close before moving the file", async () => {
@@ -188,6 +245,8 @@ describe("useWorkspace close", () => {
     act(() => {
       closed = result.current.closeTab("a");
     });
+    await waitFor(() => expect(result.current.closePrompt).not.toBeNull());
+    act(() => result.current.answerClosePrompt("discard"));
     await waitFor(() =>
       expect(m.writeScratchpad).toHaveBeenCalledWith("a", "one", "txt"),
     );
@@ -197,7 +256,7 @@ describe("useWorkspace close", () => {
     await act(() => closed);
 
     expect(m.writeScratchpad).toHaveBeenLastCalledWith("a", "one two", "txt");
-    expect(order(m.writeScratchpad, 1)).toBeLessThan(order(m.closeScratchpad));
+    expect(order(m.writeScratchpad, 1)).toBeLessThan(order(m.deleteScratchpad));
     expect(disk.a).toBe("one two");
     expect(tabIds(result)).not.toContain("a");
     expect(result.current.isClosing("a")).toBe(false);
@@ -214,12 +273,14 @@ describe("useWorkspace close", () => {
     act(() => {
       closed = result.current.closeTab("a");
     });
+    await waitFor(() => expect(result.current.closePrompt).not.toBeNull());
+    act(() => result.current.answerClosePrompt("discard"));
     await waitFor(() => expect(m.writeScratchpad).toHaveBeenCalledTimes(1));
     act(() => result.current.setContent("a", "one two"));
     gate.resolve();
     await act(() => closed);
     expect(tabIds(result)).toContain("a");
-    expect(m.closeScratchpad).not.toHaveBeenCalled();
+    expect(m.deleteScratchpad).not.toHaveBeenCalled();
     // Autosave picks the late text up again.
     await waitFor(() =>
       expect(m.writeScratchpad).toHaveBeenLastCalledWith("a", "one two", "txt"),
@@ -230,6 +291,8 @@ describe("useWorkspace close", () => {
 describe("useWorkspace reopen and session", () => {
   it("flushes the Session right after a reopen", async () => {
     const { result } = await mount();
+    // Pinned: it closes unasked, into Recently Closed.
+    act(() => result.current.setPinned("a", true));
     await act(() => result.current.closeTab("a"));
     m.writeSession.mockClear();
     await act(() => result.current.run({ type: "reopenTab" }));
@@ -240,9 +303,24 @@ describe("useWorkspace reopen and session", () => {
     expect(lastSession().closed).toEqual([]);
   });
 
+  it("exit flushes the PDF positions", async () => {
+    pdfFlush.mockResolvedValue(undefined);
+    await mount();
+    await h.flushAll!();
+    expect(pdfFlush).toHaveBeenCalled();
+  });
+
+  it("a failing PDF position flush never blocks exit", async () => {
+    pdfFlush.mockRejectedValueOnce(new Error("disk full"));
+    await mount();
+    await expect(h.flushAll!()).resolves.toBeUndefined();
+    expect(console.error).toHaveBeenCalled();
+  });
+
   it("exit waits for an in-flight close before flushing", async () => {
     const { result } = await mount();
     const gate = deferred();
+    act(() => result.current.setPinned("a", true));
     m.closeScratchpad.mockImplementationOnce(() => gate.promise);
     let closed!: Promise<void>;
     act(() => {
@@ -538,7 +616,7 @@ describe("useWorkspace Split", () => {
     const { result } = await mount();
     act(() => result.current.splitWith("a", "b"));
     expect(result.current.state.activeId).toBe("a");
-    await act(() => result.current.closeTab("a"));
+    await closeAnswering(result, "a");
     expect(splits(result)).toEqual([]);
     expect(result.current.state.activeId).toBe("b");
   });
@@ -594,11 +672,22 @@ describe("useWorkspace Split", () => {
     const { result } = await mount();
     act(() => result.current.setContent("b", "beta"));
     act(() => result.current.splitWith("a", "b"));
-    await act(() => result.current.closeSplit("a"));
-    expect(result.current.state.closed.map((e) => e.tab.id).sort()).toEqual([
-      "a",
-      "b",
-    ]);
+    let closed!: Promise<void>;
+    act(() => {
+      closed = result.current.closeSplit("a");
+    });
+    // Each half asks in turn.
+    for (const id of ["a", "b"]) {
+      await waitFor(() =>
+        expect(result.current.closePrompt).toMatchObject({ id }),
+      );
+      act(() => result.current.answerClosePrompt("discard"));
+    }
+    await act(() => closed);
+    expect(m.deleteScratchpad).toHaveBeenCalledWith("a");
+    expect(m.deleteScratchpad).toHaveBeenCalledWith("b");
+    expect(tabIds(result)).not.toContain("a");
+    expect(tabIds(result)).not.toContain("b");
     expect(splits(result)).toEqual([]);
   });
 

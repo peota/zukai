@@ -31,7 +31,7 @@ Notes, code, drawings and data sit side by side in one tabbed notebook, each sho
 
 ## Capabilities and Constraints
 
-- Kinds: Text (CodeMirror 6, syntax highlighting, language guess), Markdown (preview and a Milkdown rich editor with toolbar, slash menu and tables), Canvas (Excalidraw 0.18.1, offline), Image (read-only viewer), Table (CSV/TSV grid with a raw text View).
+- Kinds: Text (CodeMirror 6, syntax highlighting, language guess), Markdown (preview and a Milkdown rich editor with toolbar, slash menu and tables), Canvas (Excalidraw 0.18.1, offline), Image (read-only viewer), PDF (read-only viewer with find and remembered position), Table (CSV/TSV grid with a raw text View).
 - Splits and Compare (diff of two Text Tabs), Huge Files, encodings and line endings preserved, Snapshots and persistent undo, file bars for disk changes, conflicts and missing files.
 - Vocabulary is fixed by `CONTEXT.md` (Tab, Document, Scratchpad, File, Kind, View, Split, Library, Pinned). UI copy uses these words.
 - Must stay fast to launch and light; Excalidraw loads only when a Canvas opens. Fonts and assets ship with the app, never from a CDN.
