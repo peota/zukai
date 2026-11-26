@@ -1,0 +1,151 @@
+name: release
+
+# Push a tag like v0.1.0 to build every platform and open a draft GitHub
+# release with the installers attached. Review the draft, then publish it.
+# Running it by hand builds everything but creates no release.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            args: ""
+            bundle: src-tauri/target/release/bundle
+            files: nsis/*.exe
+          - name: macos
+            os: macos-latest
+            args: --target universal-apple-darwin
+            bundle: src-tauri/target/universal-apple-darwin/release/bundle
+            files: dmg/*.dmg
+          - name: linux
+            os: ubuntu-22.04
+            args: ""
+            bundle: src-tauri/target/release/bundle
+            files: deb/*.deb appimage/*.AppImage
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          app=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v$app" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match tauri.conf.json version $app"
+            exit 1
+          fi
+
+      - name: Install Linux dependencies
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.name == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-${{ matrix.name }}
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm tauri build ${{ matrix.args }}
+        env:
+          # Ad-hoc signature: without any signature, macOS reports a downloaded
+          # Apple Silicon app as "damaged" instead of from an unknown developer.
+          APPLE_SIGNING_IDENTITY: ${{ matrix.name == 'macos' && '-' || '' }}
+
+      - name: Collect installers
+        shell: bash
+        working-directory: ${{ matrix.bundle }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp ${{ matrix.files }} "$GITHUB_WORKSPACE/out/"
+          ls -l "$GITHUB_WORKSPACE/out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
+
+  arch:
+    name: build (arch)
+    needs: build
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-linux
+          path: linux
+
+      - name: Build the pacman package from the .deb
+        run: |
+          pacman -Syu --noconfirm --needed base-devel
+          useradd -m builder
+          mkdir /home/builder/pkg
+          cp packaging/arch/PKGBUILD /home/builder/pkg/
+          cp linux/*.deb /home/builder/pkg/zukai.deb
+          version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json | head -1)
+          sed -i "s/^pkgver=.*/pkgver=$version/" /home/builder/pkg/PKGBUILD
+          chown -R builder /home/builder/pkg
+          cd /home/builder/pkg
+          sudo -u builder makepkg --nodeps --noconfirm
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp *.pkg.tar.zst "$GITHUB_WORKSPACE/out/"
+          ls -l "$GITHUB_WORKSPACE/out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-arch
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: draft release
+    needs: [build, arch]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: out
+          merge-multiple: true
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l out
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Zukai ${GITHUB_REF_NAME#v}" \
+            --draft \
+            --generate-notes
