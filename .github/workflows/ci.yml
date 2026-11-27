@@ -1,8 +1,19 @@
 name: CI
 
+# Runs on pushes to main and on pull requests (not twice for a PR branch).
+# Docs-only changes skip it.
 on:
   push:
+    branches: [main]
+    paths-ignore: ["**.md", "LICENSE", "branding/**"]
   pull_request:
+    paths-ignore: ["**.md", "LICENSE", "branding/**"]
+  workflow_dispatch:
+
+# A newer push to a PR cancels the run it replaces; main keeps every run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci:

@@ -2,8 +2,8 @@ name: release
 
 # Push a tag like v0.1.0 to build every platform and open a draft GitHub
 # release with the installers attached. Review the draft, then publish it.
-# Running it by hand, or a PR that touches it, builds everything but
-# creates no release.
+# Running it by hand, or a PR that changes the release setup or the bundle
+# config, builds everything but creates no release.
 
 on:
   push:
@@ -13,6 +13,9 @@ on:
     paths:
       - ".github/workflows/release.yml"
       - "packaging/**"
+      - "src-tauri/tauri.conf.json"
+      - "src-tauri/tauri.*.conf.json"
+      - "src-tauri/icons/**"
 
 permissions:
   contents: write
