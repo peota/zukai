@@ -34,6 +34,7 @@ import {
   forceParsing,
   indentOnInput,
   indentRange,
+  indentUnit,
   language as languageFacet,
   syntaxTree,
   unfoldCode,
@@ -51,6 +52,7 @@ import type {
 } from "../model/types";
 import { zukaiTheme } from "./theme";
 import { loadLanguage } from "./languages";
+import { detectIndentUnit } from "./indentUnit";
 import { GUESS_PREFIX, guessLanguage } from "./guess";
 import { beautify, minify, type FormatResult } from "./jsonFormat";
 import {
@@ -601,7 +603,16 @@ export function EditorHost(props: EditorHostProps) {
       (ext) => {
         // Skip if the view is gone or another Language was chosen meanwhile.
         if (e.current.language !== id || !e.view.dom.isConnected) return;
-        e.view.dispatch({ effects: e.language.reconfigure(ext) });
+        // Python's blocks are its indentation, so Enter and Tab must step by
+        // the file's own unit (usually 4 spaces), not CodeMirror's 2.
+        const full =
+          id === "python"
+            ? [
+                ext,
+                indentUnit.of(detectIndentUnit(e.view.state.doc.toString())),
+              ]
+            : ext;
+        e.view.dispatch({ effects: e.language.reconfigure(full) });
       },
       (err: unknown) => console.error(`load language ${id} failed`, err),
     );
