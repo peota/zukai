@@ -1,0 +1,230 @@
+/*
+ * The Table grid: rows, not boxes (DESIGN.md). No cell grid; a sunken header
+ * in muted 600 ink, hairline row rules, accent selection.
+ */
+
+.z-grid {
+  font-variant-numeric: tabular-nums;
+  overscroll-behavior: contain;
+}
+
+.z-grid-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  background: var(--z-sunken);
+  border-bottom: 1px solid var(--z-hairline);
+  color: var(--z-muted);
+  font-weight: 600;
+  /* The caption size (12px at the default UI font). */
+  font-size: calc(var(--z-ui-font) - 2px);
+}
+
+.z-grid-corner {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex-shrink: 0;
+  background: var(--z-sunken);
+}
+
+.z-grid-hcell {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  cursor: default;
+  user-select: none;
+}
+
+.z-grid-hcell:hover {
+  color: var(--z-text);
+}
+
+.z-grid-hcell[data-numeric] {
+  justify-content: flex-end;
+}
+
+.z-grid-hcell[data-selected] {
+  color: var(--z-accent);
+  background: var(--z-accent-tint);
+}
+
+.z-grid-hlabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.z-grid-sort {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--z-accent);
+}
+
+/* Column select: a narrow zone at the header's left edge. */
+.z-grid-colsel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: s-resize;
+}
+
+.z-grid-colsel:hover::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 2px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--z-accent);
+}
+
+/* Column resize: the right edge. */
+.z-grid-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+}
+
+.z-grid-resize:hover::after,
+.z-grid-resizing .z-grid-resize:active::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 3px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--z-hairline-strong);
+}
+
+body.z-grid-resizing,
+body.z-grid-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.z-grid-row {
+  position: absolute;
+  left: 0;
+  display: flex;
+  border-bottom: 1px solid var(--z-hairline);
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.z-grid-row:hover {
+  background: var(--z-row-hover);
+}
+
+/* The gutter is sticky, so it needs an opaque ground under any tint. */
+.z-grid-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex-shrink: 0;
+  padding: 0 10px 0 6px;
+  background: var(--z-editor);
+  /* Muted, not faint: faint misses 4.5:1 on the dark editor ground. */
+  color: var(--z-muted);
+  /* The label size (11px at the default UI font). */
+  font-size: calc(var(--z-ui-font) - 3px);
+  text-align: right;
+  cursor: default;
+  user-select: none;
+}
+
+.z-grid-row:hover .z-grid-gutter {
+  background:
+    linear-gradient(var(--z-row-hover), var(--z-row-hover)), var(--z-editor);
+}
+
+.z-grid-gutter[data-selected],
+.z-grid-row:hover .z-grid-gutter[data-selected] {
+  color: var(--z-accent);
+  background:
+    linear-gradient(var(--z-accent-tint), var(--z-accent-tint)), var(--z-editor);
+}
+
+.z-grid-cell {
+  flex-shrink: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.z-grid-cell[data-numeric] {
+  text-align: right;
+}
+
+.z-grid-cell[aria-selected="true"] {
+  background: var(--z-accent-tint);
+}
+
+.z-grid-cell[data-active] {
+  box-shadow: inset 0 0 0 1px var(--z-accent-soft);
+}
+
+.z-grid:focus .z-grid-cell[data-active] {
+  box-shadow: inset 0 0 0 2px var(--z-accent);
+}
+
+.z-grid mark {
+  border-radius: 4px;
+  background: var(--z-accent-soft);
+  color: inherit;
+}
+
+/* The cell editor: a textarea over the active cell, growing with its lines. */
+.z-grid-editor {
+  position: absolute;
+  /* Above cells, below the sticky gutter (later in the DOM) and header. */
+  z-index: 1;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 4px;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--z-editor);
+  color: var(--z-text);
+  font: inherit;
+  box-shadow:
+    inset 0 0 0 2px var(--z-accent),
+    var(--z-shadow-float);
+}
+
+/* In the header row: above its cells, below the sticky corner. */
+.z-grid-head > .z-grid-editor {
+  z-index: auto;
+}
+
+/* Below the header when no row is shown: a quiet, centred line. */
+.z-grid-empty {
+  position: absolute;
+  display: flex;
+  justify-content: center;
+  padding-top: 32px;
+  line-height: 1.4;
+}

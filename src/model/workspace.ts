@@ -1,5 +1,5 @@
 import { languageOf } from "../files/paths";
-import type { Kind } from "./kinds";
+import { isTextKind, kindOf, type Kind } from "./kinds";
 import {
   itemsOf,
   normalizeSplits,
@@ -319,6 +319,37 @@ export function movedPath(
   return null;
 }
 
+/**
+ * A Text or Table Tab whose File is now `target` (Save As, a rename or a
+ * move): between Text and Table its Kind follows the name, with the state
+ * of the Kind it left cleared. Any other change of Kind is never made (the
+ * callers refuse it); then, as when the Kind stays, nothing.
+ */
+export function kindSwap(t: TabState, target: string): Partial<TabState> {
+  const into = kindOf(target);
+  if (into === t.kind || !isTextKind(into) || !isTextKind(t.kind)) return {};
+  return into === "table"
+    ? {
+        kind: "table",
+        language: "plaintext",
+        languagePicked: true,
+        markdownMode: undefined,
+        preview: undefined,
+      }
+    : {
+        kind: "text",
+        language: languageOf(target),
+        languagePicked: false,
+        languageGuessed: false,
+        tableView: undefined,
+        delimiter: undefined,
+        header: undefined,
+        sort: undefined,
+        filter: undefined,
+        colWidths: undefined,
+      };
+}
+
 const lastName = (p: string) =>
   p.slice(Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")) + 1);
 
@@ -344,7 +375,13 @@ export function rewritePaths(
     const was = languageOf(t.file.path);
     const now = languageOf(path);
     const language = now !== was && !t.languagePicked ? now : t.language;
-    return { ...t, title, language, file: { ...t.file, path } };
+    return {
+      ...t,
+      title,
+      language,
+      ...kindSwap(t, path),
+      file: { ...t.file, path },
+    };
   };
   const tabs = s.tabs.map(fix);
   const closed = s.closed.map((e) => {

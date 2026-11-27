@@ -117,7 +117,7 @@ export const SHORTCUTS: readonly ShortcutEntry[] = [
   },
   {
     group: "Editing",
-    action: "Rich / Markdown editor",
+    action: "Rich / Markdown editor, or grid / raw text",
     keys: [["Mod", "Shift", "M"]],
     command: "toggleRichMarkdown",
   },

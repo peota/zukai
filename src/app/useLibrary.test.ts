@@ -620,6 +620,34 @@ describe("useLibrary", () => {
     expect(l.libraryRename).not.toHaveBeenCalled();
   });
 
+  it("renaming a text file to .csv makes its Tab a Table, and back", async () => {
+    const plain = `${PROJ}\\Untitled`;
+    const csv = `${PROJ}\\data.csv`;
+    const txt = `${PROJ}\\notes.txt`;
+    const { result } = await mount([
+      { ...fileTab("fu", plain), language: "plaintext" },
+    ]);
+    l.libraryRename.mockResolvedValue(csv);
+    let err: string | null = "unset";
+    await act(async () => {
+      err = await result.current.library.rename(plain, "data.csv");
+    });
+    expect(err).toBeNull();
+    expect(l.libraryRename).toHaveBeenCalledWith(plain, "data.csv");
+    let tab = result.current.state.tabs[0];
+    expect(tab.file?.path).toBe(csv);
+    expect(tab.kind).toBe("table");
+    expect(tab.language).toBe("plaintext");
+    l.libraryRename.mockResolvedValue(txt);
+    await act(async () => {
+      err = await result.current.library.rename(csv, "notes.txt");
+    });
+    expect(err).toBeNull();
+    tab = result.current.state.tabs[0];
+    expect(tab.kind).toBe("text");
+    expect(tab.file?.path).toBe(txt);
+  });
+
   it("a refused rename resolves to its message", async () => {
     l.libraryRename.mockRejectedValue({ kind: "exists", message: "" });
     const { result } = await mount();

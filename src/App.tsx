@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { useWorkspace } from "./app/useWorkspace";
+import { useTableInfo } from "./app/useTableInfo";
 import { isTerminalTarget, routeKey } from "./terminal/keys";
 import { defaultFolder, plusFolder } from "./terminal/defaultFolder";
 import { useTerminals } from "./terminal/useTerminals";
@@ -53,7 +54,7 @@ import { createTextFeed } from "./markdown/MarkdownPreview";
 import { baseName, languageRename } from "./files/paths";
 import { inShadow } from "./files/fileState";
 import { asFileError } from "./app/files/context";
-import { isViewerKind } from "./model/kinds";
+import { isTextKind, isViewerKind } from "./model/kinds";
 import { Sidebar } from "./ui/Sidebar";
 import { GitPanel } from "./ui/git/GitPanel";
 import { SidebarToggle } from "./ui/SidebarToggle";
@@ -383,9 +384,12 @@ export default function App() {
       `${uiFontSize}px`,
     );
   }, [uiFontSize]);
-  /** The text editor only sees text (a Canvas is JSON, an Image bytes). */
+  /**
+   * The text editor only sees text (a Canvas is JSON, an Image bytes); a
+   * Table's text lives there too, under its grid.
+   */
   const editorTabs = useMemo(
-    () => w.state.tabs.filter((t) => t.kind === "text"),
+    () => w.state.tabs.filter((t) => isTextKind(t.kind)),
     [w.state.tabs],
   );
   /** The Split the active Tab is in: both its Tabs are shown. */
@@ -434,6 +438,12 @@ export default function App() {
       ),
     [],
   );
+  /**
+   * Each Table Tab's rows, columns and Delimiter, from its grid, and its
+   * notice when its text didn't read as a table. A closed Tab's go.
+   */
+  const tableInfo = useTableInfo(w.state.tabs);
+  const { onTableInfo, onTableNotice } = tableInfo;
   /** Go to a page of the active PDF Tab: `seq` makes each request new. */
   const [goToPage, setGoToPage] = useState<{
     tabId: string;
@@ -676,6 +686,10 @@ export default function App() {
       reloadSeq={reloadSeqOf(tab.id)}
       onImageInfo={onImageInfo}
       onPdfInfo={onPdfInfo}
+      onTableInfo={onTableInfo}
+      tableNotice={tableInfo.noticeOf(tab.id)}
+      onTableNotice={onTableNotice}
+      tableFilterRequest={w.tableFilterRequest}
       goToPage={goToPage}
       zoomRequest={zoomRequest}
       findRequest={w.findRequest}
@@ -844,9 +858,9 @@ export default function App() {
                 <div className="hidden">
                   <EditorHost
                     tabs={editorTabs}
-                    activeId={active?.kind === "text" ? activeId : ""}
+                    activeId={isTextKind(active?.kind) ? activeId : ""}
                     shown={visible
-                      .filter((t) => t.kind === "text")
+                      .filter((t) => isTextKind(t.kind))
                       .map((t) => t.id)}
                     slots={slots}
                     loadContent={w.loadContent}
@@ -1040,6 +1054,35 @@ export default function App() {
                     gitChip && !gitOpen
                       ? w.showGitFor(gitChip.folder)
                       : void run({ type: "toggleGit" }),
+                }
+              : undefined
+          }
+          table={
+            active?.kind === "table"
+              ? {
+                  view: active.tableView === "raw" ? "raw" : "grid",
+                  viewHint: RICH_HINT,
+                  onView: (view) => {
+                    updateTab(active.id, { tableView: view });
+                    refocus();
+                  },
+                  info: tableInfo.infoOf(active.id),
+                  // Raw text names only a Delimiter the user set: a guess
+                  // could be stale there.
+                  delimiter:
+                    active.tableView === "raw"
+                      ? active.delimiter
+                      : (active.delimiter ?? tableInfo.delimiterOf(active.id)),
+                  delimiterSet: active.delimiter !== undefined,
+                  header: active.header ?? true,
+                  onDelimiter: (delimiter) => {
+                    updateTab(active.id, { delimiter });
+                    refocus();
+                  },
+                  onHeader: (header) => {
+                    updateTab(active.id, { header });
+                    refocus();
+                  },
                 }
               : undefined
           }

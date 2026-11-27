@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { FileFormat } from "../model/types";
 import { StatusBar, fileSize, type StatusBarProps } from "./StatusBar";
@@ -542,5 +548,213 @@ describe("StatusBar Agent button", () => {
       "aria-expanded",
       "true",
     );
+  });
+});
+
+describe("StatusBar on a Table Tab", () => {
+  const info = {
+    rows: 52113,
+    shown: 52113,
+    cols: 6,
+    delimiter: "," as const,
+    header: true,
+  };
+  const table = (
+    over: Partial<NonNullable<StatusBarProps["table"]>> = {},
+  ): NonNullable<StatusBarProps["table"]> => ({
+    view: "grid",
+    onView: vi.fn(),
+    viewHint: "Ctrl+Shift+M",
+    info,
+    delimiter: ",",
+    header: true,
+    onDelimiter: vi.fn(),
+    onHeader: vi.fn(),
+    ...over,
+  });
+  const tableBar = (over: Partial<NonNullable<StatusBarProps["table"]>> = {}) =>
+    setup({
+      language: "plaintext",
+      file: { format: fmt({ lineEnding: "crlf" }), readonly: false },
+      table: table(over),
+    });
+
+  it("shows Table, rows, columns, Delimiter, Header row, encoding and line ending", () => {
+    tableBar();
+    expect(screen.getByText("Table")).toBeInTheDocument();
+    expect(screen.getByText("52,113 rows")).toBeInTheDocument();
+    expect(screen.getByText("6 columns")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Comma" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Header row" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "UTF-8" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "CRLF" })).toBeInTheDocument();
+    // No Language chip, no Format, and the grid has no line and column.
+    expect(screen.queryByRole("button", { name: "Plain Text" })).toBeNull();
+    expect(screen.queryByText(/^Ln /)).toBeNull();
+  });
+
+  it("a Filter shows how many rows are shown of how many", () => {
+    tableBar({ info: { ...info, shown: 1204 } });
+    expect(screen.getByText("1,204 of 52,113 rows")).toBeInTheDocument();
+  });
+
+  it("the Delimiter chip opens the four Delimiters, the current one checked", () => {
+    const t = table();
+    setup({ file: { format: fmt(), readonly: false }, table: t });
+    fireEvent.click(screen.getByRole("button", { name: "Comma" }));
+    const menu = screen.getByRole("menu", { name: "Delimiter" });
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items.map((i) => i.textContent)).toEqual([
+      "Comma",
+      "Semicolon",
+      "Tab",
+      "Pipe",
+    ]);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Semicolon" }));
+    expect(t.onDelimiter).toHaveBeenCalledWith(";");
+  });
+
+  it("the Header row toggle turns it off and on", () => {
+    const on = table();
+    const { unmount } = render(
+      <StatusBar
+        line={1}
+        col={1}
+        language="plaintext"
+        saveStatus="saved"
+        onPickLanguage={vi.fn()}
+        platformLineEnding="lf"
+        onEncodingMenu={vi.fn()}
+        onLineEndingMenu={vi.fn()}
+        showFormat={false}
+        onFormat={vi.fn()}
+        table={on}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Header row" }));
+    expect(on.onHeader).toHaveBeenCalledWith(false);
+    unmount();
+    const off = table({ header: false });
+    setup({ table: off });
+    expect(screen.getByRole("button", { name: "Header row" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Header row" }));
+    expect(off.onHeader).toHaveBeenCalledWith(true);
+  });
+
+  it("the View switch shows Grid and Raw text in either View", () => {
+    const t = table();
+    setup({ table: t });
+    const group = screen.getByRole("radiogroup", { name: "Table view" });
+    expect(group.getAttribute("title")).toBe("Table view (Ctrl+Shift+M)");
+    expect(screen.getByRole("radio", { name: "Grid" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Raw text" }));
+    expect(t.onView).toHaveBeenCalledWith("raw");
+  });
+
+  it("raw text has a line and column and no counts until they're read again", () => {
+    const t = table({ view: "raw", info: undefined });
+    setup({ table: t });
+    expect(screen.getByText("Ln 3, Col 17")).toBeInTheDocument();
+    expect(screen.getByText("Table")).toBeInTheDocument();
+    expect(screen.queryByText(/rows$/)).toBeNull();
+    expect(screen.queryByText(/columns$/)).toBeNull();
+    expect(screen.getByRole("radio", { name: "Raw text" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Comma" })).toBeInTheDocument();
+    // Header row does nothing in raw text: no toggle there.
+    expect(screen.queryByRole("button", { name: "Header row" })).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Grid" }));
+    expect(t.onView).toHaveBeenCalledWith("grid");
+  });
+
+  it("raw text shows no Delimiter chip unless the user set one", () => {
+    setup({
+      table: table({ view: "raw", info: undefined, delimiter: undefined }),
+    });
+    expect(screen.queryByRole("button", { name: "Delimiter" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Header row" })).toBeNull();
+  });
+
+  /** The controls after the View switch, in order, by name. */
+  const afterSwitch = () => {
+    const group = screen.getByRole("radiogroup", { name: "Table view" });
+    return screen
+      .getAllByRole("button")
+      .filter(
+        (b) =>
+          group.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING,
+      )
+      .map((b) => b.textContent);
+  };
+
+  it("the View switch holds its place: what follows it is the same in both Views", () => {
+    tableBar();
+    const grid = afterSwitch();
+    // Counts, Delimiter and Header row (grid only, or changing with the
+    // Filter) come before it.
+    const group = screen.getByRole("radiogroup", { name: "Table view" });
+    for (const el of [
+      screen.getByText("52,113 rows"),
+      screen.getByRole("button", { name: "Comma" }),
+      screen.getByRole("button", { name: "Header row" }),
+    ])
+      expect(
+        el.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    cleanup();
+    tableBar({ view: "raw", info: undefined });
+    expect(afterSwitch()).toEqual(grid);
+  });
+
+  it("Table is a plain label, not a chip", () => {
+    tableBar();
+    const label = screen.getByText("Table");
+    expect(label.tagName).toBe("SPAN");
+    expect(label.className).toContain("text-faint");
+    expect(label.className).not.toContain("px-2.5");
+  });
+
+  it("the Delimiter and Header row chips are in the Tab order, and a click doesn't take focus", () => {
+    tableBar();
+    for (const b of [
+      screen.getByRole("button", { name: "Comma" }),
+      screen.getByRole("button", { name: "Header row" }),
+    ]) {
+      expect(b).toHaveAttribute("tabindex", "0");
+      // A mouse click leaves focus where it was (the app refocuses the grid).
+      expect(fireEvent.mouseDown(b)).toBe(false);
+    }
+  });
+
+  it("the Delimiter chip says whether it was guessed or set", () => {
+    tableBar({ delimiterSet: false });
+    expect(screen.getByRole("button", { name: "Comma" })).toHaveAttribute(
+      "title",
+      "Guessed from the file — click to change",
+    );
+    cleanup();
+    tableBar({ delimiterSet: true });
+    expect(screen.getByRole("button", { name: "Comma" })).toHaveAttribute(
+      "title",
+      "Set by you",
+    );
+  });
+
+  it("a grid whose Delimiter isn't read yet shows a plain Delimiter chip", () => {
+    setup({ table: table({ info: undefined, delimiter: undefined }) });
+    fireEvent.click(screen.getByRole("button", { name: "Delimiter" }));
+    const menu = screen.getByRole("menu", { name: "Delimiter" });
+    expect(within(menu).getAllByRole("menuitem")).toHaveLength(4);
   });
 });

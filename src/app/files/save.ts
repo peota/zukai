@@ -8,7 +8,13 @@ import {
 } from "../../files/api";
 import { inShadow } from "../../files/fileState";
 import { baseName, languageOf, stemOf, suggestedName } from "../../files/paths";
-import { CANVAS_EXT, isViewerKind, kindOf, type Kind } from "../../model/kinds";
+import {
+  CANVAS_EXT,
+  isTextKind,
+  isViewerKind,
+  kindOf,
+  type Kind,
+} from "../../model/kinds";
 import * as ws from "../../model/workspace";
 import { deleteScratchpad } from "../../storage/api";
 import { logError } from "../workspaceEffects";
@@ -25,7 +31,7 @@ export const PDF_READ_ONLY = "PDFs are read-only in Zukai";
 
 /**
  * Why a Tab of Kind `kind` can't be saved to `target`, or null if it can.
- * Save As keeps the Kind: a drawing goes only into a .excalidraw file, and
+ * Save As keeps the Kind (Text and Table swap by extension): a drawing goes only into a .excalidraw file, and
  * text never into a drawing or an image (it would be unreadable there).
  */
 function kindRefusal(kind: Kind, target: string): string | null {
@@ -33,7 +39,7 @@ function kindRefusal(kind: Kind, target: string): string | null {
   if (kind === "image") return IMAGE_READ_ONLY;
   if (kind === "pdf") return PDF_READ_ONLY;
   const into = kindOf(target);
-  if (into === kind) return null;
+  if (into === kind || (isTextKind(kind) && isTextKind(into))) return null;
   switch (kind) {
     case "diff":
       // Never asked: saveTo stops a diff Tab first.
@@ -44,6 +50,10 @@ function kindRefusal(kind: Kind, target: string): string | null {
       return into === "canvas"
         ? "Can't save text as a .excalidraw drawing"
         : `Can't save text as ${into === "pdf" ? "a PDF" : "an image"} (${baseName(target)})`;
+    case "table":
+      return into === "canvas"
+        ? "Can't save a table as a .excalidraw drawing"
+        : `Can't save a table as ${into === "pdf" ? "a PDF" : "an image"} (${baseName(target)})`;
   }
 }
 
@@ -116,6 +126,7 @@ export function useSave(c: FilesContext, d: SaveDeps) {
             renamed: false,
             language: now.languagePicked ? now.language : languageOf(target),
             languageGuessed: true,
+            ...ws.kindSwap(now, target),
             file: {
               path: target,
               format,

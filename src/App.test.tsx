@@ -79,6 +79,9 @@ vi.mock("./editor/EditorHost", async () => {
           h.texts[id] = text;
         },
         onOutsideChange: () => () => {},
+        change: () => {},
+        undo: () => false,
+        redo: () => false,
         clearHistory: (id: string) => void h.clearHistory.push(id),
         hidden: () => [],
         readOnly: () => false,

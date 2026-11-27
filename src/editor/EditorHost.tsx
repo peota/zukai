@@ -25,6 +25,8 @@ import {
   historyKeymap,
   indentWithTab,
   isolateHistory,
+  redo,
+  undo,
 } from "@codemirror/commands";
 import {
   bracketMatching,
@@ -83,6 +85,7 @@ import {
 } from "./hiddenText";
 import { Menu, type MenuItem } from "../ui/Menu";
 import { detectPlatform } from "../app/shortcuts";
+import type { TextChange } from "../table/edits";
 
 export interface EditorHostProps {
   tabs: TabState[];
@@ -151,9 +154,21 @@ export interface TextBridge {
    */
   replace(id: string, text: string): void;
   /**
+   * Apply `changes` (offsets into the current text, sorted, non-overlapping)
+   * as one undoable transaction tagged `fromTable`; not reported to
+   * onOutsideChange. Does nothing on a read-only (or not yet loaded) view,
+   * or when `changes` is empty.
+   */
+  change(id: string, changes: readonly TextChange[]): void;
+  /** Run the view's undo; true if something changed. */
+  undo(id: string): boolean;
+  /** Run the view's redo; true if something changed. */
+  redo(id: string): boolean;
+  /**
    * Calls `cb` with the new text after every change to the Tab's text that
-   * didn't come from `replace` (its load, reloads, replace requests, Convert,
-   * typing in the plain editor). Returns the unsubscribe.
+   * didn't come from `replace` or `change` (its load, reloads, replace
+   * requests, Convert, typing in the plain editor, and every undo or redo).
+   * Returns the unsubscribe.
    */
   onOutsideChange(id: string, cb: (text: string) => void): () => void;
   /** Forget the view's undo history. */
@@ -171,6 +186,9 @@ export interface TextBridge {
 
 /** Tags a change written through `TextBridge.replace`. */
 export const fromRich = Annotation.define<boolean>();
+
+/** Tags a change written through `TextBridge.change`. */
+export const fromTable = Annotation.define<boolean>();
 
 /** Wheel distance per zoom step: one mouse notch, or a short pinch. */
 const ZOOM_WHEEL_STEP = 100;
@@ -621,7 +639,8 @@ export function EditorHost(props: EditorHostProps) {
   const maybeGuess = (id: string, e: Entry, u: ViewUpdate) => {
     if (e.guessed || !u.docChanged) return;
     const tab = tabOf(id);
-    if (!tab || tab.languagePicked || tab.languageGuessed) return;
+    if (!tab || tab.kind === "table") return;
+    if (tab.languagePicked || tab.languageGuessed) return;
     const pasted = u.transactions.some((tr) => tr.isUserEvent("input.paste"));
     if (!pasted && u.state.doc.lines < 3) return;
     e.guessed = true;
@@ -707,8 +726,14 @@ export function EditorHost(props: EditorHostProps) {
       if (u.docChanged) {
         const text = u.state.doc.toString();
         latest.current.onChange(id, text);
+        // An undo or redo may replay a bridge change; the bridge's editor
+        // still has to hear it.
         const outsideChange = u.transactions.some(
-          (tr) => tr.docChanged && !tr.annotation(fromRich),
+          (tr) =>
+            tr.docChanged &&
+            (tr.isUserEvent("undo") ||
+              tr.isUserEvent("redo") ||
+              !(tr.annotation(fromRich) || tr.annotation(fromTable))),
         );
         if (outsideChange) tellOutside(id, text);
       }
@@ -1034,6 +1059,27 @@ export function EditorHost(props: EditorHostProps) {
           changes: changeTo(old, text),
           annotations: [fromRich.of(true), Transaction.addToHistory.of(false)],
         });
+      },
+      change: (id, changes) => {
+        const e = views.current.get(id);
+        if (!e || readOnly(id) || changes.length === 0) return;
+        e.view.dispatch({
+          changes: changes.map(({ from, to, insert }) => ({
+            from,
+            to,
+            insert,
+          })),
+          // Its own undo step: never joined with typing or another change.
+          annotations: [fromTable.of(true), isolateHistory.of("full")],
+        });
+      },
+      undo: (id) => {
+        const e = views.current.get(id);
+        return e ? undo(e.view) : false;
+      },
+      redo: (id) => {
+        const e = views.current.get(id);
+        return e ? redo(e.view) : false;
       },
       onOutsideChange: (id, cb) => {
         let set = outside.current.get(id);

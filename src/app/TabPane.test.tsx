@@ -123,3 +123,139 @@ describe("TabPane zoom", () => {
     expect(seen.calls[seen.calls.length - 1]?.zoomRequest).toEqual(req);
   });
 });
+
+describe("TabPane Table Tab", () => {
+  const tableTab = (over: Partial<TabState> = {}) =>
+    ({
+      id: "t",
+      kind: "table",
+      title: "t.csv",
+      language: "plaintext",
+      file: { path: "/t.csv", held: "none" },
+      ...over,
+    }) as unknown as TabState;
+
+  function tablePane(t: TabState) {
+    let slot: HTMLElement | null = null;
+    const r = render(
+      <TabPane
+        {...({
+          tab: t,
+          focused: true,
+          tabs: [],
+          slotRef: (_id: string, el: HTMLElement | null) => {
+            if (el) slot = el;
+          },
+          reloadSeq: 0,
+          onImageInfo: () => {},
+          mode: null,
+          bridge: null,
+        } as unknown as TabPaneProps)}
+      />,
+    );
+    return { ...r, slot: () => slot! };
+  }
+
+  it("shows the editor slot in raw View", () => {
+    const { slot, queryByTestId } = tablePane(tableTab({ tableView: "raw" }));
+    expect(slot()).not.toBeNull();
+    expect(slot().className).not.toContain("hidden");
+    expect(queryByTestId("table-host")).toBeNull();
+  });
+
+  it.each([undefined, "grid" as const])(
+    "hides the slot and shows the grid when tableView is %s",
+    async (tableView) => {
+      const { slot, findByTestId } = tablePane(tableTab({ tableView }));
+      expect(slot().className).toBe("hidden");
+      expect(await findByTestId("table-host")).toBeTruthy();
+    },
+  );
+});
+
+const filterSeen = vi.hoisted(() => ({
+  calls: [] as number[],
+  focus: [] as { focusSignal?: number; focusSeen?: number }[],
+}));
+vi.mock("../table/TableHost", () => ({
+  default: (p: {
+    filterSignal: number;
+    focusSignal?: number;
+    focusSeen?: number;
+  }) => {
+    filterSeen.calls.push(p.filterSignal);
+    filterSeen.focus.push({
+      focusSignal: p.focusSignal,
+      focusSeen: p.focusSeen,
+    });
+    return <div data-testid="table-host" />;
+  },
+}));
+
+describe("TabPane Table Filter request", () => {
+  const tableTab = { id: "a", kind: "table", title: "a.csv" } as TabState;
+  const tablePane = (req: TabPaneProps["tableFilterRequest"]) => (
+    <TabPane
+      {...({
+        tab: tableTab,
+        focused: true,
+        tableFilterRequest: req,
+        tabs: [],
+        slotRef: () => {},
+        reloadSeq: 0,
+        onImageInfo: () => {},
+      } as unknown as TabPaneProps)}
+    />
+  );
+
+  it("a Filter request for another Table Tab never reaches this grid", async () => {
+    filterSeen.calls.length = 0;
+    render(tablePane({ tabId: "b", seq: 3 }));
+    await vi.waitFor(() => expect(filterSeen.calls.length).toBeGreaterThan(0));
+    expect(filterSeen.calls.every((s) => s === 0)).toBe(true);
+  });
+
+  it("a Filter request for this Tab reaches its grid", async () => {
+    filterSeen.calls.length = 0;
+    render(tablePane({ tabId: "a", seq: 4 }));
+    await vi.waitFor(() => expect(filterSeen.calls.length).toBeGreaterThan(0));
+    expect(filterSeen.calls[filterSeen.calls.length - 1]).toBe(4);
+  });
+});
+
+describe("TabPane Table focus", () => {
+  const tab = (tableView: "grid" | "raw") =>
+    ({ id: "a", kind: "table", title: "a.csv", tableView }) as TabState;
+  const tablePane = (view: "grid" | "raw", focusSignal: number) => (
+    <TabPane
+      {...({
+        tab: tab(view),
+        focused: true,
+        focusSignal,
+        tabs: [],
+        slotRef: () => {},
+        reloadSeq: 0,
+        onImageInfo: () => {},
+      } as unknown as TabPaneProps)}
+    />
+  );
+
+  it("Raw text → Grid with a focus bump hands the grid the signal it hasn't handled", async () => {
+    filterSeen.focus.length = 0;
+    const { rerender } = render(tablePane("raw", 2));
+    // The View switch and its refocus land in one render.
+    rerender(tablePane("grid", 3));
+    await vi.waitFor(() => expect(filterSeen.focus.length).toBeGreaterThan(0));
+    expect(filterSeen.focus[0]).toEqual({ focusSignal: 3, focusSeen: 2 });
+  });
+
+  it("a Tab opened in the grid has nothing pending", async () => {
+    filterSeen.focus.length = 0;
+    render(tablePane("grid", 5));
+    await vi.waitFor(() => expect(filterSeen.focus.length).toBeGreaterThan(0));
+    expect(filterSeen.focus[0]).toEqual({
+      focusSignal: 5,
+      focusSeen: undefined,
+    });
+  });
+});

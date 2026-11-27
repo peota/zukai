@@ -710,6 +710,9 @@ describe("useWorkspace Rich / Markdown editor", () => {
       text: () => null,
       replace: vi.fn(),
       onOutsideChange: () => () => {},
+      change: vi.fn(),
+      undo: () => false,
+      redo: () => false,
       clearHistory: vi.fn(),
       hidden: () => [],
       readOnly: () => false,
@@ -870,5 +873,82 @@ describe("useWorkspace Rich / Markdown editor, fix round 1", () => {
     expect(result.current.notice).toBe(
       "This note uses Markdown the rich editor can't keep",
     );
+  });
+});
+
+describe("useWorkspace Table Tab", () => {
+  type R = { current: ReturnType<typeof useWorkspace> };
+  const tabA = (r: R) => r.current.state.tabs.find((t) => t.id === "a")!;
+  const bridgeFor = (r: R) => {
+    const bridge = {
+      text: () => null,
+      replace: vi.fn(),
+      onOutsideChange: () => () => {},
+      change: vi.fn(),
+      undo: () => false,
+      redo: () => false,
+      clearHistory: vi.fn(),
+      hidden: () => [],
+      readOnly: () => false,
+      ready: async () => {},
+    };
+    act(() => r.current.bridgeRef(bridge));
+    return bridge;
+  };
+  async function tableTab(view?: "grid" | "raw") {
+    disk.a = "a,b\n1,2\n";
+    const r = await mount();
+    act(() =>
+      r.result.current.updateTab("a", { kind: "table", tableView: view }),
+    );
+    return r;
+  }
+
+  it("Mod+F in the grid asks this Tab's grid for its Filter box, not the find bar", async () => {
+    const { result } = await tableTab();
+    expect(result.current.tableFilterRequest).toBeNull();
+    await act(() => result.current.run({ type: "find" }));
+    expect(result.current.tableFilterRequest).toEqual({ tabId: "a", seq: 1 });
+    expect(result.current.findRequest).toBeNull();
+    await act(() => result.current.run({ type: "find" }));
+    expect(result.current.tableFilterRequest).toEqual({ tabId: "a", seq: 2 });
+    expect(result.current.findRequest).toBeNull();
+  });
+
+  it("Mod+F in raw text opens the normal find bar", async () => {
+    const { result } = await tableTab("raw");
+    await act(() => result.current.run({ type: "find" }));
+    expect(result.current.findRequest).toEqual({ mode: "find", seq: 1 });
+    expect(result.current.tableFilterRequest).toBeNull();
+  });
+
+  it("replace in the grid goes to raw text and opens the replace bar", async () => {
+    const { result } = await tableTab("grid");
+    await act(() => result.current.run({ type: "replace" }));
+    expect(tabA(result).tableView).toBe("raw");
+    expect(result.current.findRequest).toEqual({ mode: "replace", seq: 1 });
+    expect(result.current.tableFilterRequest).toBeNull();
+  });
+
+  it("Mod+Shift+M flips the View between grid and raw text", async () => {
+    const { result } = await tableTab();
+    await act(() => result.current.run({ type: "toggleRichMarkdown" }));
+    expect(tabA(result).tableView).toBe("raw");
+    await act(() => result.current.run({ type: "toggleRichMarkdown" }));
+    expect(tabA(result).tableView).toBe("grid");
+    // A Table Tab never gets a Markdown editor.
+    expect(tabA(result).markdownMode).toBeUndefined();
+  });
+
+  it("choosing a Delimiter is stored on the Tab and never touches the text", async () => {
+    const { result } = await tableTab();
+    const bridge = bridgeFor(result);
+    act(() => result.current.updateTab("a", { delimiter: ";" }));
+    expect(tabA(result).delimiter).toBe(";");
+    expect(bridge.change).not.toHaveBeenCalled();
+    expect(bridge.replace).not.toHaveBeenCalled();
+    expect(await result.current.loadContent("a")).toBe("a,b\n1,2\n");
+    await act(() => h.flushAll!());
+    expect(m.writeScratchpad).not.toHaveBeenCalled();
   });
 });

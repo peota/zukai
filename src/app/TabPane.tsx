@@ -4,11 +4,14 @@ import type {
   MarkdownMode,
   PdfInfo,
   PdfZoom,
+  TableInfo,
+  TableUnreadable,
   TabState,
 } from "../model/types";
 import type { FindRequest } from "../find/findExtension";
 import type { TextBridge } from "../editor/EditorHost";
 import type { RichSync } from "../rich/RichEditor";
+import { isTextKind } from "../model/kinds";
 import { FileBar, type FileBarProps } from "../ui/FileBar";
 import { CanvasHost, type CanvasHostProps } from "../canvas/CanvasHost";
 import { ImageHost, type ImageHostProps } from "../image/ImageHost";
@@ -24,6 +27,10 @@ import type { FolderGit } from "../git/api";
 const RichEditor = lazy(() => import("../rich/RichEditor"));
 /** pdf.js and its viewer stay out of the main bundle until a PDF is shown. */
 const PdfHost = lazy(() => import("../pdf/PdfHost"));
+/** The Table grid stays out of the main bundle until a Table is shown. */
+const TableHost = lazy(() => import("../table/TableHost"));
+/** An Unreadable Table's notice (it reads the text again on Try table view). */
+const TableNotice = lazy(() => import("../table/TableNotice"));
 
 export interface TabPaneProps
   extends
@@ -71,6 +78,16 @@ export interface TabPaneProps
   gitStatus(folder: string): FolderGit | undefined;
   /** A diff Tab's Open file: the real File in a normal Tab. */
   onOpenFile(path: string): void;
+  /** A Table Tab's rows, columns and Delimiter, from its grid. */
+  onTableInfo?(id: string, info: TableInfo | null): void;
+  /** This Table Tab's Unreadable notice, if its text didn't read. */
+  tableNotice?: TableUnreadable | null;
+  onTableNotice?(id: string, notice: TableUnreadable | null): void;
+  /**
+   * Mod+F on a Table Tab in the grid; it names its Tab, so it never reaches
+   * the other Split half's grid.
+   */
+  tableFilterRequest?: { tabId: string; seq: number } | null;
 }
 
 /**
@@ -103,8 +120,13 @@ export function TabPane(p: TabPaneProps) {
   const { tab, focused, onFocus, slotRef, onImageInfo, onPdfInfo, reloadSeq } =
     p;
   const id = tab.id;
-  const isText = tab.kind === "text";
-  const isMarkdown = isText && tab.language === "markdown";
+  /** A Text or Table Tab: either way its text is in the editor's slot. */
+  const isText = isTextKind(tab.kind);
+  /** A Table Tab in its grid View: the slot stays, hidden, under the grid. */
+  const grid = tab.kind === "table" && tab.tableView !== "raw";
+  /** A Table Tab in raw text: its notice reads the text to stay current. */
+  const rawTable = tab.kind === "table" && tab.tableView === "raw";
+  const isMarkdown = tab.kind === "text" && tab.language === "markdown";
   const rich = isMarkdown && p.mode === "rich";
   /** A Markdown Tab's preview; any other Tab is just edited. */
   const previewMode = (isMarkdown && !rich && tab.preview) || "edit";
@@ -119,6 +141,21 @@ export function TabPane(p: TabPaneProps) {
   const onPdfTabInfo = useCallback(
     (info: PdfInfo | null) => onPdfInfo?.(id, reloadSeq, info),
     [onPdfInfo, id, reloadSeq],
+  );
+  const { onTableInfo, onTableNotice } = p;
+  const onTableTabInfo = useCallback(
+    (info: TableInfo | null) => onTableInfo?.(id, info),
+    [onTableInfo, id],
+  );
+  // The focusSignal as last seen in raw text: a newer one reaching a grid
+  // that just mounted came with the switch to it (Raw text → Grid).
+  const [rawSignal, setRawSignal] = useState<number | undefined>(
+    rawTable ? p.focusSignal : undefined,
+  );
+  if (rawTable && rawSignal !== p.focusSignal) setRawSignal(p.focusSignal);
+  const onTableTabNotice = useCallback(
+    (notice: TableUnreadable | null) => onTableNotice?.(id, notice),
+    [onTableNotice, id],
   );
 
   return (
@@ -141,13 +178,26 @@ export function TabPane(p: TabPaneProps) {
         onReveal={p.onReveal}
         revealLabel={p.revealLabel}
       />
+      {(rawTable || (tab.kind === "table" && p.tableNotice)) && (
+        <Suspense fallback={null}>
+          <TableNotice
+            key={id}
+            tab={tab}
+            bridge={p.bridge}
+            notice={p.tableNotice ?? null}
+            check={rawTable}
+            onNotice={onTableTabNotice}
+            onTabPatch={p.onTabPatch}
+          />
+        </Suspense>
+      )}
       <div className="min-h-0 flex-1 bg-editor">
         {isText && (
           <div className="flex size-full">
             <div
               ref={slot}
               className={
-                rich || previewMode === "only"
+                grid || rich || previewMode === "only"
                   ? "hidden"
                   : previewMode === "split"
                     ? "relative size-full min-w-0 shrink-0"
@@ -159,6 +209,27 @@ export function TabPane(p: TabPaneProps) {
                   : undefined
               }
             />
+            {grid && (
+              <Suspense fallback={<div className="size-full bg-editor" />}>
+                <TableHost
+                  key={id}
+                  tab={tab}
+                  bridge={p.bridge}
+                  focused={focused}
+                  fontSize={p.fontSize}
+                  onTabPatch={p.onTabPatch}
+                  onInfo={onTableTabInfo}
+                  onNotice={onTableTabNotice}
+                  focusSignal={p.focusSignal}
+                  focusSeen={rawSignal}
+                  filterSignal={
+                    p.tableFilterRequest?.tabId === id
+                      ? p.tableFilterRequest.seq
+                      : 0
+                  }
+                />
+              </Suspense>
+            )}
             {rich && (
               <Suspense fallback={<div className="size-full bg-editor" />}>
                 {p.bridge ? (

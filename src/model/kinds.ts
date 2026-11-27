@@ -1,11 +1,21 @@
+import type { Delimiter } from "../table/parse";
+
 /**
  * What a Tab edits: text, an Excalidraw drawing, or a read-only image or PDF; or
  * what it shows: a read-only diff of a File against its last commit.
  */
-export type Kind = "text" | "canvas" | "image" | "pdf" | "diff";
+export type Kind = "text" | "canvas" | "image" | "pdf" | "table" | "diff";
 
 export const CANVAS_EXT = ".excalidraw";
 export const PDF_EXT = ".pdf";
+export const TABLE_EXTS: readonly string[] = [".csv", ".tsv"];
+/** A Table's Delimiters by name, in the status bar's menu order. */
+export const DELIMITER_NAMES: Record<Delimiter, string> = {
+  ",": "Comma",
+  ";": "Semicolon",
+  "\t": "Tab",
+  "|": "Pipe",
+};
 export const IMAGE_EXTS: readonly string[] = [
   ".png",
   ".jpg",
@@ -104,7 +114,13 @@ export function kindOf(path: string): Kind {
   const ext = name.slice(dot).toLowerCase();
   if (ext === CANVAS_EXT) return "canvas";
   if (ext === PDF_EXT) return "pdf";
+  if (TABLE_EXTS.includes(ext)) return "table";
   return IMAGE_EXTS.includes(ext) ? "image" : "text";
+}
+
+/** Kinds whose document is text in EditorHost: "text" and "table". */
+export function isTextKind(kind: Kind | undefined): boolean {
+  return kind === "text" || kind === "table";
 }
 
 /** Read-only Kinds whose text is never kept, shadowed or saved. */
