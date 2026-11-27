@@ -1,6 +1,6 @@
 [package]
 name = "zukai"
-version = "0.1.0"
+version = "0.1.1"
 description = "A fast scratchpad and text editor"
 authors = ["peota"]
 edition = "2024"
