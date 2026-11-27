@@ -91,12 +91,27 @@ const json = `{
 }
 `;
 
-const csv = `endpoint,p50_ms,p95_ms,p99_ms,requests,errors
-/checkout,182,640,4100,18234,41
-/cart,64,210,380,52011,3
-/search,95,310,720,88120,12
-/product/:id,41,120,260,140932,0
-/login,120,300,510,9120,7
+const csv = `endpoint,service,owner,p50_ms,p95_ms,p99_ms,requests,errors,error_rate
+/checkout,checkout-svc,payments,182,640,4100,18234,41,0.22%
+/checkout/confirm,checkout-svc,payments,210,720,3900,15120,38,0.25%
+/cart,cart-svc,web,64,210,380,52011,3,0.01%
+/cart/items,cart-svc,web,58,190,350,61204,5,0.01%
+/search,search-api,discovery,95,310,720,88120,12,0.01%
+/search/suggest,search-api,discovery,22,70,140,203118,0,0.00%
+/product/:id,catalog,discovery,41,120,260,140932,0,0.00%
+/product/:id/reviews,catalog,discovery,88,260,610,30411,2,0.01%
+/login,auth,identity,120,300,510,9120,7,0.08%
+/logout,auth,identity,15,40,90,4210,0,0.00%
+/account,account-svc,identity,76,230,480,11870,1,0.01%
+/orders,orders-svc,payments,134,420,980,8840,9,0.10%
+/orders/:id,orders-svc,payments,61,180,390,14502,2,0.01%
+/payments/intent,payments-gw,payments,240,810,2600,7710,22,0.29%
+/shipping/quote,shipping,fulfilment,152,470,1100,6540,4,0.06%
+/inventory/:sku,inventory,fulfilment,33,95,210,48120,0,0.00%
+/recommendations,recs,discovery,170,520,1300,39880,15,0.04%
+/wishlist,account-svc,web,47,140,300,5320,0,0.00%
+/coupons/apply,promo,growth,90,280,640,3190,6,0.19%
+/health,gateway,platform,2,4,9,86400,0,0.00%
 `;
 
 const notes = `Onboarding notes
@@ -107,45 +122,161 @@ const notes = `Onboarding notes
 - On-call handbook: wiki/oncall (rotation starts week 3)
 `;
 
-// A plain drawing (default white paper) and a transparent image, for the
-// Canvas and Image views.
+// A drawing (default white paper) and a transparent image, for the Canvas and
+// Image views. The drawing is the checkout path from the Redis failover note.
+let seed = 1;
+const ink = "#1e1e1e";
+const base = (id: string, stroke = ink) => ({
+  id,
+  strokeColor: stroke,
+  strokeWidth: 2,
+  roughness: 1,
+  opacity: 100,
+  seed: seed++,
+  version: 1,
+});
+/** Text centred on (cx, y); Excalidraw aligns it inside the box we guess. */
+const label = (
+  id: string,
+  text: string,
+  cx: number,
+  y: number,
+  size = 20,
+  stroke = ink,
+  align: "center" | "left" = "center",
+) => {
+  const lines = text.split("\n");
+  const width = Math.max(...lines.map((l) => l.length)) * size * 0.55;
+  return {
+    ...base(id, stroke),
+    type: "text",
+    x: align === "center" ? cx - width / 2 : cx,
+    y,
+    width,
+    height: lines.length * size * 1.25,
+    text,
+    originalText: text,
+    fontSize: size,
+    fontFamily: 5,
+    textAlign: align,
+    verticalAlign: "top",
+    lineHeight: 1.25,
+    containerId: null,
+    autoResize: true,
+  };
+};
+/** A filled box with a title and an optional second line. */
+const box = (
+  id: string,
+  x: number,
+  y: number,
+  fill: string,
+  title: string,
+  sub = "",
+  shape: "rectangle" | "ellipse" = "rectangle",
+  w = 190,
+  h = 84,
+) => [
+  {
+    ...base(id),
+    type: shape,
+    x,
+    y,
+    width: w,
+    height: h,
+    backgroundColor: fill,
+    fillStyle: "solid",
+    roundness: shape === "rectangle" ? { type: 3 } : null,
+  },
+  label(id + "t", title, x + w / 2, y + (sub ? 16 : 28), 22),
+  ...(sub ? [label(id + "s", sub, x + w / 2, y + 48, 16, "#495057")] : []),
+];
+const arrow = (
+  id: string,
+  x: number,
+  y: number,
+  dx: number,
+  dy: number,
+  stroke = ink,
+  dashed = false,
+  both = false,
+) => ({
+  ...base(id, stroke),
+  type: "arrow",
+  x,
+  y,
+  width: Math.abs(dx),
+  height: Math.abs(dy),
+  points: [
+    [0, 0],
+    [dx, dy],
+  ],
+  strokeStyle: dashed ? "dashed" : "solid",
+  startArrowhead: both ? "arrow" : null,
+  endArrowhead: "arrow",
+  roundness: { type: 2 },
+});
+const red = "#e03131";
+const green = "#2f9e44";
 const flow = JSON.stringify({
   type: "excalidraw",
   version: 2,
   source: "zukai",
   elements: [
+    label("title", "Checkout: cache path", 40, -40, 32, ink, "left"),
+    label("date", "incident 12 Nov, 14:02", 40, 4, 18, "#868e96", "left"),
+    ...box("web", 40, 200, "#e9ecef", "Browser", "web + mobile"),
+    ...box("gw", 300, 200, "#d0bfff", "API gateway", "rate limit, auth"),
+    ...box("svc", 560, 200, "#a5d8ff", "checkout-svc", "redis pool x 32"),
+    ...box("rp", 900, 60, "#ffc9c9", "Redis primary", "eu-west-1b"),
+    ...box("rr", 900, 340, "#b2f2bb", "Redis replica", "eu-west-1c"),
+    ...box("pg", 560, 470, "#ffec99", "Postgres", "orders"),
+    ...box(
+      "sen",
+      1200,
+      200,
+      "#fff3bf",
+      "Sentinel",
+      "quorum 2 of 3",
+      "ellipse",
+      200,
+      90,
+    ),
+    arrow("a1", 230, 242, 70, 0),
+    arrow("a2", 490, 242, 70, 0),
+    arrow("a3", 750, 222, 150, -100, red),
+    label("a3t", "stale pooled conn", 780, 130, 16, red),
+    arrow("a4", 750, 262, 150, 100, green, true),
+    label("a4t", "should re-resolve", 790, 340, 16, green),
+    arrow("a5", 655, 284, 0, 186),
+    label("a5t", "orders", 668, 360, 16, "#495057", "left"),
+    arrow("a6", 995, 144, 0, 196, "#495057", true),
+    label("a6t", "replication", 1008, 228, 16, "#495057", "left"),
+    arrow("a7", 1210, 225, -120, -110, "#495057", true),
+    arrow("a8", 1210, 265, -120, 110, "#495057", true),
+    label("a7t", "promoted\nafter 31s", 1240, 330, 16, green, "left"),
+    label("down", "X down", 1100, 30, 22, red, "left"),
     {
-      id: "c1",
-      type: "ellipse",
-      x: 120,
-      y: 120,
-      width: 220,
-      height: 220,
-      strokeColor: "#1e1e1e",
-      backgroundColor: "#ffc9c9",
-      fillStyle: "cross-hatch",
-      strokeWidth: 2,
-      roughness: 1,
-      opacity: 100,
-      seed: 7,
-      version: 1,
-    },
-    {
-      id: "r1",
+      ...base("note", "#f08c00"),
       type: "rectangle",
-      x: 420,
-      y: 170,
-      width: 220,
-      height: 120,
-      strokeColor: "#1971c2",
-      backgroundColor: "#a5d8ff",
-      fillStyle: "hachure",
-      strokeWidth: 2,
-      roughness: 1,
-      opacity: 100,
-      seed: 11,
-      version: 1,
+      x: 900,
+      y: 480,
+      width: 330,
+      height: 96,
+      backgroundColor: "#fff9db",
+      fillStyle: "solid",
+      strokeStyle: "dashed",
+      roundness: { type: 3 },
     },
+    label(
+      "notet",
+      "Fix: re-resolve the master on\nfailover, socket_timeout=2s",
+      916,
+      498,
+      18,
+      "#e8590c",
+      "left",
+    ),
   ],
   appState: { viewBackgroundColor: "#ffffff", gridSize: 20 },
   files: {},
@@ -153,19 +284,132 @@ const flow = JSON.stringify({
 
 const logo = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 32 32"><path d="M4 7h8l4 10 4-10h8L18 27h-4z" fill="#3b74ee"/></svg>`;
 
-// A one-page PDF (no xref table; pdf.js rebuilds it), for the PDF view.
-const pdf = [
-  "%PDF-1.4",
-  "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj",
-  "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj",
-  "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj",
-  "4 0 obj<</Length 56>>stream",
-  "BT /F1 24 Tf 72 700 Td (Runbook: redis failover) Tj ET",
-  "endstream endobj",
-  "5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj",
-  "trailer<</Root 1 0 R/Size 6>>",
-  "%%EOF",
-].join("\n");
+// A two-page runbook PDF, for the PDF view. ASCII only: file_read_bytes
+// encodes the string as UTF-8.
+const esc = (t: string) => t.replace(/[\\()]/g, (c) => "\\" + c);
+/** Text at (x, y) in a font (F1 Helvetica, F2 bold, F3 Courier) and grey. */
+const txt = (x: number, y: number, size: number, t: string, f = 1, g = 0.13) =>
+  `${g} g BT /F${f} ${size} Tf ${x} ${y} Td (${esc(t)}) Tj ET`;
+const rect = (x: number, y: number, w: number, h: number, rgb: string) =>
+  `${rgb} rg ${x} ${y} ${w} ${h} re f`;
+/** A paragraph of lines, 15pt apart, from y down. */
+const para = (x: number, y: number, lines: string[], f = 1, size = 11) =>
+  lines.map((l, i) => txt(x, y - i * 15, size, l, f, 0.2));
+const code = (y: number, lines: string[]) => [
+  rect(
+    72,
+    y - lines.length * 14 - 4,
+    468,
+    lines.length * 14 + 16,
+    "0.95 0.95 0.96",
+  ),
+  ...lines.map((l, i) => txt(84, y - i * 14, 9.5, l, 3, 0.15)),
+];
+const footer = (n: number) => [
+  rect(72, 60, 468, 0.6, "0.8 0.8 0.82"),
+  txt(72, 44, 9, "Platform team  /  Runbooks  /  Redis", 1, 0.5),
+  txt(520, 44, 9, `${n} / 2`, 1, 0.5),
+];
+const runbookPages = [
+  [
+    rect(0, 742, 612, 50, "0.23 0.45 0.93"),
+    txt(72, 760, 13, "RUNBOOK  RB-014", 2, 1),
+    txt(72, 690, 26, "Redis failover", 2),
+    txt(
+      72,
+      668,
+      11,
+      "Owner: platform on-call    Last reviewed: 14 Nov 2026    Severity: SEV-2",
+      1,
+      0.45,
+    ),
+    txt(72, 630, 15, "1. Symptoms", 2),
+    ...para(84, 608, [
+      "-  p99 latency on /checkout above 2s for more than 3 minutes",
+      "-  Sentinel logs +switch-master for the cache master group",
+      "-  Errors: READONLY You can't write against a read only replica",
+    ]),
+    txt(72, 548, 15, "2. Confirm the promotion", 2),
+    ...para(72, 526, ["Ask any Sentinel which node is the master now:"]),
+    ...code(502, [
+      "$ redis-cli -p 26379 sentinel get-master-addr-by-name cache",
+      '1) "10.40.3.17"',
+      '2) "6379"',
+    ]),
+    txt(72, 432, 15, "3. Recover the app", 2),
+    ...para(84, 410, [
+      "1.  Restart the checkout workers so each pool re-resolves the master.",
+      "2.  Watch p99 on the checkout dashboard; it settles within 2 minutes.",
+      "3.  If it does not, drain the old primary from the pool by hand:",
+    ]),
+    ...code(356, ["$ kubectl rollout restart deploy/checkout -n shop"]),
+    txt(72, 310, 15, "Why it happens", 2),
+    ...para(72, 288, [
+      "The client pool resolves the master once at start-up. After a failover it",
+      "keeps writing to the old primary, now a replica, until the socket times out.",
+      "The fix is tracked in PLAT-2291: discover the master through Sentinel",
+      "and set socket_timeout to 2s.",
+    ]),
+    ...footer(1),
+  ],
+  [
+    txt(72, 720, 15, "4. Verify", 2),
+    rect(72, 676, 468, 22, "0.93 0.95 1"),
+    txt(80, 683, 10, "Check", 2),
+    txt(300, 683, 10, "Expected", 2),
+    ...[
+      ["p99 /checkout", "under 700 ms"],
+      ["Error rate", "under 0.05%"],
+      ["Sentinel quorum", "3 of 3 agree"],
+      ["Replication lag", "under 1 s"],
+    ].flatMap(([a, b], i) => [
+      txt(80, 660 - i * 22, 10, a, 1, 0.2),
+      txt(300, 660 - i * 22, 10, b, 1, 0.2),
+      rect(72, 652 - i * 22, 468, 0.5, "0.85 0.85 0.88"),
+    ]),
+    txt(72, 540, 15, "5. Follow-ups", 2),
+    ...para(84, 518, [
+      "[ ]  Lower socket_timeout in the pool to 2s",
+      "[ ]  Add a failover drill to the quarterly game day",
+      "[x]  Alert on +switch-master in #platform-alerts",
+    ]),
+    txt(72, 458, 15, "Contacts", 2),
+    ...para(84, 436, [
+      "Platform on-call    pager: platform-primary",
+      "Payments team       #payments-oncall",
+    ]),
+    ...footer(2),
+  ],
+].map((ops) => ops.join("\n"));
+const pdf = (() => {
+  const n = runbookPages.length;
+  const font = (base: string) =>
+    `<</Type/Font/Subtype/Type1/BaseFont/${base}>>`;
+  const objs = [
+    "<</Type/Catalog/Pages 2 0 R>>",
+    `<</Type/Pages/Kids[${runbookPages.map((_, i) => `${6 + i * 2} 0 R`).join(" ")}]/Count ${n}>>`,
+    font("Helvetica"),
+    font("Helvetica-Bold"),
+    font("Courier"),
+    ...runbookPages.flatMap((s, i) => [
+      `<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents ${7 + i * 2} 0 R/Resources<</Font<</F1 3 0 R/F2 4 0 R/F3 5 0 R>>>>>>`,
+      `<</Length ${s.length}>>stream\n${s}\nendstream`,
+    ]),
+  ];
+  // Byte offsets for the xref table: ASCII, so a character is a byte.
+  let out = "%PDF-1.4\n";
+  const offsets = objs.map((o, i) => {
+    const at = out.length;
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    return at;
+  });
+  const xref = out.length;
+  const pad = (at: number) => String(at).padStart(10, "0");
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  out += offsets.map((at) => `${pad(at)} 00000 n \n`).join("");
+  out += `trailer\n<</Root 1 0 R/Size ${objs.length + 1}>>\n`;
+  return out + `startxref\n${xref}\n%%EOF\n`;
+})();
 
 const files: Record<string, string> = {
   [join(ROOT, "flow.excalidraw")]: flow,
@@ -581,7 +825,12 @@ function demoSession(params: URLSearchParams): string {
       { ...fileTab("f1", "snippets\\k8s.sh", "shell", UNSAVED), pinned: true },
       s1,
       fileTab("f2", "incidents\\2026-11-12 redis failover.md", "markdown"),
-      { ...fileTab("f3", "flow.excalidraw", "plaintext"), kind: "canvas" },
+      {
+        ...fileTab("f3", "flow.excalidraw", "plaintext"),
+        kind: "canvas",
+        // Fits the whole diagram in the 1280x800 demo window.
+        viewport: { scrollX: 30, scrollY: 318, zoom: 0.68 },
+      },
       { ...fileTab("f4", "logo.svg", "plaintext"), kind: "image" },
       { ...fileTab("f5", "runbook.pdf", "plaintext"), kind: "pdf" },
     ],
