@@ -89,18 +89,22 @@ export function orderAfterDelete(
   order: number[],
   deleted: readonly number[],
 ): number[] {
-  const gone = new Set(deleted);
-  const sorted = [...gone].sort((a, b) => a - b);
-  return order
-    .filter((i) => !gone.has(i))
-    .map((i) => {
-      let below = 0;
-      for (const d of sorted) {
-        if (d < i) below++;
-        else break;
-      }
-      return i - below;
-    });
+  const sorted = [...new Set(deleted)].sort((a, b) => a - b);
+  const gone = new Set(sorted);
+  const out: number[] = [];
+  for (const i of order) {
+    if (gone.has(i)) continue;
+    // Count of deleted entries smaller than i (lower bound).
+    let lo = 0;
+    let hi = sorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid] < i) lo = mid + 1;
+      else hi = mid;
+    }
+    out.push(i - lo);
+  }
+  return out;
 }
 
 /** Initial widths in px from the header and the first 200 rows; each clamped to 56..360. */

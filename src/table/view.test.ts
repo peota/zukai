@@ -92,6 +92,13 @@ describe("order maintenance", () => {
   it("orderAfterDelete drops and shifts", () => {
     expect(orderAfterDelete([5, 2, 9], [2])).toEqual([4, 8]);
   });
+  it("orderAfterDelete scales to large deletions", () => {
+    const order = Array.from({ length: 200_000 }, (_, i) => i);
+    const deleted = Array.from({ length: 100_000 }, (_, i) => 2 * i + 1);
+    const result = orderAfterDelete(order, deleted);
+    expect(result.length).toBe(100_000);
+    expect(result.every((v, i) => v === i)).toBe(true);
+  });
 });
 
 describe("NEXT_SORT", () => {
