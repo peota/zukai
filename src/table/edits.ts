@@ -51,7 +51,13 @@ function shift(row: Row, d: number): Row {
   };
 }
 
-function finish(t: ParsedTable, rows: Row[]): ParsedTable {
+function finish(t: ParsedTable, all: Row[]): ParsedTable {
+  // The parser never yields a blank last row with no line ending.
+  const lastRow = all[all.length - 1];
+  const rows =
+    lastRow && lastRow.eol === "" && lastRow.start === lastRow.end
+      ? all.slice(0, -1)
+      : all;
   let width = 0;
   let allQuoted = rows.length > 0;
   for (const r of rows) {
@@ -93,11 +99,16 @@ export function setCell(
   col: number,
   value: string,
 ): EditResult {
+  if (row < 0 || row >= t.rows.length)
+    throw new Error(`Row ${row} out of range`);
+  if (col < 0) throw new Error(`Column ${col} out of range`);
   const d = t.delimiter;
   return editRows(t, (r, i) => {
     if (i !== row) return null;
     if (col < r.cells.length) {
-      const raw = encodeCell(value, d, r.quoted[col]);
+      let raw = encodeCell(value, d, r.quoted[col]);
+      // A blank last row without a line ending would not survive a re-parse.
+      if (raw === "" && r.eol === "" && r.cells.length === 1) raw = '""';
       const delta = raw.length - (r.cellEnd[col] - r.cellStart[col]);
       const cells = r.cells.slice();
       cells[col] = value;
@@ -146,6 +157,8 @@ export function insertRows(
   at: number,
   count: number,
 ): EditResult {
+  if (at < 0 || at > t.rows.length) throw new Error(`Row ${at} out of range`);
+  if (count < 1) throw new Error(`Cannot insert ${count} rows`);
   const d = t.delimiter;
   const w = t.width || 1;
   const cellText = encodeCell("", d, t.allQuoted);
@@ -170,11 +183,14 @@ export function insertRows(
   for (let k = 0; k < count; k++) {
     const last = tailNoEol && k === count - 1;
     const start = cursor;
+    // A blank last row without a line ending would not survive a re-parse.
+    const vanishes = last && rowText === "";
+    const text = vanishes ? '""' : cellText;
     const cellStart: number[] = [];
     const cellEnd: number[] = [];
     for (let c = 0; c < w; c++) {
       cellStart.push(cursor);
-      cursor += cellText.length;
+      cursor += text.length;
       cellEnd.push(cursor);
       if (c < w - 1) cursor += d.length;
     }
@@ -186,10 +202,10 @@ export function insertRows(
       cells: Array<string>(w).fill(""),
       cellStart,
       cellEnd,
-      quoted: Array<boolean>(w).fill(cellText.startsWith('"')),
+      quoted: Array<boolean>(w).fill(text.startsWith('"')),
     });
     cursor += rowEol.length;
-    insert += rowText + rowEol;
+    insert += (vanishes ? text : rowText) + rowEol;
   }
   const total = insert.length;
   const before = t.rows.slice(0, at);
@@ -240,9 +256,11 @@ export function insertColumn(
   at: number,
   name = "",
 ): EditResult {
+  if (at < 0) throw new Error(`Column ${at} out of range`);
   const d = t.delimiter;
   return editRows(t, (r, i) => {
-    if (r.cells.length < at) return null;
+    // Row 0 is padded up to `at` so the name always lands in the header.
+    if (r.cells.length < at && i !== 0) return null;
     const value = i === 0 ? name : "";
     const raw = encodeCell(value, d, t.allQuoted);
     const quotedNew = raw.startsWith('"');
@@ -269,22 +287,35 @@ export function insertColumn(
         },
       };
     }
-    const start = r.end + d.length;
+    // Append, padding a short row 0 with empty cells first.
+    const padRaw = encodeCell("", d, t.allQuoted);
+    const pads = at - r.cells.length;
+    cells.length = r.cells.length;
+    quoted.length = r.cells.length;
+    const cellStart = r.cellStart.slice();
+    const cellEnd = r.cellEnd.slice();
+    let insert = "";
+    let pos = r.end;
+    for (let k = 0; k <= pads; k++) {
+      const v = k === pads ? value : "";
+      const cell = k === pads ? raw : padRaw;
+      insert += d + cell;
+      pos += d.length;
+      cells.push(v);
+      quoted.push(cell.startsWith('"'));
+      cellStart.push(pos);
+      pos += cell.length;
+      cellEnd.push(pos);
+    }
     return {
-      row: {
-        ...r,
-        end: start + raw.length,
-        cells,
-        quoted,
-        cellStart: [...r.cellStart, start],
-        cellEnd: [...r.cellEnd, start + raw.length],
-      },
-      change: { from: r.end, to: r.end, insert: d + raw },
+      row: { ...r, end: pos, cells, quoted, cellStart, cellEnd },
+      change: { from: r.end, to: r.end, insert },
     };
   });
 }
 
 export function deleteColumn(t: ParsedTable, col: number): EditResult {
+  if (col < 0) throw new Error(`Column ${col} out of range`);
   return editRows(t, (r) => {
     const n = r.cells.length;
     if (col >= n) return null;

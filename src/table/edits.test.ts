@@ -13,12 +13,18 @@ import { parseTable, type Delimiter, type ParsedTable } from "./parse";
 const parse = (s: string, d: Delimiter = ","): ParsedTable =>
   (parseTable(s, d) as { table: ParsedTable }).table;
 
-/** Asserts the new text, the oracle, and that every change stays inside `affected` rows. */
+type Affected = number | [number, number];
+
+/**
+ * Asserts the new text, the oracle, and that each change falls within one
+ * affected row's [start, end+eol.length] (or, for a [first, last] pair, within
+ * that contiguous run of rows).
+ */
 function check(
   text: string,
   r: EditResult,
   expected: string,
-  affected: number[],
+  affected: Affected[],
   d: Delimiter = ",",
 ) {
   const next = applyChanges(text, r.changes);
@@ -26,11 +32,13 @@ function check(
   expect(r.table).toEqual(parse(next, d));
   const rows = parse(text, d).rows;
   for (const c of r.changes) {
-    const lo = Math.min(...affected.map((i) => rows[i].start));
-    const hi = Math.max(
-      ...affected.map((i) => rows[i].end + rows[i].eol.length),
-    );
-    const ok = rows.length === 0 || (c.from >= lo && c.to <= hi);
+    const ok = affected.some((a) => {
+      const [first, last] = typeof a === "number" ? [a, a] : a;
+      return (
+        c.from >= rows[first].start &&
+        c.to <= rows[last].end + rows[last].eol.length
+      );
+    });
     expect(ok, `change ${JSON.stringify(c)} outside affected rows`).toBe(true);
   }
 }
@@ -148,7 +156,9 @@ describe("insertRows", () => {
   });
 
   it("into an empty table", () => {
-    check("", insertRows(parse(""), 0, 2), "\n\n", []);
+    const r = insertRows(parse(""), 0, 2);
+    expect(r.changes).toEqual([{ from: 0, to: 0, insert: "\n\n" }]);
+    expect(r.table).toEqual(parse("\n\n"));
   });
 });
 
@@ -160,7 +170,7 @@ describe("deleteRows", () => {
 
   it("the last row without final newline", () => {
     const text = "a\nb";
-    check(text, deleteRows(parse(text), [1]), "a", [0, 1]);
+    check(text, deleteRows(parse(text), [1]), "a", [[0, 1]]);
   });
 
   it("first and last, unsorted with duplicates", () => {
@@ -170,7 +180,7 @@ describe("deleteRows", () => {
 
   it("everything", () => {
     const text = "a\nb";
-    check(text, deleteRows(parse(text), [0, 1]), "", [0, 1]);
+    check(text, deleteRows(parse(text), [0, 1]), "", [[0, 1]]);
   });
 
   it("a multi-line quoted record", () => {
@@ -231,5 +241,70 @@ describe("deleteColumn", () => {
     check(one, deleteColumn(parse(one), 0), "\n\n", [0, 1]);
     const q = '"a"\n"b"\n';
     check(q, deleteColumn(parse(q), 0), "\n\n", [0, 1]);
+  });
+});
+
+describe("blank last row without a line ending", () => {
+  it("insertRows writes an empty quoted cell", () => {
+    check("a\nb", insertRows(parse("a\nb"), 2, 1), 'a\nb\n""', [1]);
+    check("a", insertRows(parse("a"), 1, 1), 'a\n""', [0]);
+    check("a\nb", insertRows(parse("a\nb"), 2, 2), 'a\nb\n\n""', [1]);
+  });
+
+  it("insertRows with wider rows needs no exception", () => {
+    check("a,b\n1,2", insertRows(parse("a,b\n1,2"), 2, 1), "a,b\n1,2\n,", [1]);
+  });
+
+  it("setCell to empty writes an empty quoted cell", () => {
+    check("a\nb", setCell(parse("a\nb"), 1, 0, ""), 'a\n""', [1]);
+    check("a", setCell(parse("a"), 0, 0, ""), '""', [0]);
+  });
+
+  it("setCell to empty with a final newline stays blank", () => {
+    check("a\nb\n", setCell(parse("a\nb\n"), 1, 0, ""), "a\n\n", [1]);
+  });
+
+  it("deleteColumn drops the vanished row from table", () => {
+    check("a\nb", deleteColumn(parse("a\nb"), 0), "\n", [0, 1]);
+    check("a,b\n1", deleteColumn(parse("a,b\n1"), 0), "b\n", [0, 1]);
+  });
+
+  it("deleteRows drops the vanished row from table", () => {
+    check("a\n\nb", deleteRows(parse("a\n\nb"), [2]), "a\n", [[1, 2]]);
+    check("\nb", deleteRows(parse("\nb"), [1]), "", [[0, 1]]);
+  });
+});
+
+describe("range checks", () => {
+  const t = parse("a,b\n1,2\n");
+  it("setCell", () => {
+    expect(() => setCell(t, -1, 0, "x")).toThrow(Error);
+    expect(() => setCell(t, 2, 0, "x")).toThrow(Error);
+    expect(() => setCell(t, 0, -1, "x")).toThrow(Error);
+  });
+  it("insertRows", () => {
+    expect(() => insertRows(t, -1, 1)).toThrow(Error);
+    expect(() => insertRows(t, 3, 1)).toThrow(Error);
+    expect(() => insertRows(t, 1, 0)).toThrow(Error);
+  });
+  it("columns", () => {
+    expect(() => insertColumn(t, -1)).toThrow(Error);
+    expect(() => deleteColumn(t, -1)).toThrow(Error);
+  });
+});
+
+describe("insertColumn pads the header", () => {
+  it("names a column past a short header row", () => {
+    const text = "a\n1,2,3\n";
+    check(text, insertColumn(parse(text), 2, "n"), "a,,n\n1,2,,3\n", [0, 1]);
+  });
+  it("in an allQuoted file pads quoted", () => {
+    const text = '"a"\n"1","2"\n';
+    check(
+      text,
+      insertColumn(parse(text), 2, "n"),
+      '"a","","n"\n"1","2",""\n',
+      [0, 1],
+    );
   });
 });
