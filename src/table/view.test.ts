@@ -136,10 +136,16 @@ describe("guessWidths", () => {
     const t = table(`a,${"x".repeat(100)}\n1,2\n`);
     expect(guessWidths(t, true, 8)).toEqual([56, 360]);
   });
-  it("sizes by content plus padding", () => {
+  it("sizes by content plus padding; a header keeps room for its sort arrow", () => {
     const t = table("abcd,e\n1,2\n");
-    expect(guessWidths(t, true, 10)).toEqual([56, 56]);
+    // "abcd": 40 + 16 arrow + 16 padding.
+    expect(guessWidths(t, true, 10)).toEqual([72, 56]);
     const u = table("abcdefgh,e\n1,2\n");
-    expect(guessWidths(u, true, 10)).toEqual([96, 56]);
+    expect(guessWidths(u, true, 10)).toEqual([112, 56]);
+    // A data cell needs no arrow room.
+    const v = table("a,e\nabcdefgh,2\n");
+    expect(guessWidths(v, true, 10)).toEqual([96, 56]);
+    // With the header off, row 0 is data.
+    expect(guessWidths(u, false, 10)).toEqual([96, 56]);
   });
 });

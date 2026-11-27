@@ -12,7 +12,10 @@ export interface CellEditorProps {
   /** px inside the grid's scrolled content. */
   top: number;
   left: number;
+  /** The cell's width: the editor never covers the next cell. */
   width: number;
+  /** A numeric column's cell: edited right-aligned, as it shows. */
+  numeric?: boolean;
   /** One row's height; the editor grows a line at a time from here. */
   rowHeight: number;
   fontSize: number;
@@ -129,7 +132,14 @@ export function CellEditor(p: CellEditorProps) {
 
   const lineH = Math.round(p.fontSize * 1.45);
   const lines = p.value.split("\n").length;
-  const height = Math.max(p.rowHeight, lines * lineH + 2 * PAD_Y);
+  const minHeight = Math.max(p.rowHeight, lines * lineH + 2 * PAD_Y);
+  // Long lines wrap inside the cell's width: the editor grows down to fit.
+  useLayoutEffect(() => {
+    const ta = el.current;
+    if (!ta) return;
+    ta.style.height = `${minHeight}px`;
+    if (ta.scrollHeight > minHeight) ta.style.height = `${ta.scrollHeight}px`;
+  }, [p.value, p.width, minHeight]);
 
   return (
     <textarea
@@ -141,8 +151,9 @@ export function CellEditor(p: CellEditorProps) {
       style={{
         top: p.top,
         left: p.left,
-        width: Math.max(p.width, 120),
-        height,
+        width: p.width,
+        height: minHeight,
+        textAlign: p.numeric ? "right" : undefined,
         lineHeight: `${lineH}px`,
         paddingTop: Math.max(PAD_Y, (p.rowHeight - lineH) / 2),
       }}

@@ -10,6 +10,8 @@ const WIDTH_SAMPLE_ROWS = 200;
 const MIN_WIDTH = 56;
 const MAX_WIDTH = 360;
 const PADDING = 16;
+/** A header's room for its sort arrow (gap and icon), so sorting never truncates it. */
+const SORT_ROOM = 16;
 
 const cellAt = (t: ParsedTable, row: number, col: number): string =>
   t.rows[row].cells[col] ?? "";
@@ -131,7 +133,10 @@ export function orderAfterDelete(
   return out;
 }
 
-/** Initial widths in px from the header and the first 200 rows; each clamped to 56..360. */
+/**
+ * Initial widths in px from the header (with room for a sort arrow) and the
+ * first 200 rows; each clamped to 56..360.
+ */
 export function guessWidths(
   t: ParsedTable,
   header: boolean,
@@ -140,14 +145,12 @@ export function guessWidths(
   const out: number[] = [];
   const last = Math.min(t.rows.length, (header ? 1 : 0) + WIDTH_SAMPLE_ROWS);
   for (let c = 0; c < t.width; c++) {
-    let chars = 0;
+    let px = 0;
     if (header && t.rows.length > 0)
-      chars = Math.max(chars, cellAt(t, 0, c).length);
+      px = cellAt(t, 0, c).length * charPx + SORT_ROOM;
     for (let r = header ? 1 : 0; r < last; r++)
-      chars = Math.max(chars, cellAt(t, r, c).length);
-    out.push(
-      Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, chars * charPx + PADDING)),
-    );
+      px = Math.max(px, cellAt(t, r, c).length * charPx);
+    out.push(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, px + PADDING)));
   }
   return out;
 }

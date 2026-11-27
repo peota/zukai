@@ -17,7 +17,8 @@
   border-bottom: 1px solid var(--z-hairline);
   color: var(--z-muted);
   font-weight: 600;
-  font-size: 0.92em;
+  /* The caption size (12px at the default UI font). */
+  font-size: calc(var(--z-ui-font) - 2px);
 }
 
 .z-grid-corner {
@@ -139,8 +140,10 @@ body.z-grid-resizing * {
   flex-shrink: 0;
   padding: 0 10px 0 6px;
   background: var(--z-editor);
-  color: var(--z-faint);
-  font-size: 0.85em;
+  /* Muted, not faint: faint misses 4.5:1 on the dark editor ground. */
+  color: var(--z-muted);
+  /* The label size (11px at the default UI font). */
+  font-size: calc(var(--z-ui-font) - 3px);
   text-align: right;
   cursor: default;
   user-select: none;
@@ -184,7 +187,7 @@ body.z-grid-resizing * {
 }
 
 .z-grid mark {
-  border-radius: 3px;
+  border-radius: 4px;
   background: var(--z-accent-soft);
   color: inherit;
 }
@@ -198,11 +201,12 @@ body.z-grid-resizing * {
   margin: 0;
   padding: 4px 8px;
   border: 0;
-  border-radius: 2px;
+  border-radius: 4px;
   outline: none;
   resize: none;
   overflow: hidden;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   background: var(--z-editor);
   color: var(--z-text);
   font: inherit;
@@ -214,4 +218,13 @@ body.z-grid-resizing * {
 /* In the header row: above its cells, below the sticky corner. */
 .z-grid-head > .z-grid-editor {
   z-index: auto;
+}
+
+/* Below the header when no row is shown: a quiet, centred line. */
+.z-grid-empty {
+  position: absolute;
+  display: flex;
+  justify-content: center;
+  padding-top: 32px;
+  line-height: 1.4;
 }

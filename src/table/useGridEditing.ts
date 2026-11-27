@@ -51,7 +51,7 @@ export interface GridEditingArgs {
   header: boolean;
   readOnly: boolean;
   sort?: TableSort;
-  onSort(sort: TableSort): void;
+  onSort(sort: TableSort | undefined): void;
   edit: GridEditHandlers;
   platform: Platform;
   /** The current (clamped) selection. */
@@ -272,6 +272,9 @@ export function useGridEditing(a: GridEditingArgs) {
     sortBy(dir) {
       a.onSort({ col: s.col, dir });
     },
+    clearSort() {
+      a.onSort(undefined);
+    },
   });
 
   const onGutterMenu = (e: ReactMouseEvent, pos: number) => {
@@ -284,9 +287,10 @@ export function useGridEditing(a: GridEditingArgs) {
     setMenu({ kind: "row", sel: s, x: e.clientX, y: e.clientY });
   };
 
+  // The column is tinted while its menu is open (`menuCol`), not selected:
+  // closing the menu leaves the selection as it was.
   const onHeaderMenu = (e: ReactMouseEvent, col: number) => {
     e.preventDefault();
-    a.select({ row: sel.row, col }, "cols");
     setMenu({
       kind: "col",
       sel: { row: sel.row, col, cols: [col, col] },
@@ -328,6 +332,8 @@ export function useGridEditing(a: GridEditingArgs) {
     cancel,
     onKey,
     menu: menuView,
+    /** The column whose header menu is open, if any. */
+    menuCol: menu?.kind === "col" ? menu.sel.col : undefined,
     dismissMenu,
     onGutterMenu,
     onHeaderMenu,

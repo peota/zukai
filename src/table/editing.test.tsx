@@ -458,7 +458,76 @@ describe("Grid editing", () => {
     fireEvent.mouseDown(gutter("3"), { shiftKey: true });
     expect(selected(grid)).toEqual(["a", "b", "c"]);
     rerender({ order: [2, 1, 0] });
-    expect(selected(grid)).toEqual(["c"]);
+    // The active cell stays on its record ("a"), now at the bottom.
+    expect(selected(grid)).toEqual(["a"]);
+  });
+
+  it("a Sort or Filter keeps the active cell on its record and scrolls to it", () => {
+    let text = "";
+    for (let i = 0; i < 100; i++) text += `r${String(i).padStart(2, "0")}\n`;
+    const { grid, rerender, order } = setup(text);
+    fireEvent.mouseDown(cell("r03"));
+    rerender({ order: [...order].reverse() });
+    expect(selected(grid)).toEqual(["r03"]);
+    // Position 96 of 100 rows of 28px, in a 600px viewport.
+    expect(grid.scrollTop).toBeGreaterThan(0);
+    // A Filter that hides the record: the position clamps.
+    rerender({ order: [10, 11] });
+    expect(selected(grid)).toEqual(["r11"]);
+  });
+
+  it("a header right-click tints the column only while its menu is open", () => {
+    const { grid } = setup("a,b\n1,2\n", { header: true });
+    fireEvent.mouseDown(cell("1"));
+    const h = screen.getAllByRole("columnheader")[1];
+    fireEvent.contextMenu(h);
+    expect(h).toHaveAttribute("data-selected");
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(h).not.toHaveAttribute("data-selected");
+    expect(selected(grid)).toEqual(["1"]);
+  });
+
+  it("a header right-click keeps a column that was already selected", () => {
+    const { grid } = setup("a,b\n1,2\n3,4\n", { header: true });
+    const h = screen.getAllByRole("columnheader")[1];
+    fireEvent.mouseDown(h.querySelector(".z-grid-colsel")!);
+    expect(selected(grid)).toEqual(["2", "4"]);
+    fireEvent.contextMenu(h);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(h).toHaveAttribute("data-selected");
+    expect(selected(grid)).toEqual(["2", "4"]);
+  });
+
+  it("the header menu offers File order while a Sort is on", () => {
+    const { props } = setup("a,b\n1,2\n", {
+      header: true,
+      sort: { col: 0, dir: "asc" },
+    });
+    fireEvent.contextMenu(screen.getAllByRole("columnheader")[1]);
+    fireEvent.click(item("File order"));
+    expect(props.onSort).toHaveBeenCalledWith(undefined);
+  });
+
+  it("no File order item without a Sort", () => {
+    setup("a,b\n1,2\n", { header: true });
+    fireEvent.contextMenu(screen.getAllByRole("columnheader")[1]);
+    expect(screen.queryByRole("menuitem", { name: /^File order/ })).toBeNull();
+  });
+
+  it("the editor takes its cell's width and a numeric column's alignment", () => {
+    const { grid } = setup("a,b\n1,x\n", {
+      header: true,
+      widths: [70, 90],
+    });
+    fireEvent.mouseDown(cell("1"));
+    fireEvent.keyDown(grid, { key: "F2" });
+    expect(editor().style.width).toBe("70px");
+    expect(editor().style.textAlign).toBe("right");
+    fireEvent.keyDown(editor(), { key: "Escape" });
+    fireEvent.mouseDown(cell("x"));
+    fireEvent.keyDown(grid, { key: "F2" });
+    expect(editor().style.width).toBe("90px");
+    expect(editor().style.textAlign).toBe("");
   });
 
   it("double-clicking a data cell edits it", () => {

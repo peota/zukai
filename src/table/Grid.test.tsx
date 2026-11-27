@@ -236,6 +236,27 @@ describe("Grid", () => {
     expect(selected(grid)).toEqual(["2", "4"]);
   });
 
+  it("a sorted header whose label fits unsorted widens for its arrow", () => {
+    // fontSize 13: 7.8px a character. "p99_ms" needs 6 * 7.8 + 16 = 62.8.
+    setup("p99_ms,b\n1,2\n", {
+      header: true,
+      widths: [63, 63],
+      sort: { col: 0, dir: "asc" },
+    });
+    const [a, b] = screen.getAllByRole("columnheader");
+    expect(a.style.width).toBe("79px");
+    expect(b.style.width).toBe("63px");
+  });
+
+  it("a sorted header too wide to fit unsorted keeps its width", () => {
+    setup("a_very_long_label,b\n1,2\n", {
+      header: true,
+      widths: [60, 60],
+      sort: { col: 0, dir: "asc" },
+    });
+    expect(screen.getAllByRole("columnheader")[0].style.width).toBe("60px");
+  });
+
   it("resizes a column by dragging its border; double-click fits", () => {
     const { props } = setup("a,b\nabcdefghij,x\nabc,y\n");
     const handle = screen.getAllByRole("separator", {

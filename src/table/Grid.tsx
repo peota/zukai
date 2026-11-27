@@ -97,6 +97,8 @@ export interface GridProps {
    * (`gridMemory`): a remount comes back to them.
    */
   memory?: string;
+  /** Shown below the header when no row is (e.g. the Filter matches none). */
+  empty?: ReactNode;
 }
 
 /** px at the default font size; scale with fontSize / 13. */
@@ -109,6 +111,8 @@ const RESIZE_MIN = 32;
 const FIT_MIN = 56;
 const FIT_MAX = 360;
 const FIT_PAD = 16;
+/** Room in a header for its sort arrow (the gap and the 12px icon). */
+const SORT_ROOM = 16;
 /**
  * The rows' scroll space at most, in px: browsers stop laying out near 33.5M
  * px, so past this the scroll space is scaled (rows are drawn relative to
@@ -241,13 +245,25 @@ export function Grid(props: GridProps) {
 
   /** Widths during a border drag: shown live, reported once on mouseup. */
   const [dragWidths, setDragWidths] = useState<number[] | null>(null);
+  // A sorted column whose header label fits unsorted widens to hold its
+  // arrow too: sorting never truncates the label.
+  const sortCol = sort?.col;
+  const sortLabel =
+    sortCol === undefined
+      ? 0
+      : header && table.rows.length > 0
+        ? (table.rows[0].cells[sortCol] ?? "").length
+        : columnLabel(sortCol).length;
   const colWidths = useMemo(
     () =>
-      Array.from(
-        { length: nCols },
-        (_, c) => (dragWidths ?? widths)[c] ?? DEFAULT_WIDTH,
-      ),
-    [widths, dragWidths, nCols],
+      Array.from({ length: nCols }, (_, c) => {
+        const w = (dragWidths ?? widths)[c] ?? DEFAULT_WIDTH;
+        if (c !== sortCol) return w;
+        const label = sortLabel * cpx + FIT_PAD;
+        if (label > w + 0.5) return w;
+        return Math.max(w, Math.ceil(label + SORT_ROOM));
+      }),
+    [widths, dragWidths, nCols, sortCol, sortLabel, cpx],
   );
   const colOffsets = useMemo(() => {
     const out = [0];
@@ -260,6 +276,8 @@ export function Grid(props: GridProps) {
   const digits = String(Math.max(1, table.rows.length)).length;
   const gutterW = Math.round(Math.max(2, digits) * cpx + 24);
   const totalW = gutterW + colOffsets[nCols];
+  // The header band and the row rules run the full viewport width.
+  const fullW = Math.max(totalW, view.w);
   const bodyH = Math.max(0, view.h - headerH);
   const bodyW = Math.max(0, view.w - gutterW);
   // Past MAX_SCROLL_PX the scroll space is scaled: scrollTop maps to the
@@ -306,23 +324,61 @@ export function Grid(props: GridProps) {
     rowSet ? rowSet.has(r) : st.mode === "cols" || (r >= br0 && r <= br1);
   const inCols = (c: number) => c >= sc0 && c <= sc1;
 
-  // A new order reinterprets positions: keep only the active cell. After a
-  // re-parse (new seq) it stays on the same File-order row while that row is
-  // shown, else it goes to the last shown row.
-  const [seen, setSeen] = useState({ order, seq: props.seq });
+  /** The scroll offsets that bring (row, col) fully into view; null if it is. */
+  const scrollFor = (p: Pos) => {
+    let top = realTop;
+    let { left } = view;
+    const rowTop = p.row * rowH;
+    if (rowTop < top) top = rowTop;
+    else if (rowTop + rowH > top + bodyH) top = rowTop + rowH - bodyH;
+    const colLeft = colOffsets[p.col] ?? 0;
+    const colRight = colOffsets[p.col + 1] ?? colLeft;
+    if (colLeft < left) left = colLeft;
+    else if (colRight > left + bodyW)
+      left = Math.min(colLeft, colRight - bodyW);
+    top = clamp(top, 0, maxReal);
+    left = Math.max(0, left);
+    if (top === realTop && left === view.left) return null;
+    return {
+      top: ratio === 1 ? top : Math.round(top / ratio),
+      left,
+      real: ratio === 1 ? null : top,
+    };
+  };
+
+  // A new order reinterprets positions: keep only the active cell, on the
+  // same File-order row while it's shown. After a Sort, Filter or Header row
+  // change it's scrolled into view (else the position clamps); after a
+  // re-parse (new seq) a row that's gone sends it to the last shown row. An
+  // own edit's new order comes with the edit's own selection: kept as is.
+  const [seen, setSeen] = useState({ order, seq: props.seq, table });
+  /** A scroll the grid set while rendering, for the DOM to follow. */
+  const [scrollTo, setScrollTo] = useState<{ top: number; left: number }>();
   if (order !== seen.order) {
     const before = seen;
-    setSeen({ order, seq: props.seq });
-    setSel((s) => {
-      let active = s.active;
-      if (props.seq !== before.seq) {
-        const fileRow = before.order[s.active.row];
-        const at = fileRow === undefined ? -1 : order.indexOf(fileRow);
-        active = { row: at >= 0 ? at : order.length - 1, col: s.active.col };
-      }
-      return { active, head: active, mode: "cell" };
-    });
+    setSeen({ order, seq: props.seq, table });
+    const reparse = props.seq !== before.seq;
+    const viewChange = !reparse && table === before.table;
+    let active = rawSel.active;
+    if (reparse || viewChange) {
+      const fileRow = before.order[active.row];
+      const at = fileRow === undefined ? -1 : order.indexOf(fileRow);
+      const gone = reparse ? order.length - 1 : active.row;
+      active = { row: at >= 0 ? at : gone, col: active.col };
+    }
+    setSel({ active, head: active, mode: "cell" });
+    const t = viewChange ? scrollFor(fit(active)) : null;
+    if (t) {
+      setView((v) => ({ ...v, ...t }));
+      setScrollTo({ top: t.top, left: t.left });
+    }
   }
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !scrollTo) return;
+    el.scrollTop = scrollTo.top;
+    el.scrollLeft = scrollTo.left;
+  }, [scrollTo]);
 
   const onSelection = useRef(props.onSelection);
   useEffect(() => {
@@ -353,31 +409,14 @@ export function Grid(props: GridProps) {
 
   /** Scrolls so (row, col) is fully in view. */
   const reveal = (p: Pos) => {
+    const t = scrollFor(p);
+    if (!t) return;
     const el = scroller.current;
-    let top = realTop;
-    let { left } = view;
-    const rowTop = p.row * rowH;
-    if (rowTop < top) top = rowTop;
-    else if (rowTop + rowH > top + bodyH) top = rowTop + rowH - bodyH;
-    const colLeft = colOffsets[p.col] ?? 0;
-    const colRight = colOffsets[p.col + 1] ?? colLeft;
-    if (colLeft < left) left = colLeft;
-    else if (colRight > left + bodyW)
-      left = Math.min(colLeft, colRight - bodyW);
-    top = clamp(top, 0, maxReal);
-    left = Math.max(0, left);
-    if (top === realTop && left === view.left) return;
-    const scrollTop = ratio === 1 ? top : Math.round(top / ratio);
     if (el) {
-      el.scrollTop = scrollTop;
-      el.scrollLeft = left;
+      el.scrollTop = t.top;
+      el.scrollLeft = t.left;
     }
-    setView((v) => ({
-      ...v,
-      top: scrollTop,
-      left,
-      real: ratio === 1 ? null : top,
-    }));
+    setView((v) => ({ ...v, ...t }));
   };
 
   /** Kept unclamped, so a row or column the pending edit adds can be the target. */
@@ -571,10 +610,11 @@ export function Grid(props: GridProps) {
   /** Fits column c to the widest cell in view (header included). */
   const fitColumn = (c: number) => {
     const [v0, v1] = uniformRange(nRows, rowH, realTop, bodyH, 0);
-    let chars = headerLabel(c).length;
+    // The header keeps room for a sort arrow: sorting never truncates it.
+    let px = headerLabel(c).length * cpx + SORT_ROOM;
     for (let r = v0; r < v1; r++)
-      chars = Math.max(chars, textOf(order[r], c).length);
-    const w = clamp(Math.round(chars * cpx + FIT_PAD), FIT_MIN, FIT_MAX);
+      px = Math.max(px, textOf(order[r], c).length * cpx);
+    const w = clamp(Math.round(px + FIT_PAD), FIT_MIN, FIT_MAX);
     const next = [...colWidths];
     next[c] = w;
     onWidths.current(next);
@@ -598,6 +638,7 @@ export function Grid(props: GridProps) {
       top={ed.pos < 0 ? 0 : headerH + ed.pos * rowH + shift}
       left={gutterW + (colOffsets[ed.col] ?? colOffsets[nCols])}
       width={colWidths[ed.col] ?? DEFAULT_WIDTH}
+      numeric={ed.pos >= 0 && !!numeric[ed.col]}
       rowHeight={rowH}
       fontSize={fontSize}
       onChange={editing.setEditorValue}
@@ -624,7 +665,7 @@ export function Grid(props: GridProps) {
         style={{
           top: headerH + r * rowH + shift,
           height: rowH,
-          width: totalW,
+          width: fullW,
         }}
       >
         <div
@@ -682,13 +723,13 @@ export function Grid(props: GridProps) {
       <div
         role="presentation"
         className="relative"
-        style={{ width: totalW, height: headerH + spaceH }}
+        style={{ width: fullW, height: headerH + spaceH }}
       >
         <div
           role="row"
           aria-rowindex={1}
           className="z-grid-head"
-          style={{ height: headerH, width: totalW }}
+          style={{ height: headerH, width: fullW }}
         >
           <div
             className="z-grid-corner"
@@ -698,7 +739,9 @@ export function Grid(props: GridProps) {
           {cols.map((c) => {
             const dir = sort?.col === c ? sort.dir : undefined;
             const label = headerLabel(c);
-            const colSelected = st.mode === "cols" && inCols(c);
+            // The header menu's column is tinted while the menu is open.
+            const colSelected =
+              (st.mode === "cols" && inCols(c)) || editing.menuCol === c;
             return (
               <div
                 key={c}
@@ -781,6 +824,14 @@ export function Grid(props: GridProps) {
         </div>
         {ed && ed.pos >= 0 && editor}
         {rows}
+        {nRows === 0 && props.empty && (
+          <div
+            className="z-grid-empty"
+            style={{ top: headerH, left: view.left, width: view.w }}
+          >
+            {props.empty}
+          </div>
+        )}
       </div>
       {editing.menu && (
         <Menu

@@ -13,6 +13,8 @@ export interface MenuCtx {
   deleteColumn(): void;
   renameColumn(): void;
   sortBy(dir: SortDir): void;
+  /** Back to File order (no Sort). */
+  clearSort(): void;
 }
 
 const READ_ONLY = "Read-only";
@@ -75,5 +77,6 @@ export function columnMenu(sel: GridSelection, ctx: MenuCtx): MenuItem[] {
       onSelect: () => ctx.sortBy("desc"),
     },
   );
+  if (ctx.sort) items.push({ label: "File order", onSelect: ctx.clearSort });
   return items;
 }
