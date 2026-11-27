@@ -415,6 +415,37 @@ function pane(text: string, over: Partial<TabState> = {}) {
 const UNCLOSED = "Can't read this as a table: a quote is never closed (line 2)";
 
 describe("Unreadable Table", () => {
+  it("restored in raw text over unreadable text, shows the notice", async () => {
+    const p = pane('a,b\n1,"2\n', { tableView: "raw" });
+    expect(await screen.findByText(UNCLOSED)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try table view" })).toBeTruthy();
+    expect(p.tab().tableView).toBe("raw");
+    expect(p.change).not.toHaveBeenCalled();
+  });
+
+  it("fixing the text in raw text clears the notice", async () => {
+    const p = pane('a,b\n1,"2\n', { tableView: "raw" });
+    await screen.findByText(UNCLOSED);
+    await p.outside("a,b\n1,2\n");
+    await waitFor(() => expect(screen.queryByText(UNCLOSED)).toBeNull());
+    expect(p.tab().tableView).toBe("raw");
+  });
+
+  it("breaking the text in raw text shows the notice", async () => {
+    const p = pane("a,b\n1,2\n", { tableView: "raw" });
+    await act(async () => {});
+    await p.outside('a,b\n1,"2\n');
+    expect(await screen.findByText(UNCLOSED)).toBeTruthy();
+  });
+
+  it("readable text in raw text shows no notice", async () => {
+    pane("a,b\n1,2\n", { tableView: "raw" });
+    await act(async () => {});
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/Can't read this as a table/)).toBeNull();
+  });
+
   it("unreadable at open shows the notice in raw text with Try table view", async () => {
     const p = pane('a,b\n1,"2\n');
     expect(await screen.findByText(UNCLOSED)).toBeTruthy();

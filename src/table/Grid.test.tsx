@@ -242,8 +242,13 @@ describe("Grid", () => {
       name: "Resize column",
     })[0];
     fireEvent.mouseDown(handle, { clientX: 100 });
+    fireEvent.mouseMove(window, { clientX: 130 });
     fireEvent.mouseMove(window, { clientX: 150 });
+    // The drag shows live but reports once, on mouseup.
+    expect(screen.getAllByRole("columnheader")[0].style.width).toBe("150px");
+    expect(props.onWidths).not.toHaveBeenCalled();
     fireEvent.mouseUp(window, { clientX: 150 });
+    expect(props.onWidths).toHaveBeenCalledTimes(1);
     expect(props.onWidths).toHaveBeenLastCalledWith([150, 100]);
     vi.mocked(props.onWidths).mockClear();
     fireEvent.doubleClick(handle);

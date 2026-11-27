@@ -178,9 +178,15 @@ export function Grid(props: GridProps) {
     );
   };
 
+  /** Widths during a border drag: shown live, reported once on mouseup. */
+  const [dragWidths, setDragWidths] = useState<number[] | null>(null);
   const colWidths = useMemo(
-    () => Array.from({ length: nCols }, (_, c) => widths[c] ?? DEFAULT_WIDTH),
-    [widths, nCols],
+    () =>
+      Array.from(
+        { length: nCols },
+        (_, c) => (dragWidths ?? widths)[c] ?? DEFAULT_WIDTH,
+      ),
+    [widths, dragWidths, nCols],
   );
   const colOffsets = useMemo(() => {
     const out = [0];
@@ -427,10 +433,11 @@ export function Grid(props: GridProps) {
       const w = Math.max(RESIZE_MIN, Math.round(w0 + ev.clientX - x0));
       if (w === next[c]) return;
       next[c] = w;
-      onWidths.current([...next]);
+      setDragWidths([...next]);
     };
     const up = () => {
       endDrag.current?.();
+      if (next[c] !== w0) onWidths.current(next);
       if (dragged.current)
         setTimeout(() => {
           dragged.current = false;
@@ -440,6 +447,7 @@ export function Grid(props: GridProps) {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
       document.body.classList.remove("z-grid-resizing");
+      setDragWidths(null);
       endDrag.current = null;
     };
     window.addEventListener("mousemove", move);

@@ -121,6 +121,8 @@ export function TabPane(p: TabPaneProps) {
   const isText = isTextKind(tab.kind);
   /** A Table Tab in its grid View: the slot stays, hidden, under the grid. */
   const grid = tab.kind === "table" && tab.tableView !== "raw";
+  /** A Table Tab in raw text: its notice reads the text to stay current. */
+  const rawTable = tab.kind === "table" && tab.tableView === "raw";
   const isMarkdown = tab.kind === "text" && tab.language === "markdown";
   const rich = isMarkdown && p.mode === "rich";
   /** A Markdown Tab's preview; any other Tab is just edited. */
@@ -167,13 +169,14 @@ export function TabPane(p: TabPaneProps) {
         onReveal={p.onReveal}
         revealLabel={p.revealLabel}
       />
-      {tab.kind === "table" && p.tableNotice && (
+      {(rawTable || (tab.kind === "table" && p.tableNotice)) && (
         <Suspense fallback={null}>
           <TableNotice
             key={id}
             tab={tab}
             bridge={p.bridge}
-            notice={p.tableNotice}
+            notice={p.tableNotice ?? null}
+            check={rawTable}
             onNotice={onTableTabNotice}
             onTabPatch={p.onTabPatch}
           />
