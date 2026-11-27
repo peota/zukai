@@ -192,7 +192,8 @@ body.z-grid-resizing * {
 /* The cell editor: a textarea over the active cell, growing with its lines. */
 .z-grid-editor {
   position: absolute;
-  z-index: 3;
+  /* Above cells, below the sticky gutter (later in the DOM) and header. */
+  z-index: 1;
   box-sizing: border-box;
   margin: 0;
   padding: 4px 8px;
@@ -208,4 +209,9 @@ body.z-grid-resizing * {
   box-shadow:
     inset 0 0 0 2px var(--z-accent),
     var(--z-shadow-float);
+}
+
+/* In the header row: above its cells, below the sticky corner. */
+.z-grid-head > .z-grid-editor {
+  z-index: auto;
 }

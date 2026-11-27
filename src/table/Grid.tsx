@@ -455,6 +455,23 @@ export function Grid(props: GridProps) {
   };
 
   const ed = editing.editor;
+  // A header cell's editor lives in the sticky header row, a data cell's
+  // before the rows: either way the header, corner and gutter stay on top.
+  const editor = ed && (
+    <CellEditor
+      key={`${ed.pos}:${ed.col}`}
+      value={ed.value}
+      top={ed.pos < 0 ? 0 : headerH + ed.pos * rowH}
+      left={gutterW + (colOffsets[ed.col] ?? colOffsets[nCols])}
+      width={colWidths[ed.col] ?? DEFAULT_WIDTH}
+      rowHeight={rowH}
+      fontSize={fontSize}
+      onChange={editing.setEditorValue}
+      onCommit={editing.commit}
+      onCancel={editing.cancel}
+      onLostFocus={focusGrid}
+    />
+  );
   const leftPad = colOffsets[c0];
   const cols: number[] = [];
   for (let c = c0; c < c1; c++) cols.push(c);
@@ -607,23 +624,10 @@ export function Grid(props: GridProps) {
               </div>
             );
           })}
+          {ed && ed.pos < 0 && editor}
         </div>
+        {ed && ed.pos >= 0 && editor}
         {rows}
-        {ed && (
-          <CellEditor
-            key={`${ed.pos}:${ed.col}`}
-            value={ed.value}
-            top={ed.pos < 0 ? view.top : headerH + ed.pos * rowH}
-            left={gutterW + (colOffsets[ed.col] ?? colOffsets[nCols])}
-            width={colWidths[ed.col] ?? DEFAULT_WIDTH}
-            rowHeight={rowH}
-            fontSize={fontSize}
-            onChange={editing.setEditorValue}
-            onCommit={editing.commit}
-            onCancel={editing.cancel}
-            onLostFocus={focusGrid}
-          />
-        )}
       </div>
       {editing.menu && (
         <Menu

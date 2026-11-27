@@ -24,6 +24,8 @@ export interface CellEditorProps {
 }
 
 const PAD_Y = 4;
+/** Mod+these stay inside the textarea: undo, redo, select all, clipboard. */
+const NATIVE = /^Key[ZYACXV]$/;
 
 /**
  * A positioned textarea over the cell being edited. Enter commits and moves
@@ -58,9 +60,16 @@ export function CellEditor(p: CellEditorProps) {
   };
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    e.stopPropagation();
-    if (e.nativeEvent.isComposing) return;
-    if (e.key === "Enter" && e.altKey) {
+    if (e.nativeEvent.isComposing) {
+      e.stopPropagation();
+      return;
+    }
+    const mod = e.ctrlKey || e.metaKey;
+    // AltGr arrives as Ctrl+Alt off macOS: it types a character.
+    const altGr =
+      e.ctrlKey && e.altKey && !e.metaKey && [...e.key].length === 1;
+    if (e.key === "Enter" && e.altKey && !mod) {
+      e.stopPropagation();
       e.preventDefault();
       const ta = e.currentTarget;
       const { selectionStart: a, selectionEnd: b, value } = ta;
@@ -70,16 +79,36 @@ export function CellEditor(p: CellEditorProps) {
       requestAnimationFrame(() => ta.setSelectionRange(a + 1, a + 1));
       return;
     }
-    if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
+    if (e.key === "Enter" && !mod) {
+      e.stopPropagation();
       e.preventDefault();
       finish(() => p.onCommit(e.shiftKey ? "up" : "down"));
-    } else if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      return;
+    }
+    if (e.key === "Tab" && !mod && !e.altKey) {
+      e.stopPropagation();
       e.preventDefault();
       finish(() => p.onCommit(e.shiftKey ? "left" : "right"));
-    } else if (e.key === "Escape") {
+      return;
+    }
+    if (e.key === "Escape") {
+      e.stopPropagation();
       e.preventDefault();
       finish(p.onCancel);
+      return;
     }
+    if ((mod && !altGr) || /^F\d+$/.test(e.key)) {
+      if (!e.altKey && NATIVE.test(e.code)) {
+        // Undo/redo, select all and the clipboard work on the text.
+        e.stopPropagation();
+        return;
+      }
+      // An app or browser shortcut: commit in place, then let it through.
+      finish(() => p.onCommit(null));
+      return;
+    }
+    // Text editing (characters, arrows, Home/End, Backspace, Delete).
+    e.stopPropagation();
   };
 
   const lineH = Math.round(p.fontSize * 1.45);

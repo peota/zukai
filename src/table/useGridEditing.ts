@@ -108,7 +108,9 @@ export function useGridEditing(a: GridEditingArgs) {
     const ed = editor;
     if (!ed) return;
     setEditor(null);
-    a.focusGrid();
+    // Keyboard commits (Enter, Tab) return focus to the grid. A blur or
+    // shortcut commit leaves focus alone: the user, or the app, moved it.
+    if (move) a.focusGrid();
     const current = table.rows[ed.fileRow]?.cells[ed.col] ?? "";
     if (ed.value !== current) {
       const r = build(() => setCell(table, ed.fileRow, ed.col, ed.value));

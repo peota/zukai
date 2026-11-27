@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   deleteColumn,
@@ -92,7 +92,8 @@ const cell = (text: string) =>
     .find((e) => e.textContent === text) as HTMLElement;
 const gutter = (n: string) =>
   screen.getAllByRole("rowheader").find((e) => e.textContent === n)!;
-const editor = () => screen.queryByRole("textbox") as HTMLTextAreaElement;
+const editor = () =>
+  screen.queryByRole("textbox", { name: "Edit cell" }) as HTMLTextAreaElement;
 /** A menu item by label (a disabled one's name also holds its reason). */
 const item = (label: string) =>
   screen.getByRole("menuitem", { name: new RegExp(`^${label}`) });
@@ -156,6 +157,101 @@ describe("Grid editing", () => {
     fireEvent.keyDown(editor(), { key: "Enter" });
     expect(apply).not.toHaveBeenCalled();
     expect(selected(grid)).toEqual(["b"]);
+  });
+
+  it("Mod+S commits first, then reaches the app's window listener", () => {
+    const { grid, apply, table } = setup("a\nb\n");
+    const seen: number[] = [];
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "s") seen.push(apply.mock.calls.length);
+    };
+    window.addEventListener("keydown", onKey);
+    try {
+      fireEvent.keyDown(grid, { key: "F2" });
+      fireEvent.change(editor(), { target: { value: "x" } });
+      fireEvent.keyDown(editor(), { key: "s", code: "KeyS", ctrlKey: true });
+      expect(seen).toEqual([1]);
+      expect(apply.mock.calls[0][0]).toEqual(setCell(table, 0, 0, "x"));
+      expect(editor()).toBeNull();
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
+  });
+
+  it("F-keys commit and bubble; text keys stay in the editor", () => {
+    const { grid, apply } = setup("a\nb\n");
+    const keys: string[] = [];
+    const onKey = (e: KeyboardEvent) => keys.push(e.key);
+    window.addEventListener("keydown", onKey);
+    try {
+      fireEvent.keyDown(grid, { key: "F2" });
+      keys.length = 0;
+      fireEvent.keyDown(editor(), { key: "ArrowLeft" });
+      fireEvent.keyDown(editor(), { key: "q" });
+      fireEvent.keyDown(editor(), { key: "Home", shiftKey: true });
+      expect(keys).toEqual([]);
+      fireEvent.change(editor(), { target: { value: "y" } });
+      fireEvent.keyDown(editor(), { key: "F5" });
+      expect(keys).toEqual(["F5"]);
+      expect(apply).toHaveBeenCalledTimes(1);
+      expect(editor()).toBeNull();
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
+  });
+
+  it("Mod+Z, Mod+A and clipboard keys stay native in the editor", () => {
+    const { grid, apply, undo, redo } = setup("a\nb\n");
+    const keys: string[] = [];
+    const onKey = (e: KeyboardEvent) => keys.push(e.key);
+    window.addEventListener("keydown", onKey);
+    try {
+      fireEvent.keyDown(grid, { key: "F2" });
+      keys.length = 0;
+      fireEvent.change(editor(), { target: { value: "x" } });
+      for (const k of ["z", "y", "a", "c", "x", "v"])
+        fireEvent.keyDown(editor(), {
+          key: k,
+          code: `Key${k.toUpperCase()}`,
+          ctrlKey: true,
+        });
+      fireEvent.keyDown(editor(), {
+        key: "Z",
+        code: "KeyZ",
+        ctrlKey: true,
+        shiftKey: true,
+      });
+      expect(keys).toEqual([]);
+      expect(undo).not.toHaveBeenCalled();
+      expect(redo).not.toHaveBeenCalled();
+      expect(apply).not.toHaveBeenCalled();
+      expect(editor()).not.toBeNull();
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
+  });
+
+  it("a blur commit leaves focus where the user put it", () => {
+    const outside = document.createElement("input");
+    document.body.appendChild(outside);
+    try {
+      const { grid, apply } = setup("a\nb\n");
+      fireEvent.keyDown(grid, { key: "F2" });
+      fireEvent.change(editor(), { target: { value: "x" } });
+      act(() => outside.focus());
+      expect(apply).toHaveBeenCalledTimes(1);
+      expect(editor()).toBeNull();
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it("draws a header cell's editor inside the sticky header row", () => {
+    setup("name,age\nann,3\n", { header: true });
+    fireEvent.contextMenu(screen.getAllByRole("columnheader")[0]);
+    fireEvent.click(item("Rename column"));
+    expect(editor().parentElement).toHaveClass("z-grid-head");
   });
 
   it("Alt+Enter inserts a line break in the editor", () => {
