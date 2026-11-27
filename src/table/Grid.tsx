@@ -16,20 +16,26 @@ import {
   cellHidden,
   columnLabel,
   HIDDEN_DOTS,
+  rangeOf,
   recordNumber,
   splitMatches,
+  toggleSorted,
   toTsv,
+  uniformRange,
 } from "./gridHelpers";
 import type { ParsedTable } from "./parse";
 import { numericColumns, type TableSort } from "./view";
 import { visibleRange } from "./windowing";
 import "./table.css";
 
-/** row = position in `order`; rows only → whole rows, cols only → whole columns, both → a block. */
+/**
+ * row = position in `order`. rows only → whole rows (sorted unique positions,
+ * possibly non-contiguous); cols only → whole columns; both → a block.
+ */
 export interface GridSelection {
   row: number;
   col: number;
-  rows?: [number, number];
+  rows?: number[];
   cols?: [number, number];
 }
 
@@ -77,11 +83,15 @@ interface Pos {
   col: number;
 }
 type Mode = "cell" | "rows" | "cols";
-/** `active` is the anchor (the active cell); `head` is the moving end of a range. */
+/**
+ * `active` is the anchor (the active cell); `head` is the moving end of a
+ * range. In "rows" mode `rows` is the selected positions, sorted and unique.
+ */
 interface SelState {
   active: Pos;
   head: Pos;
   mode: Mode;
+  rows?: number[];
 }
 
 const clamp = (v: number, lo: number, hi: number) =>
@@ -89,30 +99,22 @@ const clamp = (v: number, lo: number, hi: number) =>
 const span = (a: number, b: number): [number, number] =>
   a <= b ? [a, b] : [b, a];
 
+const clampPos = (p: Pos, rows: number, cols: number): Pos => ({
+  row: clamp(p.row, 0, Math.max(0, rows - 1)),
+  col: clamp(p.col, 0, Math.max(0, cols - 1)),
+});
+
 function toSelection(s: SelState): GridSelection {
   const { active, head, mode } = s;
   const base = { row: active.row, col: active.col };
-  if (mode === "rows") return { ...base, rows: span(active.row, head.row) };
+  if (mode === "rows") return { ...base, rows: s.rows ?? [active.row] };
   if (mode === "cols") return { ...base, cols: span(active.col, head.col) };
   if (head.row === active.row && head.col === active.col) return base;
   return {
     ...base,
-    rows: span(active.row, head.row),
+    rows: rangeOf(active.row, head.row),
     cols: span(active.col, head.col),
   };
-}
-
-/** The selection as a block of positions: [rowFrom, rowTo] × [colFrom, colTo]. */
-function block(
-  sel: GridSelection,
-  rowCount: number,
-  colCount: number,
-): [number, number, number, number] {
-  const [r0, r1] =
-    sel.rows ?? (sel.cols ? [0, rowCount - 1] : [sel.row, sel.row]);
-  const [c0, c1] =
-    sel.cols ?? (sel.rows ? [0, colCount - 1] : [sel.col, sel.col]);
-  return [r0, r1, c0, c1];
 }
 
 export function Grid(props: GridProps) {
@@ -163,10 +165,6 @@ export function Grid(props: GridProps) {
     for (const w of colWidths) out.push(out[out.length - 1] + w);
     return out;
   }, [colWidths]);
-  const rowOffsets = useMemo(
-    () => Array.from({ length: nRows + 1 }, (_, i) => i * rowH),
-    [nRows, rowH],
-  );
   const numeric = useMemo(() => numericColumns(table, header), [table, header]);
 
   const digits = String(Math.max(1, table.rows.length)).length;
@@ -174,7 +172,8 @@ export function Grid(props: GridProps) {
   const totalW = gutterW + colOffsets[nCols];
   const bodyH = Math.max(0, view.h - headerH);
   const bodyW = Math.max(0, view.w - gutterW);
-  const [r0, r1] = visibleRange(rowOffsets, view.top, bodyH, ROW_OVERSCAN);
+  // Rows are uniform: window them in closed form (no offsets array).
+  const [r0, r1] = uniformRange(nRows, rowH, view.top, bodyH, ROW_OVERSCAN);
   const [c0, c1] = visibleRange(colOffsets, view.left, bodyW, COL_OVERSCAN);
   const pageRows = Math.max(1, Math.floor(bodyH / rowH));
 
@@ -184,26 +183,36 @@ export function Grid(props: GridProps) {
     head: { row: 0, col: 0 },
     mode: "cell",
   });
-  const fit = (p: Pos): Pos => ({
-    row: clamp(p.row, 0, Math.max(0, nRows - 1)),
-    col: clamp(p.col, 0, Math.max(0, nCols - 1)),
-  });
-  const st: SelState = {
-    active: fit(rawSel.active),
-    head: fit(rawSel.head),
-    mode: rawSel.mode,
-  };
-  const sel = toSelection(st);
-  const [sr0, sr1, sc0, sc1] = block(sel, nRows, nCols);
+  const fit = (p: Pos): Pos => clampPos(p, nRows, nCols);
+  // Rebuilt only when the selection or the shape changes.
+  const { st, sel } = useMemo(() => {
+    const kept = rawSel.rows?.filter((r) => r < nRows);
+    const st: SelState = {
+      active: clampPos(rawSel.active, nRows, nCols),
+      head: clampPos(rawSel.head, nRows, nCols),
+      mode: rawSel.mode,
+      rows: kept && kept.length > 0 ? kept : undefined,
+    };
+    return { st, sel: toSelection(st) };
+  }, [rawSel, nRows, nCols]);
+  const rowSet = useMemo(
+    () => (sel.rows && !sel.cols ? new Set(sel.rows) : null),
+    [sel],
+  );
+  const [br0, br1] = span(st.active.row, st.head.row);
+  const [sc0, sc1]: [number, number] =
+    st.mode === "rows" ? [0, nCols - 1] : span(st.active.col, st.head.col);
+  const inRows = (r: number): boolean =>
+    rowSet ? rowSet.has(r) : st.mode === "cols" || (r >= br0 && r <= br1);
+  const inCols = (c: number) => c >= sc0 && c <= sc1;
 
   const onSelection = useRef(props.onSelection);
   useEffect(() => {
     onSelection.current = props.onSelection;
   });
-  const selKey = JSON.stringify(sel);
   useEffect(() => {
-    onSelection.current?.(JSON.parse(selKey) as GridSelection);
-  }, [selKey]);
+    onSelection.current?.(sel);
+  }, [sel]);
 
   /** Scrolls so (row, col) is fully in view. */
   const reveal = (p: Pos) => {
@@ -236,8 +245,14 @@ export function Grid(props: GridProps) {
 
   const copy = () => {
     if (nRows === 0 || nCols === 0) return;
+    const positions =
+      st.mode === "rows"
+        ? (sel.rows ?? [])
+        : st.mode === "cols"
+          ? rangeOf(0, nRows - 1)
+          : rangeOf(br0, br1);
     const out: string[][] = [];
-    for (let r = sr0; r <= sr1; r++) {
+    for (const r of positions) {
       const line: string[] = [];
       for (let c = sc0; c <= sc1; c++) line.push(textOf(order[r], c));
       out.push(line);
@@ -258,7 +273,8 @@ export function Grid(props: GridProps) {
       setSel({ active: st.active, head: st.active, mode: "cell" });
       return;
     }
-    if (nRows === 0 || nCols === 0) return;
+    if (e.altKey || nRows === 0 || nCols === 0) return;
+    if (mod && (e.key === "PageUp" || e.key === "PageDown")) return;
     const from = e.shiftKey ? st.head : st.active;
     const lastR = nRows - 1;
     const lastC = nCols - 1;
@@ -293,18 +309,35 @@ export function Grid(props: GridProps) {
     }
     e.preventDefault();
     to = fit(to);
-    if (e.shiftKey) setSel({ ...st, head: to });
+    if (e.shiftKey)
+      setSel({
+        ...st,
+        head: to,
+        rows: st.mode === "rows" ? rangeOf(st.active.row, to.row) : undefined,
+      });
     else setSel({ active: to, head: to, mode: "cell" });
     reveal(to);
   };
 
   const pick = (e: ReactMouseEvent, p: Pos, mode: Mode) => {
     if (e.button !== 0) return;
+    const mod = platform === "mac" ? e.metaKey : e.ctrlKey;
+    const rowsFor = (list: number[]) => (mode === "rows" ? list : undefined);
     if (e.shiftKey) {
-      const keep = mode === st.mode ? st : { ...st, mode };
-      setSel({ ...keep, head: p, mode });
+      // Extends from the anchor and replaces any toggled set.
+      setSel({
+        active: st.active,
+        head: p,
+        mode,
+        rows: rowsFor(rangeOf(st.active.row, p.row)),
+      });
+    } else if (mod && mode === "rows") {
+      const base = st.mode === "rows" ? (st.rows ?? [st.active.row]) : [];
+      const rows = toggleSorted(base, p.row);
+      if (rows.length === 0) setSel({ active: p, head: p, mode: "cell" });
+      else setSel({ active: p, head: p, mode, rows });
     } else {
-      setSel({ active: p, head: p, mode });
+      setSel({ active: p, head: p, mode, rows: rowsFor([p.row]) });
     }
   };
 
@@ -314,6 +347,9 @@ export function Grid(props: GridProps) {
     onWidths.current = props.onWidths;
   });
   const endDrag = useRef<(() => void) | null>(null);
+  // A drag that moved ends with a click on the header cell (the common
+  // ancestor of mousedown and mouseup); that click must not sort.
+  const dragged = useRef(false);
   useEffect(() => () => endDrag.current?.(), []);
 
   const startResize = (e: ReactMouseEvent, c: number) => {
@@ -325,12 +361,19 @@ export function Grid(props: GridProps) {
     const w0 = colWidths[c];
     const next = [...colWidths];
     const move = (ev: MouseEvent) => {
+      if (ev.clientX !== x0) dragged.current = true;
       const w = Math.max(RESIZE_MIN, Math.round(w0 + ev.clientX - x0));
       if (w === next[c]) return;
       next[c] = w;
       onWidths.current([...next]);
     };
-    const up = () => endDrag.current?.();
+    const up = () => {
+      endDrag.current?.();
+      if (dragged.current)
+        setTimeout(() => {
+          dragged.current = false;
+        }, 0);
+    };
     endDrag.current = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
@@ -349,7 +392,7 @@ export function Grid(props: GridProps) {
 
   /** Fits column c to the widest cell in view (header included). */
   const fitColumn = (c: number) => {
-    const [v0, v1] = visibleRange(rowOffsets, view.top, bodyH, 0);
+    const [v0, v1] = uniformRange(nRows, rowH, view.top, bodyH, 0);
     let chars = headerLabel(c).length;
     for (let r = v0; r < v1; r++)
       chars = Math.max(chars, textOf(order[r], c).length);
@@ -374,14 +417,12 @@ export function Grid(props: GridProps) {
   const leftPad = colOffsets[c0];
   const cols: number[] = [];
   for (let c = c0; c < c1; c++) cols.push(c);
-  const inRows = (r: number) => r >= sr0 && r <= sr1;
-  const inCols = (c: number) => c >= sc0 && c <= sc1;
 
   const rows: ReactNode[] = [];
   for (let r = r0; r < r1; r++) {
     const fileRow = order[r];
     const row = table.rows[fileRow];
-    const rowSelected = sel.rows !== undefined && !sel.cols && inRows(r);
+    const rowSelected = st.mode === "rows" && inRows(r);
     rows.push(
       <div
         key={fileRow}
@@ -459,8 +500,7 @@ export function Grid(props: GridProps) {
           {cols.map((c) => {
             const dir = sort?.col === c ? sort.dir : undefined;
             const label = headerLabel(c);
-            const colSelected =
-              sel.cols !== undefined && !sel.rows && inCols(c);
+            const colSelected = st.mode === "cols" && inCols(c);
             return (
               <div
                 key={c}
@@ -478,7 +518,13 @@ export function Grid(props: GridProps) {
                 title={headerMasked(c) ? undefined : label || undefined}
                 className="z-grid-hcell"
                 style={{ width: colWidths[c] }}
-                onClick={() => props.onSortClick(c)}
+                onClick={() => {
+                  if (dragged.current) {
+                    dragged.current = false;
+                    return;
+                  }
+                  props.onSortClick(c);
+                }}
               >
                 <button
                   type="button"

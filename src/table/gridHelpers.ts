@@ -66,3 +66,36 @@ export function splitMatches(value: string, needle: string): string[] {
   out.push(value.slice(pos));
   return out;
 }
+
+/**
+ * [first, last) of `n` uniform items of `size` px in view at `scroll`, with
+ * `overscan` each side. Closed form: no offsets array.
+ */
+export function uniformRange(
+  n: number,
+  size: number,
+  scroll: number,
+  viewport: number,
+  overscan: number,
+): [number, number] {
+  if (n <= 0 || size <= 0) return [0, 0];
+  const first = Math.min(n - 1, Math.max(0, Math.floor(scroll / size)));
+  const last = Math.max(
+    first + 1,
+    Math.min(n, Math.ceil((scroll + viewport) / size)),
+  );
+  return [Math.max(0, first - overscan), Math.min(n, last + overscan)];
+}
+
+/** a..b inclusive, either order, ascending. */
+export function rangeOf(a: number, b: number): number[] {
+  const lo = Math.min(a, b);
+  return Array.from({ length: Math.abs(b - a) + 1 }, (_, i) => lo + i);
+}
+
+/** Adds `x` to sorted unique `list`, or removes it if present. */
+export function toggleSorted(list: readonly number[], x: number): number[] {
+  return list.includes(x)
+    ? list.filter((v) => v !== x)
+    : [...list, x].sort((a, b) => a - b);
+}

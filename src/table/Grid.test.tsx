@@ -9,7 +9,13 @@ import {
   vi,
 } from "vitest";
 import { charPx, Grid, type GridProps } from "./Grid";
-import { parseTable, type ParsedTable } from "./parse";
+import { parseTable, type ParsedTable, type Row } from "./parse";
+import { visibleRange } from "./windowing";
+
+vi.mock("./windowing", async (orig) => {
+  const real = await orig<typeof import("./windowing")>();
+  return { ...real, visibleRange: vi.fn(real.visibleRange) };
+});
 
 vi.mock("../app/shortcuts", async (orig) => ({
   ...(await orig<typeof import("../app/shortcuts")>()),
@@ -211,7 +217,7 @@ describe("Grid", () => {
       "r5c1",
     ]);
     expect(onSelection).toHaveBeenLastCalledWith(
-      expect.objectContaining({ rows: [3, 5] }),
+      expect.objectContaining({ rows: [3, 4, 5] }),
     );
   });
 
@@ -288,5 +294,98 @@ describe("Grid", () => {
     fireEvent.mouseDown(screen.getAllByRole("rowheader")[0]);
     fireEvent.keyDown(grid, { key: "c", code: "KeyC", ctrlKey: true });
     expect(writeText).toHaveBeenCalledWith("a\t••••");
+  });
+
+  it("windows 1,000,000 rows without a row offsets array", () => {
+    const n = 1_000_000;
+    const rows: Row[] = Array.from({ length: n }, (_, i) => ({
+      start: 0,
+      end: 0,
+      eol: "\n",
+      cells: [String(i)],
+      cellStart: [0],
+      cellEnd: [0],
+      quoted: [false],
+    }));
+    const table: ParsedTable = {
+      rows,
+      delimiter: ",",
+      allQuoted: false,
+      width: 1,
+    };
+    const order = Array.from({ length: n }, (_, i) => i);
+    vi.mocked(visibleRange).mockClear();
+    const { grid } = setup("x\n", { table, order, widths: [100] });
+    expect(screen.getAllByRole("row").length).toBeLessThan(100);
+    expect(grid).toHaveAttribute("aria-rowcount", String(n + 1));
+    grid.focus();
+    fireEvent.keyDown(grid, { key: "End", ctrlKey: true });
+    expect(selected(grid)).toEqual(["999999"]);
+    // visibleRange is only used for columns (offsets of width + 1).
+    for (const [offsets] of vi.mocked(visibleRange).mock.calls)
+      expect(offsets.length).toBeLessThanOrEqual(2);
+  });
+
+  it("does not sort when a resize drag ends over the header cell", async () => {
+    const { props } = setup("a,b\n1,2\n", { header: true });
+    const head = screen.getAllByRole("columnheader")[0];
+    const handle = within(head).getByRole("separator");
+    fireEvent.mouseDown(handle, { clientX: 100 });
+    fireEvent.mouseMove(window, { clientX: 40 });
+    fireEvent.mouseUp(head, { clientX: 40 });
+    fireEvent.click(head);
+    expect(props.onSortClick).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 0));
+    fireEvent.click(head);
+    expect(props.onSortClick).toHaveBeenCalledWith(0);
+  });
+
+  it("toggles rows with Mod+click in the gutter", () => {
+    const onSelection = vi.fn();
+    const { grid } = setup(labelled(8, 1), { onSelection });
+    const gutter = (n: string) =>
+      screen.getAllByRole("rowheader").find((e) => e.textContent === n)!;
+    fireEvent.mouseDown(gutter("2"));
+    fireEvent.mouseDown(gutter("5"), { ctrlKey: true });
+    expect(selected(grid)).toEqual(["r1c0", "r4c0"]);
+    expect(onSelection).toHaveBeenLastCalledWith(
+      expect.objectContaining({ rows: [1, 4] }),
+    );
+    fireEvent.mouseDown(gutter("2"), { ctrlKey: true });
+    expect(selected(grid)).toEqual(["r4c0"]);
+  });
+
+  it("Shift+click after Mod+click extends from the toggled row", () => {
+    const onSelection = vi.fn();
+    const { grid } = setup(labelled(8, 1), { onSelection });
+    const gutter = (n: string) =>
+      screen.getAllByRole("rowheader").find((e) => e.textContent === n)!;
+    fireEvent.mouseDown(gutter("2"));
+    fireEvent.mouseDown(gutter("5"), { ctrlKey: true });
+    fireEvent.mouseDown(gutter("7"), { shiftKey: true });
+    expect(selected(grid)).toEqual(["r4c0", "r5c0", "r6c0"]);
+    expect(onSelection).toHaveBeenLastCalledWith(
+      expect.objectContaining({ rows: [4, 5, 6] }),
+    );
+  });
+
+  it("copies non-contiguous rows in order", () => {
+    const { grid } = setup(labelled(4, 2));
+    grid.focus();
+    const gutter = (n: string) =>
+      screen.getAllByRole("rowheader").find((e) => e.textContent === n)!;
+    fireEvent.mouseDown(gutter("3"));
+    fireEvent.mouseDown(gutter("1"), { ctrlKey: true });
+    fireEvent.keyDown(grid, { key: "c", code: "KeyC", ctrlKey: true });
+    expect(writeText).toHaveBeenCalledWith("r0c0\tr0c1\nr2c0\tr2c1");
+  });
+
+  it("ignores navigation with Alt, and PageUp/PageDown with Mod", () => {
+    const { grid } = setup(labelled(50, 2));
+    grid.focus();
+    fireEvent.keyDown(grid, { key: "ArrowDown", altKey: true });
+    fireEvent.keyDown(grid, { key: "End", altKey: true });
+    fireEvent.keyDown(grid, { key: "PageDown", ctrlKey: true });
+    expect(selected(grid)).toEqual(["r0c0"]);
   });
 });
