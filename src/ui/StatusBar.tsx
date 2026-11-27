@@ -122,6 +122,8 @@ export interface TableStatus {
    * Raw text: only one the user set; without it there is no Delimiter chip.
    */
   delimiter?: Delimiter;
+  /** The Tab's own Delimiter (the user set it): else the shown one is a guess. */
+  delimiterSet?: boolean;
   header: boolean;
   onDelimiter(delimiter: Delimiter): void;
   onHeader(on: boolean): void;
@@ -317,17 +319,10 @@ export function StatusBar({
       ) : kindLabel !== undefined ? (
         <span className="ml-auto px-2.5 py-1">{kindLabel}</span>
       ) : table ? (
+        // The View switch comes after everything that differs between the
+        // Views or changes with the Filter, so it never moves sideways.
         <div className="ml-auto flex items-center gap-2">
-          <ViewSwitch
-            mode={table.view}
-            onChange={table.onView}
-            hint={table.viewHint}
-          />
-          <span
-            aria-hidden="true"
-            className="mx-1 h-4 w-px bg-hairline-strong"
-          />
-          <span className="px-2.5 py-1">Table</span>
+          <span className="pr-0.5 text-faint">Table</span>
           {table.info && (
             <>
               <span className="px-2.5 py-1 tabular-nums">
@@ -341,6 +336,12 @@ export function StatusBar({
           {(tableGrid || table.delimiter) && (
             <Chip
               anchor="delimiter"
+              focusable
+              title={
+                table.delimiterSet
+                  ? "Set by you"
+                  : "Guessed from the file — click to change"
+              }
               expanded={delimiterAt !== null}
               onClick={(r) =>
                 delimiterAt ? closeDelimiter() : setDelimiterAt(r)
@@ -358,8 +359,9 @@ export function StatusBar({
           {tableGrid && (
             <button
               type="button"
-              tabIndex={-1}
+              tabIndex={0}
               aria-pressed={table.header}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => table.onHeader(!table.header)}
               className={CHIP + " flex items-center gap-1"}
             >
@@ -369,6 +371,15 @@ export function StatusBar({
               )}
             </button>
           )}
+          <span
+            aria-hidden="true"
+            className="mx-1 h-4 w-px bg-hairline-strong"
+          />
+          <ViewSwitch
+            mode={table.view}
+            onChange={table.onView}
+            hint={table.viewHint}
+          />
           {file && (
             <>
               <Chip
@@ -695,17 +706,27 @@ function Chip({
   anchor,
   expanded,
   onClick,
+  focusable,
+  title,
   children,
 }: {
   anchor: string;
   expanded: boolean;
   onClick(rect: DOMRect): void;
+  /**
+   * In the Tab order, for the keyboard; a mouse click still leaves focus
+   * where it was.
+   */
+  focusable?: boolean;
+  title?: string;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
-      tabIndex={-1}
+      tabIndex={focusable ? 0 : -1}
+      onMouseDown={focusable ? (e) => e.preventDefault() : undefined}
+      title={title}
       data-menu-anchor={anchor}
       aria-haspopup="menu"
       aria-expanded={expanded}

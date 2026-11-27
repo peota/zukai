@@ -1073,6 +1073,7 @@ export default function App() {
                     active.tableView === "raw"
                       ? active.delimiter
                       : (active.delimiter ?? tableInfo.delimiterOf(active.id)),
+                  delimiterSet: active.delimiter !== undefined,
                   header: active.header ?? true,
                   onDelimiter: (delimiter) => {
                     updateTab(active.id, { delimiter });

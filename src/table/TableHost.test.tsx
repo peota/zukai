@@ -189,13 +189,58 @@ describe("TableHost", () => {
     expect(screen.queryByRole("grid")).toBeNull();
   });
 
-  it("top bar: Raw text switches the View", async () => {
-    const h = host("a,b\n1,2\n");
+  it("the top bar holds only the Filter: the View switch is the status bar's", async () => {
+    host("a,b\n1,2\n");
     await ready();
-    const grid = screen.getByRole("button", { name: "Grid" });
-    expect(grid).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("button", { name: "Raw text" }));
-    expect(h.patches).toContainEqual({ tableView: "raw" });
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Raw text" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "View" })).toBeNull();
+  });
+
+  it("Filter: an inline count of matches, announced politely", async () => {
+    host("name\nann\nbob\ncarl\n", { filter: "a" });
+    await ready();
+    const count = screen.getByText("2 of 3");
+    expect(count).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("Filter: no count while no filter applies", async () => {
+    host("name\nann\nbob\n");
+    await ready();
+    expect(screen.queryByText(/ of /)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear filter" })).toBeNull();
+  });
+
+  it("Filter: the clear button empties the box and the Filter at once", async () => {
+    const h = host("name\nann\nbob\n", { filter: "a" });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filter" }));
+    expect(screen.getByPlaceholderText("Filter rows…")).toHaveValue("");
+    expect(h.tab().filter).toBeUndefined();
+    expect(column0()).toEqual(["ann", "bob"]);
+    expect(screen.queryByRole("button", { name: "Clear filter" })).toBeNull();
+  });
+
+  it("Filter: Esc in the box clears it", async () => {
+    const h = host("name\nann\nbob\n", { filter: "b" });
+    await ready();
+    const box = screen.getByPlaceholderText("Filter rows…");
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(box).toHaveValue("");
+    expect(h.tab().filter).toBeUndefined();
+  });
+
+  it("Filter: no matches shows a quiet line with Clear filter, and no Add row", async () => {
+    const h = host("name\nann\nbob\n", { filter: "zzz" });
+    await ready();
+    expect(screen.getByText('No rows match "zzz"')).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add row" })).toBeNull();
+    const clears = screen.getAllByRole("button", { name: "Clear filter" });
+    expect(clears).toHaveLength(2);
+    fireEvent.click(clears[1]);
+    expect(h.tab().filter).toBeUndefined();
+    expect(screen.queryByText(/No rows match/)).toBeNull();
+    expect(column0()).toEqual(["ann", "bob"]);
   });
 
   it("Filter: typing filters after 150 ms and patches the Tab", async () => {

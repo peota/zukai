@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TextBridge } from "../editor/EditorHost";
 import type { TableInfo, TableUnreadable, TabState } from "../model/types";
@@ -66,7 +67,7 @@ interface Shown {
   header: boolean;
 }
 
-/** A Table Tab's grid View: top bar (View switch, Filter) over the grid. */
+/** A Table Tab's grid View: the Filter bar over the grid. */
 export default function TableHost(p: TableHostProps) {
   const { tab, bridge, onTabPatch } = p;
   const id = tab.id;
@@ -254,42 +255,61 @@ export default function TableHost(p: TableHostProps) {
     edit.apply(r, [...order, at + count - 1], undefined, table);
   };
 
+  /** Empties the Filter box and the Filter at once (no pause). */
+  const clearFilter = () => {
+    setQuery("");
+    if (filter) onTabPatch(id, { filter: undefined });
+  };
+  const noMatch = table !== null && !!filter && order.length === 0;
+
   return (
     <div
       data-testid="table-host"
       className="flex size-full min-w-0 flex-col bg-editor"
     >
-      <div className="flex shrink-0 select-none items-center gap-2 border-b border-hairline px-3 py-1.5 text-ui-sm">
-        <div
-          role="group"
-          aria-label="View"
-          className="flex shrink-0 rounded-[6px] bg-sunken p-0.5"
-        >
-          <ViewButton pressed>Grid</ViewButton>
-          <ViewButton onClick={() => onTabPatch(id, { tableView: "raw" })}>
-            Raw text
-          </ViewButton>
+      <div className="flex h-10 shrink-0 select-none items-center gap-2 border-b border-hairline bg-editor px-3 text-ui-sm">
+        <div className="flex h-7 w-72 min-w-0 items-center gap-1 rounded-[6px] bg-sunken pr-0.5 pl-2 focus-within:shadow-[0_0_0_1px_var(--z-accent)]">
+          <input
+            ref={filterBox}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && (query || filter)) {
+                e.preventDefault();
+                clearFilter();
+              }
+            }}
+            placeholder="Filter rows…"
+            aria-label="Filter rows"
+            spellCheck={false}
+            className="h-full min-w-0 flex-1 bg-transparent text-text outline-none placeholder:text-faint"
+          />
+          <span
+            aria-live="polite"
+            className="shrink-0 whitespace-nowrap text-faint tabular-nums"
+          >
+            {table && filter ? `${order.length} of ${rows}` : ""}
+          </span>
+          {query && (
+            <button
+              type="button"
+              aria-label="Clear filter"
+              title="Clear filter (Esc)"
+              onClick={() => {
+                clearFilter();
+                filterBox.current?.focus();
+              }}
+              className="flex size-6 shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-row-hover hover:text-text"
+            >
+              <X size={14} strokeWidth={2} aria-hidden />
+            </button>
+          )}
         </div>
-        <input
-          ref={filterBox}
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape" && query) {
-              e.preventDefault();
-              setQuery("");
-            }
-          }}
-          placeholder="Filter rows…"
-          aria-label="Filter rows"
-          spellCheck={false}
-          className="w-56 min-w-0 rounded-[6px] bg-sunken px-2 py-1 text-text outline-none placeholder:text-faint focus:shadow-[0_0_0_1px_var(--z-accent)]"
-        />
         {table && busy && (
           <span className="shrink-0 text-muted">Reading table…</span>
         )}
-        {table && order.length === 0 && !readOnly && (
+        {table && rows === 0 && !filter && !readOnly && (
           <button
             type="button"
             onClick={addRow}
@@ -327,31 +347,23 @@ export default function TableHost(p: TableHostProps) {
             focusRequest={focusGrid}
             onFocusDone={onFocusDone}
             memory={id}
+            empty={
+              noMatch ? (
+                <div className="flex flex-col items-center gap-2 text-ui-sm text-muted">
+                  <span>{`No rows match "${filter}"`}</span>
+                  <button
+                    type="button"
+                    onClick={clearFilter}
+                    className="rounded-[6px] px-3 py-1 font-medium text-muted hover:bg-row-hover hover:text-text"
+                  >
+                    Clear filter
+                  </button>
+                </div>
+              ) : undefined
+            }
           />
         )}
       </div>
     </div>
-  );
-}
-
-function ViewButton(p: {
-  pressed?: boolean;
-  onClick?(): void;
-  children: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={p.pressed ?? false}
-      onClick={p.onClick}
-      className={
-        "rounded-[5px] px-2 py-0.5 " +
-        (p.pressed
-          ? "bg-editor text-text shadow-[0_0_0_1px_var(--z-hairline)]"
-          : "text-muted hover:text-text")
-      }
-    >
-      {p.children}
-    </button>
   );
 }

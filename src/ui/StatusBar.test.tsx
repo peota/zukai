@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { FileFormat } from "../model/types";
 import { StatusBar, fileSize, type StatusBarProps } from "./StatusBar";
@@ -678,6 +684,71 @@ describe("StatusBar on a Table Tab", () => {
     });
     expect(screen.queryByRole("button", { name: "Delimiter" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Header row" })).toBeNull();
+  });
+
+  /** The controls after the View switch, in order, by name. */
+  const afterSwitch = () => {
+    const group = screen.getByRole("radiogroup", { name: "Table view" });
+    return screen
+      .getAllByRole("button")
+      .filter(
+        (b) =>
+          group.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING,
+      )
+      .map((b) => b.textContent);
+  };
+
+  it("the View switch holds its place: what follows it is the same in both Views", () => {
+    tableBar();
+    const grid = afterSwitch();
+    // Counts, Delimiter and Header row (grid only, or changing with the
+    // Filter) come before it.
+    const group = screen.getByRole("radiogroup", { name: "Table view" });
+    for (const el of [
+      screen.getByText("52,113 rows"),
+      screen.getByRole("button", { name: "Comma" }),
+      screen.getByRole("button", { name: "Header row" }),
+    ])
+      expect(
+        el.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    cleanup();
+    tableBar({ view: "raw", info: undefined });
+    expect(afterSwitch()).toEqual(grid);
+  });
+
+  it("Table is a plain label, not a chip", () => {
+    tableBar();
+    const label = screen.getByText("Table");
+    expect(label.tagName).toBe("SPAN");
+    expect(label.className).toContain("text-faint");
+    expect(label.className).not.toContain("px-2.5");
+  });
+
+  it("the Delimiter and Header row chips are in the Tab order, and a click doesn't take focus", () => {
+    tableBar();
+    for (const b of [
+      screen.getByRole("button", { name: "Comma" }),
+      screen.getByRole("button", { name: "Header row" }),
+    ]) {
+      expect(b).toHaveAttribute("tabindex", "0");
+      // A mouse click leaves focus where it was (the app refocuses the grid).
+      expect(fireEvent.mouseDown(b)).toBe(false);
+    }
+  });
+
+  it("the Delimiter chip says whether it was guessed or set", () => {
+    tableBar({ delimiterSet: false });
+    expect(screen.getByRole("button", { name: "Comma" })).toHaveAttribute(
+      "title",
+      "Guessed from the file — click to change",
+    );
+    cleanup();
+    tableBar({ delimiterSet: true });
+    expect(screen.getByRole("button", { name: "Comma" })).toHaveAttribute(
+      "title",
+      "Set by you",
+    );
   });
 
   it("a grid whose Delimiter isn't read yet shows a plain Delimiter chip", () => {
