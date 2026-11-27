@@ -1,7 +1,7 @@
 import { readTable, type Delimiter, type ParseResult } from "./parse";
 
 /** Longer texts (UTF-16 units) are parsed in a worker. */
-const WORKER_THRESHOLD = 2_000_000;
+export const WORKER_THRESHOLD = 2_000_000;
 
 /** Parses off the main thread when text.length > 2_000_000 (UTF-16 units). */
 export function parseAsync(
@@ -19,6 +19,10 @@ export function parseAsync(
     worker.onmessage = (e: MessageEvent<ParseResult>) => {
       worker.terminate();
       resolve(e.data);
+    };
+    worker.onmessageerror = () => {
+      worker.terminate();
+      reject(new Error("table parse reply could not be read"));
     };
     worker.onerror = (e) => {
       worker.terminate();

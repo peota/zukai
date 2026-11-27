@@ -17,6 +17,13 @@ function setup(text: string) {
       return () => listeners.delete(cb);
     },
   };
+  bridge.change = (id, changes) => {
+    base.change(id, changes);
+    let t = texts[id];
+    for (const c of [...changes].reverse())
+      t = t.slice(0, c.from) + c.insert + t.slice(c.to ?? c.from);
+    texts[id] = t;
+  };
   const outside = (t: string) => {
     texts.a = t;
     listeners.forEach((cb) => cb(t));
@@ -169,6 +176,141 @@ describe("useTableModel", () => {
     });
     const m = result.current.model;
     expect(m.status === "ready" && m.table.rows).toHaveLength(4);
+  });
+
+  function edit(text: string): EditResult {
+    const r = readTable(text, "x.csv");
+    if (!r.ok) throw new Error("bad");
+    return { changes: [{ from: 6, to: 7, insert: "9" }], table: r.table };
+  }
+
+  /** A parser whose calls after the first wait for release(). */
+  function gated() {
+    const waiting: Array<() => void> = [];
+    let first = true;
+    const fn = vi.fn((t: string, p: string, o?: Delimiter) => {
+      if (first) {
+        first = false;
+        return Promise.resolve(readTable(t, p, o));
+      }
+      return new Promise<ParseResult>((res, rej) => {
+        waiting.push(() => res(readTable(t, p, o)));
+        void rej;
+      });
+    });
+    return { fn, release: () => waiting.splice(0).forEach((f) => f()) };
+  }
+
+  it("refuses apply while an outside re-parse is pending", async () => {
+    const { bridge, base, outside } = setup("a,b\n1,2\n");
+    const g = gated();
+    const { result } = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, g.fn),
+    );
+    await waitFor(() => expect(result.current.model.status).toBe("ready"));
+    act(() => outside("a,b\n1,2\n3,4\n"));
+    let ok = true;
+    act(() => {
+      ok = result.current.apply(edit("a,b\n1,9\n"));
+    });
+    expect(ok).toBe(false);
+    expect(base.change).not.toHaveBeenCalled();
+    await act(async () => g.release());
+    const m = result.current.model;
+    expect(m.status === "ready" && m.table.rows).toHaveLength(3);
+  });
+
+  it("refuses apply while an override re-parse is pending", async () => {
+    const { bridge, base } = setup("a;b\n1;2\n");
+    const g = gated();
+    const { result, rerender } = renderHook(
+      ({ o }: { o: Delimiter | undefined }) =>
+        useTableModel(bridge, "a", "x.csv", o, g.fn),
+      { initialProps: { o: undefined as Delimiter | undefined } },
+    );
+    await waitFor(() => expect(result.current.model.status).toBe("ready"));
+    rerender({ o: ";" });
+    await act(async () => {});
+    let ok = true;
+    act(() => {
+      ok = result.current.apply(edit("a;b\n1;9\n"));
+    });
+    expect(ok).toBe(false);
+    expect(base.change).not.toHaveBeenCalled();
+    await act(async () => g.release());
+    const m = result.current.model;
+    expect(m.status === "ready" && m.table.delimiter).toBe(";");
+  });
+
+  it("refuses apply on an unreadable model", async () => {
+    const { bridge, base } = setup('a,b\n1,"2\n');
+    const { result } = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, sync),
+    );
+    await waitFor(() => expect(result.current.model.status).toBe("unreadable"));
+    let ok = true;
+    act(() => {
+      ok = result.current.apply(edit("a,b\n1,9\n"));
+    });
+    expect(ok).toBe(false);
+    expect(base.change).not.toHaveBeenCalled();
+  });
+
+  it("goes to reading when a current re-parse fails", async () => {
+    const { bridge, base, outside } = setup("a,b\n1,2\n");
+    let first = true;
+    const flaky = vi.fn(async (t: string, p: string) => {
+      if (first) {
+        first = false;
+        return readTable(t, p);
+      }
+      throw new Error("worker died");
+    });
+    const { result } = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, flaky),
+    );
+    await waitFor(() => expect(result.current.model.status).toBe("ready"));
+    act(() => outside("a,b\n1,2\n3,4\n"));
+    await waitFor(() => expect(result.current.model.status).toBe("reading"));
+    let ok = true;
+    act(() => {
+      ok = result.current.apply(edit("a,b\n1,9\n"));
+    });
+    expect(ok).toBe(false);
+    expect(base.change).not.toHaveBeenCalled();
+  });
+
+  it("refuses apply when the text changed out of band", async () => {
+    const { bridge, base } = setup("a,b\n1,2\n");
+    const { result } = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, sync),
+    );
+    await waitFor(() => expect(result.current.model.status).toBe("ready"));
+    bridge.text = () => "something else";
+    let ok = true;
+    act(() => {
+      ok = result.current.apply(edit("a,b\n1,9\n"));
+    });
+    expect(ok).toBe(false);
+    expect(base.change).not.toHaveBeenCalled();
+  });
+
+  it("allows a second apply after a successful one", async () => {
+    const { bridge, base } = setup("a,b\n1,2\n");
+    const { result } = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, sync),
+    );
+    await waitFor(() => expect(result.current.model.status).toBe("ready"));
+    let ok1 = false;
+    let ok2 = false;
+    act(() => {
+      ok1 = result.current.apply(edit("a,b\n1,9\n"));
+    });
+    act(() => {
+      ok2 = result.current.apply(edit("a,b\n1,9\n"));
+    });
+    expect(ok1 && ok2).toBe(true);
+    expect(base.change).toHaveBeenCalledTimes(2);
   });
 
   it("unsubscribes on unmount", async () => {
