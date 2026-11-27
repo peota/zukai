@@ -354,18 +354,21 @@ export function StatusBar({
               </span>
             </Chip>
           )}
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-pressed={table.header}
-            onClick={() => table.onHeader(!table.header)}
-            className={CHIP + " flex items-center gap-1"}
-          >
-            Header row
-            {table.header && (
-              <Icon name="check" size={12} className="text-accent" />
-            )}
-          </button>
+          {/* Header row changes only the grid: none in raw text. */}
+          {tableGrid && (
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-pressed={table.header}
+              onClick={() => table.onHeader(!table.header)}
+              className={CHIP + " flex items-center gap-1"}
+            >
+              Header row
+              {table.header && (
+                <Icon name="check" size={12} className="text-accent" />
+              )}
+            </button>
+          )}
           {file && (
             <>
               <Chip

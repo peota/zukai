@@ -454,6 +454,58 @@ describe("Grid editing", () => {
     expect(selected(grid)).toEqual(["c"]);
   });
 
+  it("double-clicking a data cell edits it", () => {
+    setup("a,b\nc,d\n");
+    fireEvent.mouseDown(cell("d"));
+    fireEvent.doubleClick(cell("d"));
+    expect(editor().value).toBe("d");
+    expect(document.activeElement).toBe(editor());
+  });
+
+  it("double-clicking a header cell renames it and leaves the Sort as it was", () => {
+    const { props } = setup("name,age\nann,3\n", { header: true });
+    const head = screen.getAllByRole("columnheader")[1];
+    fireEvent.click(head, { detail: 1 });
+    fireEvent.click(head, { detail: 2 });
+    fireEvent.doubleClick(head);
+    expect(props.onSortClick).toHaveBeenCalledTimes(1);
+    expect(props.onSort).toHaveBeenLastCalledWith(undefined);
+    expect(editor().value).toBe("age");
+    expect(editor().parentElement).toHaveClass("z-grid-head");
+  });
+
+  it("double-clicking a header without a header row only sorts", () => {
+    const { props } = setup("a,b\n1,2\n");
+    const head = screen.getAllByRole("columnheader")[0];
+    fireEvent.click(head, { detail: 1 });
+    fireEvent.click(head, { detail: 2 });
+    fireEvent.doubleClick(head);
+    expect(props.onSortClick).toHaveBeenCalledTimes(1);
+    expect(props.onSort).not.toHaveBeenCalled();
+    expect(editor()).toBeNull();
+  });
+
+  it("Shift+F10 or the ContextMenu key opens the column menu at the active cell", () => {
+    const { grid } = setup("name,age\nann,3\n", { header: true });
+    fireEvent.mouseDown(cell("3"));
+    fireEvent.keyDown(grid, { key: "F10", shiftKey: true });
+    expect(screen.getByRole("menu", { name: "Column" })).toBeTruthy();
+    fireEvent.click(item("Rename column"));
+    expect(editor().value).toBe("age");
+    fireEvent.keyDown(editor(), { key: "Escape" });
+    fireEvent.keyDown(grid, { key: "ContextMenu" });
+    expect(screen.getByRole("menu", { name: "Column" })).toBeTruthy();
+  });
+
+  it("with whole rows selected, the menu key opens the row menu", () => {
+    const { grid, apply, table } = setup("a\nb\nc\n");
+    fireEvent.mouseDown(gutter("2"));
+    fireEvent.keyDown(grid, { key: "F10", shiftKey: true });
+    expect(screen.getByRole("menu", { name: "Row" })).toBeTruthy();
+    fireEvent.click(item("Delete row"));
+    expect(apply.mock.calls[0][0]).toEqual(deleteRows(table, [1]));
+  });
+
   it("every apply names the table its edit was built from", () => {
     const { grid, apply, table } = setup("name,age\nann,3\nbob,4\n", {
       header: true,

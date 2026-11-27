@@ -666,9 +666,8 @@ describe("StatusBar on a Table Tab", () => {
       "true",
     );
     expect(screen.getByRole("button", { name: "Comma" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Header row" }),
-    ).toBeInTheDocument();
+    // Header row does nothing in raw text: no toggle there.
+    expect(screen.queryByRole("button", { name: "Header row" })).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "Grid" }));
     expect(t.onView).toHaveBeenCalledWith("grid");
   });
@@ -678,7 +677,7 @@ describe("StatusBar on a Table Tab", () => {
       table: table({ view: "raw", info: undefined, delimiter: undefined }),
     });
     expect(screen.queryByRole("button", { name: "Delimiter" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Header row" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Header row" })).toBeNull();
   });
 
   it("a grid whose Delimiter isn't read yet shows a plain Delimiter chip", () => {

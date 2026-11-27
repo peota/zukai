@@ -59,6 +59,8 @@ export interface GridEditingArgs {
   /** Sets the selection; a "cell" selection is also scrolled into view. */
   select(active: CellPos, mode: SelectMode, rows?: number[]): void;
   focusGrid(): void;
+  /** Where a menu opened from the keyboard goes: by the active cell. */
+  menuAnchor(): { x: number; y: number };
 }
 
 /** Runs an edit builder; a builder that throws (out-of-range input) is no edit. */
@@ -168,6 +170,26 @@ export function useGridEditing(a: GridEditingArgs) {
       if (readOnly) return true;
       if (letter === "y" || e.shiftKey) edit.redo();
       else edit.undo();
+      return true;
+    }
+    // Shift+F10 or the ContextMenu key: the row menu with whole rows
+    // selected, else the column menu, at the active cell.
+    if (
+      (e.key === "F10" && e.shiftKey && !e.ctrlKey && !e.metaKey) ||
+      e.key === "ContextMenu"
+    ) {
+      e.preventDefault();
+      if (nCols === 0) return true;
+      const { x, y } = a.menuAnchor();
+      if (sel.rows && !sel.cols && nRows > 0)
+        setMenu({ kind: "row", sel, x, y });
+      else
+        setMenu({
+          kind: "col",
+          sel: { row: sel.row, col: sel.col, cols: [sel.col, sel.col] },
+          x,
+          y,
+        });
       return true;
     }
     if (readOnly || nRows === 0 || nCols === 0) return false;
@@ -309,5 +331,7 @@ export function useGridEditing(a: GridEditingArgs) {
     dismissMenu,
     onGutterMenu,
     onHeaderMenu,
+    /** Opens the editor on shown row `pos` (-1: the header cell). */
+    editAt: (pos: number, col: number) => open(pos, col),
   };
 }

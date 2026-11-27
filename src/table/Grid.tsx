@@ -81,7 +81,7 @@ export interface GridProps {
   sort?: TableSort;
   onSortClick(col: number): void;
   /** Sets the sort from the header menu. */
-  onSort(sort: TableSort): void;
+  onSort(sort: TableSort | undefined): void;
   hidden: readonly [number, number][];
   filter?: string;
   readOnly: boolean;
@@ -399,6 +399,13 @@ export function Grid(props: GridProps) {
     sel,
     select,
     focusGrid,
+    menuAnchor: () => {
+      const at =
+        scroller.current?.querySelector('[role="gridcell"][data-active]') ??
+        scroller.current;
+      const r = at?.getBoundingClientRect();
+      return r ? { x: r.left, y: r.bottom } : { x: 0, y: 0 };
+    },
   });
 
   const textOf = (fileRow: number, col: number): string => {
@@ -553,6 +560,9 @@ export function Grid(props: GridProps) {
     document.body.classList.add("z-grid-resizing");
   };
 
+  /** The Sort before a header click, so a double-click can undo it. */
+  const sortBefore = useRef<{ col: number; sort?: TableSort } | null>(null);
+
   const headerLabel = (c: number): string =>
     header && table.rows.length > 0 ? textOf(0, c) : columnLabel(c);
   const headerMasked = (c: number): boolean =>
@@ -645,6 +655,7 @@ export function Grid(props: GridProps) {
               className="z-grid-cell"
               style={{ width: colWidths[c] }}
               onMouseDown={(e) => pick(e, { row: r, col: c }, "cell")}
+              onDoubleClick={() => editing.editAt(r, c)}
             >
               {content(value, masked)}
             </div>
@@ -706,12 +717,25 @@ export function Grid(props: GridProps) {
                 className="z-grid-hcell"
                 style={{ width: colWidths[c] }}
                 onContextMenu={(e) => editing.onHeaderMenu(e, c)}
-                onClick={() => {
+                onClick={(e) => {
                   if (dragged.current) {
                     dragged.current = false;
                     return;
                   }
+                  // A double-click's second click doesn't sort again.
+                  if (e.detail > 1) return;
+                  sortBefore.current = { col: c, sort };
                   props.onSortClick(c);
+                }}
+                onDoubleClick={() => {
+                  // Renames the column (header on); its first click's sort
+                  // is undone.
+                  if (!header || table.rows.length === 0 || props.readOnly)
+                    return;
+                  const was = sortBefore.current;
+                  if (was?.col === c) props.onSort(was.sort);
+                  sortBefore.current = null;
+                  editing.editAt(-1, c);
                 }}
               >
                 <button
@@ -726,6 +750,7 @@ export function Grid(props: GridProps) {
                     pick(e, { row: st.active.row, col: c }, "cols");
                   }}
                   onClick={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => e.stopPropagation()}
                 />
                 <span className="z-grid-hlabel">{label}</span>
                 {dir && (
