@@ -4,7 +4,9 @@
 
 # Zukai
 
-**A fast, local notebook for engineers.**
+**A workspace for engineers.**
+
+Think. Write. Organize. Build.
 
 Keep notes, commands, sketches and data side by side in one tabbed app.<br>
 Everything stays as plain files on your own disk, with no account or cloud.
