@@ -26,6 +26,17 @@ export interface CellEditorProps {
 const PAD_Y = 4;
 /** Mod+these stay inside the textarea: undo, redo, select all, clipboard. */
 const NATIVE = /^Key[ZYACXV]$/;
+/** Mod+these (word and line moves and deletes) also stay inside the textarea. */
+const TEXT_MOVES = new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+  "Backspace",
+  "Delete",
+]);
 
 /**
  * A positioned textarea over the cell being edited. Enter commits and moves
@@ -60,7 +71,9 @@ export function CellEditor(p: CellEditorProps) {
   };
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.nativeEvent.isComposing) {
+    // WebKit sends the IME's confirming Enter with isComposing false and
+    // keyCode 229.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) {
       e.stopPropagation();
       return;
     }
@@ -98,8 +111,9 @@ export function CellEditor(p: CellEditorProps) {
       return;
     }
     if ((mod && !altGr) || /^F\d+$/.test(e.key)) {
-      if (!e.altKey && NATIVE.test(e.code)) {
-        // Undo/redo, select all and the clipboard work on the text.
+      if (!e.altKey && (NATIVE.test(e.code) || TEXT_MOVES.has(e.key))) {
+        // Undo/redo, select all, the clipboard and word or line moves and
+        // deletes work on the text.
         e.stopPropagation();
         return;
       }

@@ -445,4 +445,70 @@ describe("Grid editing", () => {
     rerender({ order: [2, 1, 0] });
     expect(selected(grid)).toEqual(["c"]);
   });
+
+  it("Mod text-editing keys stay in the editor (no commit)", () => {
+    const { grid, apply } = setup("a\nb\n");
+    const keys: string[] = [];
+    const onKey = (e: KeyboardEvent) => keys.push(e.key);
+    window.addEventListener("keydown", onKey);
+    try {
+      fireEvent.keyDown(grid, { key: "F2" });
+      fireEvent.change(editor(), { target: { value: "half" } });
+      keys.length = 0;
+      const names = [
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Home",
+        "End",
+        "Backspace",
+        "Delete",
+      ];
+      for (const key of names)
+        for (const shiftKey of [false, true]) {
+          fireEvent.keyDown(editor(), { key, ctrlKey: true, shiftKey });
+          fireEvent.keyDown(editor(), { key, metaKey: true, shiftKey });
+        }
+      // Option+arrows and Option+Backspace (macOS word moves).
+      fireEvent.keyDown(editor(), { key: "ArrowLeft", altKey: true });
+      fireEvent.keyDown(editor(), { key: "Backspace", altKey: true });
+      expect(keys).toEqual([]);
+      expect(apply).not.toHaveBeenCalled();
+      expect(editor()).not.toBeNull();
+      // Another Mod combo still commits and goes through.
+      fireEvent.keyDown(editor(), { key: "s", code: "KeyS", ctrlKey: true });
+      expect(apply).toHaveBeenCalledTimes(1);
+      expect(keys).toEqual(["s"]);
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
+  });
+
+  it("an IME Enter with keyCode 229 (WebKit) doesn't commit", () => {
+    const { grid, apply } = setup("a\nb\n");
+    fireEvent.keyDown(grid, { key: "F2" });
+    fireEvent.change(editor(), { target: { value: "日" } });
+    fireEvent.keyDown(editor(), { key: "Enter", keyCode: 229 });
+    expect(editor()).not.toBeNull();
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("an IME key (Process / 229) on a selected cell opens an empty editor", () => {
+    const { grid } = setup("alpha\nb\n");
+    const down = new KeyboardEvent("keydown", {
+      key: "Process",
+      keyCode: 229,
+      bubbles: true,
+      cancelable: true,
+    } as KeyboardEventInit);
+    act(() => {
+      grid.dispatchEvent(down);
+    });
+    expect(editor()).not.toBeNull();
+    expect(editor().value).toBe("");
+    expect(document.activeElement).toBe(editor());
+    // The composition must land in the editor: the key isn't cancelled.
+    expect(down.defaultPrevented).toBe(false);
+  });
 });

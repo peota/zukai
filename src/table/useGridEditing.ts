@@ -178,6 +178,11 @@ export function useGridEditing(a: GridEditingArgs) {
       clear();
       return true;
     }
+    // An IME key: open the editor empty and let the composition land in it.
+    if (e.key === "Process" || e.keyCode === 229) {
+      open(sel.row, sel.col, "");
+      return true;
+    }
     // A printable character starts editing with it. AltGr is Ctrl+Alt off
     // macOS; Option composes characters on macOS.
     const typed =
