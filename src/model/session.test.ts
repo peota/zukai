@@ -609,6 +609,75 @@ describe("pdf Kind", () => {
   });
 });
 
+describe("table Kind", () => {
+  const parse = (tab: unknown) =>
+    parseSessionFile(
+      JSON.stringify({ version: 3, tabs: [tab], activeId: "p", closed: [] }),
+    );
+
+  it("a text Tab on a .csv path becomes a table Tab, minus Markdown fields", () => {
+    const r = parse({
+      ...fileTab("p", "C:/d/x.csv"),
+      kind: "text",
+      markdownMode: "rich",
+      preview: "split",
+    });
+    expect(r?.tabs[0].kind).toBe("table");
+    expect(r?.tabs[0].markdownMode).toBeUndefined();
+    expect(r?.tabs[0].preview).toBeUndefined();
+  });
+
+  it("a table Tab round-trips its view fields", () => {
+    const tab = {
+      ...fileTab("p", "/a/b.csv"),
+      kind: "table" as const,
+      tableView: "raw" as const,
+      delimiter: ";" as const,
+      header: false,
+      sort: { col: 2, dir: "desc" as const },
+      filter: "abc",
+      colWidths: [80, 120.5],
+    };
+    expect(parse(tab)?.tabs).toEqual([tab]);
+  });
+
+  it("drops each malformed table field alone", () => {
+    const r = parse({
+      ...fileTab("p", "/a/b.csv"),
+      kind: "table",
+      delimiter: "x",
+      sort: { col: -1, dir: "asc" },
+      colWidths: ["a"],
+      tableView: "pie",
+      header: false,
+      filter: "keep",
+    });
+    const t = r?.tabs[0];
+    expect(t?.kind).toBe("table");
+    expect(t?.delimiter).toBeUndefined();
+    expect(t?.sort).toBeUndefined();
+    expect(t?.colWidths).toBeUndefined();
+    expect(t?.tableView).toBeUndefined();
+    expect(t?.header).toBe(false);
+    expect(t?.filter).toBe("keep");
+  });
+
+  it("drops bad header, filter and widths", () => {
+    const t = parse({
+      ...fileTab("p", "/a/b.csv"),
+      kind: "table",
+      header: "yes",
+      filter: 3,
+      colWidths: [10, 0],
+      sort: { col: 1.5, dir: "asc" },
+    })?.tabs[0];
+    expect(t?.header).toBeUndefined();
+    expect(t?.filter).toBeUndefined();
+    expect(t?.colWidths).toBeUndefined();
+    expect(t?.sort).toBeUndefined();
+  });
+});
+
 describe("session v3 migration and sidebar", () => {
   /** A Tab as v2 wrote it: no `kind`. */
   const v2Tab = (id: string, path?: string): Record<string, unknown> => {

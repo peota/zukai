@@ -622,6 +622,42 @@ describe("useFiles save and save as", () => {
     expect(result.current.state.tabs.every((t) => !t.file)).toBe(true);
   });
 
+  it("Save As moves a Tab between Text and Table", async () => {
+    const { result } = await mount();
+    f.filePickSave.mockResolvedValue("C:\\d\\data.csv");
+    await act(() => result.current.saveAs("a"));
+    let tab = result.current.state.tabs.find((t) => t.id === "a")!;
+    expect(f.fileSaveAs).toHaveBeenCalled();
+    expect(tab.kind).toBe("table");
+    expect(tab.language).toBe("plaintext");
+    f.filePickSave.mockResolvedValue("C:\\d\\notes.txt");
+    act(() => result.current.updateTab("a", { sort: { col: 0, dir: "asc" } }));
+    await act(() => result.current.saveAs("a"));
+    tab = result.current.state.tabs.find((t) => t.id === "a")!;
+    expect(tab.kind).toBe("text");
+    expect(tab.file?.path).toBe("C:\\d\\notes.txt");
+    expect(tab.sort).toBeUndefined();
+  });
+
+  it("a Table is refused into a drawing, an image or a PDF", async () => {
+    const { result } = await mount();
+    act(() => result.current.updateTab("a", { kind: "table" }));
+    f.filePickSave.mockResolvedValue("C:\\d\\x.excalidraw");
+    await act(() => result.current.saveAs("a"));
+    expect(result.current.notice).toBe(
+      "Can't save a table as a .excalidraw drawing",
+    );
+    f.filePickSave.mockResolvedValue("C:\\d\\x.pdf");
+    await act(() => result.current.saveAs("a"));
+    expect(result.current.notice).toBe("Can't save a table as a PDF (x.pdf)");
+    f.filePickSave.mockResolvedValue("C:\\d\\x.png");
+    await act(() => result.current.saveAs("a"));
+    expect(result.current.notice).toBe(
+      "Can't save a table as an image (x.png)",
+    );
+    expect(f.fileSaveAs).not.toHaveBeenCalled();
+  });
+
   it("an Image Tab is never saved", async () => {
     const pic = "C:\\d\\pic.png";
     disk[pic] = { text: "", hash: "p1" };

@@ -1,4 +1,6 @@
 import type { Kind } from "./kinds";
+import type { Delimiter } from "../table/parse";
+import type { TableSort } from "../table/view";
 import type { ChangeStatus } from "../git/api";
 
 /**
@@ -107,6 +109,27 @@ export interface TabState {
    * offsets. Only the display changes; the text is never stored here.
    */
   hidden?: [number, number][];
+  /** A Table Tab's View: the grid or the raw text. Absent until first shown. */
+  tableView?: "grid" | "raw";
+  /** A Table Tab's Delimiter as the user set it; absent = guessed. */
+  delimiter?: Delimiter;
+  /** Whether a Table Tab's first row is its header; absent = true. */
+  header?: boolean;
+  /** A Table Tab's Sort; never written to the file. */
+  sort?: TableSort;
+  /** A Table Tab's Filter text; never written to the file. */
+  filter?: string;
+  /** A Table Tab's column widths in px. */
+  colWidths?: number[];
+}
+
+/** What the status bar shows for a Table Tab in the grid. */
+export interface TableInfo {
+  rows: number;
+  shown: number;
+  cols: number;
+  delimiter: Delimiter;
+  header: boolean;
 }
 
 export type MarkdownMode = "rich" | "markdown";

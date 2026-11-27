@@ -1,4 +1,4 @@
-import { kindOf, PDF_EXT, type Kind } from "./kinds";
+import { kindOf, PDF_EXT, TABLE_EXTS, type Kind } from "./kinds";
 import type {
   ClosedEntry,
   FileFormat,
@@ -133,7 +133,7 @@ function isFileInfo(v: unknown): v is FileInfo {
   );
 }
 
-const KINDS: readonly string[] = ["text", "canvas", "image", "pdf"];
+const KINDS: readonly string[] = ["text", "canvas", "image", "pdf", "table"];
 
 function isTabState(v: unknown): v is TabState {
   if (!isObject(v)) return false;
@@ -309,6 +309,47 @@ function withPdfKind(t: unknown): unknown {
   return { ...rest, kind: "pdf" };
 }
 
+/** A .csv or .tsv opened before the Kind existed was a text Tab. */
+function withTableKind(t: unknown): unknown {
+  if (!isObject(t) || t.kind !== "text") return t;
+  const file = t.file;
+  if (!isObject(file) || typeof file.path !== "string") return t;
+  const path = file.path.toLowerCase();
+  if (!TABLE_EXTS.some((e) => path.endsWith(e))) return t;
+  const { markdownMode: _m, preview: _p, ...rest } = t;
+  void _m;
+  void _p;
+  return { ...rest, kind: "table" };
+}
+
+const TABLE_FIELDS: Record<string, (v: unknown) => boolean> = {
+  tableView: (v) => v === "grid" || v === "raw",
+  delimiter: (v) => v === "," || v === ";" || v === "	" || v === "|",
+  header: (v) => typeof v === "boolean",
+  sort: (v) =>
+    isObject(v) &&
+    isNum(v.col) &&
+    Number.isInteger(v.col) &&
+    v.col >= 0 &&
+    (v.dir === "asc" || v.dir === "desc"),
+  filter: (v) => typeof v === "string",
+  colWidths: (v) => Array.isArray(v) && v.every((w) => isNum(w) && w > 0),
+};
+
+/** Each malformed table field is only forgotten: the Tab itself is fine. */
+function withTableFields(t: unknown): unknown {
+  if (!isObject(t)) return t;
+  let out: Record<string, unknown> = t;
+  for (const [key, ok] of Object.entries(TABLE_FIELDS)) {
+    if (out[key] !== undefined && !ok(out[key])) {
+      const { [key]: _bad, ...rest } = out;
+      void _bad;
+      out = rest;
+    }
+  }
+  return out;
+}
+
 export function parseSessionFile(json: string | null): SessionFile | null {
   if (json === null) return null;
   let data: unknown;
@@ -334,10 +375,16 @@ export function parseSessionFile(json: string | null): SessionFile | null {
   }
   // A malformed entry is dropped alone; the rest of the session survives.
   const fix = (t: unknown) =>
-    withHidden(
-      withMarkdownMode(
-        withPreview(
-          withPin(withViewport(withPdfKind(migrate ? withKind(t) : t))),
+    withTableFields(
+      withHidden(
+        withMarkdownMode(
+          withPreview(
+            withPin(
+              withViewport(
+                withTableKind(withPdfKind(migrate ? withKind(t) : t)),
+              ),
+            ),
+          ),
         ),
       ),
     );

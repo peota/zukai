@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import rust from "../../src-tauri/src/files/exec.rs?raw";
-import { EXEC_EXTS, isExecPath, isViewerKind, kindOf } from "./kinds";
+import {
+  EXEC_EXTS,
+  isExecPath,
+  isTextKind,
+  isViewerKind,
+  kindOf,
+} from "./kinds";
 
 describe("kindOf", () => {
   it("kindOfByExtension", () => {
@@ -11,6 +17,18 @@ describe("kindOf", () => {
     expect(kindOf("x.md")).toBe("text");
     expect(kindOf("Makefile")).toBe("text");
     expect(kindOf("C:\\d.png\\Makefile")).toBe("text");
+  });
+});
+
+describe("table Kind", () => {
+  it("opens .csv and .tsv as a table, and is a text Kind", () => {
+    expect(kindOf("x.CSV")).toBe("table");
+    expect(kindOf("a/b.tsv")).toBe("table");
+    expect(isTextKind("table")).toBe(true);
+    expect(isTextKind("text")).toBe(true);
+    expect(isTextKind("canvas")).toBe(false);
+    expect(isTextKind(undefined)).toBe(false);
+    expect(isViewerKind("table")).toBe(false);
   });
 });
 
