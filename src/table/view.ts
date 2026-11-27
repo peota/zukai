@@ -14,8 +14,23 @@ const PADDING = 16;
 const cellAt = (t: ParsedTable, row: number, col: number): string =>
   t.rows[row].cells[col] ?? "";
 
-/** A column is numeric when every non-empty data cell parses as a finite number (Number(), after trimming; "" ignored) and at least one does. */
+/** numericColumns per table object, for header off [0] and on [1]. */
+const numericCache = new WeakMap<ParsedTable, [boolean[]?, boolean[]?]>();
+
+/**
+ * A column is numeric when every non-empty data cell parses as a finite
+ * number (Number(), after trimming; "" ignored) and at least one does.
+ * Computed once per table object and header setting (a table is never
+ * mutated: an edit makes a new one). Treat the result as read-only.
+ */
 export function numericColumns(t: ParsedTable, header: boolean): boolean[] {
+  let entry = numericCache.get(t);
+  if (!entry) numericCache.set(t, (entry = []));
+  const i = header ? 1 : 0;
+  return (entry[i] ??= computeNumeric(t, header));
+}
+
+function computeNumeric(t: ParsedTable, header: boolean): boolean[] {
   const out: boolean[] = [];
   for (let c = 0; c < t.width; c++) {
     let seen = false;
@@ -37,15 +52,24 @@ export function numericColumns(t: ParsedTable, header: boolean): boolean[] {
 /** File-order indices of the data rows shown (header row excluded when `header`). */
 export function rowOrder(
   t: ParsedTable,
-  o: { header: boolean; sort?: TableSort; filter?: string },
+  o: {
+    header: boolean;
+    sort?: TableSort;
+    filter?: string;
+    /** A cell the Filter must not look into (it shows as Hidden dots). */
+    isMasked?(row: number, col: number): boolean;
+  },
 ): number[] {
   let order: number[] = [];
   for (let r = o.header ? 1 : 0; r < t.rows.length; r++) order.push(r);
 
   const needle = o.filter?.trim().toLowerCase();
   if (needle) {
+    const masked = o.isMasked;
     order = order.filter((r) =>
-      t.rows[r].cells.some((c) => c.toLowerCase().includes(needle)),
+      t.rows[r].cells.some(
+        (c, i) => c.toLowerCase().includes(needle) && !masked?.(r, i),
+      ),
     );
   }
 

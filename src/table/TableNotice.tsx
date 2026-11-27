@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { TextBridge } from "../editor/EditorHost";
 import type { TableUnreadable, TabState } from "../model/types";
 import { Bar, BarButton } from "../ui/FileBar";
-import { parseAsync } from "./parseAsync";
+import { checkAsync } from "./parseAsync";
 
 export interface TableNoticeProps {
   tab: TabState;
@@ -50,7 +50,7 @@ export default function TableNotice(p: TableNoticeProps) {
     let unsubscribe: (() => void) | undefined;
     const run = (text: string) => {
       const mine = ++version;
-      parseAsync(text, path, delimiter).then(
+      checkAsync(text, path, delimiter).then(
         (r) => {
           if (!alive || mine !== version) return;
           onNotice.current(r.ok ? null : { line: r.line, reason: r.reason });
@@ -81,7 +81,7 @@ export default function TableNotice(p: TableNoticeProps) {
     const text = bridge?.text(tab.id);
     if (text === null || text === undefined || busy) return;
     setBusy(true);
-    parseAsync(text, tab.file?.path ?? tab.title, tab.delimiter)
+    checkAsync(text, tab.file?.path ?? tab.title, tab.delimiter)
       .then((r) => {
         if (r.ok) {
           p.onNotice(null);

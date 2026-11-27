@@ -333,6 +333,57 @@ describe("Grid", () => {
       expect(offsets.length).toBeLessThanOrEqual(2);
   });
 
+  it("reaches every row of 3,000,000 under the browser's height cap", () => {
+    const n = 3_000_000;
+    const row: Row = {
+      start: 0,
+      end: 0,
+      eol: "\n",
+      cells: ["v"],
+      cellStart: [0],
+      cellEnd: [0],
+      quoted: [false],
+    };
+    const rows: Row[] = new Array<Row>(n).fill(row);
+    rows[n - 1] = { ...row, cells: ["last"] };
+    rows[n / 2] = { ...row, cells: ["middle"] };
+    const table: ParsedTable = {
+      rows,
+      delimiter: ",",
+      allQuoted: false,
+      width: 1,
+    };
+    const order = Array.from({ length: n }, (_, i) => i);
+    const { grid } = setup("x\n", { table, order, widths: [100] });
+    const content = grid.firstElementChild as HTMLElement;
+    const height = parseFloat(content.style.height);
+    expect(height).toBeLessThanOrEqual(15_000_000 + 100);
+    grid.focus();
+    fireEvent.keyDown(grid, { key: "End", ctrlKey: true });
+    expect(selected(grid)).toEqual(["last"]);
+    // The last row is drawn inside the scroll space, in the viewport.
+    const last = cell("last").parentElement as HTMLElement;
+    const top = parseFloat(last.style.top);
+    expect(top).toBeLessThanOrEqual(height);
+    expect(top).toBeGreaterThanOrEqual(grid.scrollTop);
+    expect(top + 28).toBeLessThanOrEqual(grid.scrollTop + VIEW_H);
+    // Scrolling to the middle of the scroll space shows the middle rows.
+    grid.scrollTop = (height - VIEW_H) / 2;
+    fireEvent.scroll(grid);
+    expect(
+      screen.getAllByRole("rowheader").map((e) => e.textContent),
+    ).toContain(String(n / 2 + 1));
+    // Back to the top with Ctrl+Home, and reveal still works by keyboard.
+    fireEvent.keyDown(grid, { key: "Home", ctrlKey: true });
+    expect(grid.scrollTop).toBe(0);
+    fireEvent.keyDown(grid, { key: "PageDown" });
+    fireEvent.keyDown(grid, { key: "PageDown" });
+    const active = grid.querySelector("[data-active]")!.parentElement!;
+    const at = parseFloat(active.style.top);
+    expect(at).toBeGreaterThanOrEqual(grid.scrollTop);
+    expect(at + 28).toBeLessThanOrEqual(grid.scrollTop + VIEW_H);
+  });
+
   it("does not sort when a resize drag ends over the header cell", async () => {
     const { props } = setup("a,b\n1,2\n", { header: true });
     const head = screen.getAllByRole("columnheader")[0];

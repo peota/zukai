@@ -54,7 +54,11 @@ afterAll(() => {
 /** A bridge over one Tab's text; `outside` plays a disk reload or raw typing. */
 function fakeBridge(
   text: string,
-  o: { readOnly?: boolean; ready?: boolean } = {},
+  o: {
+    readOnly?: boolean;
+    ready?: boolean;
+    hidden?: [number, number][];
+  } = {},
 ) {
   let current = text;
   const listeners = new Set<(t: string) => void>();
@@ -74,7 +78,7 @@ function fakeBridge(
     },
     clearHistory: vi.fn(),
     readOnly: () => o.readOnly ?? false,
-    hidden: () => [],
+    hidden: () => o.hidden ?? [],
     ready: () =>
       o.ready === false ? new Promise<void>(() => {}) : Promise.resolve(),
   };
@@ -111,6 +115,7 @@ function host(
     focused?: boolean;
     focusSignal?: number;
     focusSeen?: number;
+    hidden?: [number, number][];
   } = {},
 ) {
   const b = fakeBridge(text, o);
@@ -433,6 +438,13 @@ describe("TableHost", () => {
     await h.outside("name\na\n");
     expect(column0()).toEqual(["a"]);
     expect(activeCell()).toBe("a");
+  });
+
+  it("the Filter doesn't look into Hidden cells", async () => {
+    // "bob" is at 9..12, Hidden.
+    host("name\nann\nbob\n", { filter: "bob" }, { hidden: [[9, 12]] });
+    await ready();
+    expect(screen.queryAllByRole("rowheader")).toHaveLength(0);
   });
 
   it("an outside re-parse keeps the Filter", async () => {

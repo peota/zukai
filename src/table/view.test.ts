@@ -63,6 +63,18 @@ describe("rowOrder", () => {
       [3, 2, 1],
     );
   });
+  it("skips masked (Hidden) cells when filtering", () => {
+    const t = table("a,b\nx,secret\ny,open\n");
+    const isMasked = (r: number, c: number) => r === 1 && c === 1;
+    expect(rowOrder(t, { header: true, filter: "secret", isMasked })).toEqual(
+      [],
+    );
+    expect(rowOrder(t, { header: true, filter: "x", isMasked })).toEqual([1]);
+    expect(rowOrder(t, { header: true, filter: "open", isMasked })).toEqual([
+      2,
+    ]);
+  });
+
   it("filters case-insensitively over any cell", () => {
     const u = table("a,b\nfoo,1\nbar,FOO\nbaz,2\n");
     expect(rowOrder(u, { header: true, filter: "foo" })).toEqual([1, 2]);
@@ -78,6 +90,13 @@ describe("rowOrder", () => {
 });
 
 describe("numericColumns", () => {
+  it("is computed once per table and header", () => {
+    const t = table("n,s\n1,a\n2,b\n");
+    const first = numericColumns(t, true);
+    expect(numericColumns(t, true)).toBe(first);
+    expect(numericColumns(t, false)).not.toBe(first);
+    expect(numericColumns(table("n,s\n1,a\n"), true)).not.toBe(first);
+  });
   it("needs every non-empty cell numeric and at least one", () => {
     const t = table("a,b,c\n1,x,\n2,3,\n");
     expect(numericColumns(t, true)).toEqual([true, false, false]);

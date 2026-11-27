@@ -103,6 +103,12 @@ const RESIZE_MIN = 32;
 const FIT_MIN = 56;
 const FIT_MAX = 360;
 const FIT_PAD = 16;
+/**
+ * The rows' scroll space at most, in px: browsers stop laying out near 33.5M
+ * px, so past this the scroll space is scaled (rows are drawn relative to
+ * the viewport).
+ */
+export const MAX_SCROLL_PX = 15_000_000;
 
 /** Average character width used for width guesses and fitting. */
 export const charPx = (fontSize: number): number => fontSize * 0.6;
@@ -167,11 +173,23 @@ export function Grid(props: GridProps) {
   const { memory } = props;
   // Where this Tab's grid was when it last unmounted.
   const [place] = useState(() => (memory ? placeOf(memory) : undefined));
-  const [view, setView] = useState({
+  /**
+   * `top` and `left` are the scroll offsets; `real` is the rows' real offset
+   * at `top` when the scroll space is scaled and the grid set it (null: it
+   * follows `top`).
+   */
+  const [view, setView] = useState<{
+    top: number;
+    left: number;
+    w: number;
+    h: number;
+    real: number | null;
+  }>({
     top: place?.scrollTop ?? 0,
     left: place?.scrollLeft ?? 0,
     w: 0,
     h: 0,
+    real: null,
   });
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -206,7 +224,12 @@ export function Grid(props: GridProps) {
     setView((v) =>
       v.top === el.scrollTop && v.left === el.scrollLeft
         ? v
-        : { ...v, top: el.scrollTop, left: el.scrollLeft },
+        : {
+            ...v,
+            top: el.scrollTop,
+            left: el.scrollLeft,
+            real: v.top === el.scrollTop ? v.real : null,
+          },
     );
   };
 
@@ -225,15 +248,26 @@ export function Grid(props: GridProps) {
     for (const w of colWidths) out.push(out[out.length - 1] + w);
     return out;
   }, [colWidths]);
-  const numeric = useMemo(() => numericColumns(table, header), [table, header]);
+  // Kept per table object by numericColumns itself.
+  const numeric = numericColumns(table, header);
 
   const digits = String(Math.max(1, table.rows.length)).length;
   const gutterW = Math.round(Math.max(2, digits) * cpx + 24);
   const totalW = gutterW + colOffsets[nCols];
   const bodyH = Math.max(0, view.h - headerH);
   const bodyW = Math.max(0, view.w - gutterW);
+  // Past MAX_SCROLL_PX the scroll space is scaled: scrollTop maps to the
+  // rows' real offset in proportion, and rows are drawn `shift` px from
+  // their real place so the ones in view sit in the viewport.
+  const realH = nRows * rowH;
+  const spaceH = Math.min(realH, MAX_SCROLL_PX);
+  const maxReal = Math.max(0, realH - bodyH);
+  const ratio = realH > spaceH ? maxReal / Math.max(1, spaceH - bodyH) : 1;
+  const realTop =
+    ratio === 1 ? view.top : clamp(view.real ?? view.top * ratio, 0, maxReal);
+  const shift = view.top - realTop;
   // Rows are uniform: window them in closed form (no offsets array).
-  const [r0, r1] = uniformRange(nRows, rowH, view.top, bodyH, ROW_OVERSCAN);
+  const [r0, r1] = uniformRange(nRows, rowH, realTop, bodyH, ROW_OVERSCAN);
   const [c0, c1] = visibleRange(colOffsets, view.left, bodyW, COL_OVERSCAN);
   const pageRows = Math.max(1, Math.floor(bodyH / rowH));
 
@@ -314,7 +348,8 @@ export function Grid(props: GridProps) {
   /** Scrolls so (row, col) is fully in view. */
   const reveal = (p: Pos) => {
     const el = scroller.current;
-    let { top, left } = view;
+    let top = realTop;
+    let { left } = view;
     const rowTop = p.row * rowH;
     if (rowTop < top) top = rowTop;
     else if (rowTop + rowH > top + bodyH) top = rowTop + rowH - bodyH;
@@ -323,14 +358,20 @@ export function Grid(props: GridProps) {
     if (colLeft < left) left = colLeft;
     else if (colRight > left + bodyW)
       left = Math.min(colLeft, colRight - bodyW);
-    top = Math.max(0, top);
+    top = clamp(top, 0, maxReal);
     left = Math.max(0, left);
-    if (top === view.top && left === view.left) return;
+    if (top === realTop && left === view.left) return;
+    const scrollTop = ratio === 1 ? top : Math.round(top / ratio);
     if (el) {
-      el.scrollTop = top;
+      el.scrollTop = scrollTop;
       el.scrollLeft = left;
     }
-    setView((v) => ({ ...v, top, left }));
+    setView((v) => ({
+      ...v,
+      top: scrollTop,
+      left,
+      real: ratio === 1 ? null : top,
+    }));
   };
 
   /** Kept unclamped, so a row or column the pending edit adds can be the target. */
@@ -513,7 +554,7 @@ export function Grid(props: GridProps) {
 
   /** Fits column c to the widest cell in view (header included). */
   const fitColumn = (c: number) => {
-    const [v0, v1] = uniformRange(nRows, rowH, view.top, bodyH, 0);
+    const [v0, v1] = uniformRange(nRows, rowH, realTop, bodyH, 0);
     let chars = headerLabel(c).length;
     for (let r = v0; r < v1; r++)
       chars = Math.max(chars, textOf(order[r], c).length);
@@ -538,7 +579,7 @@ export function Grid(props: GridProps) {
     <CellEditor
       key={`${ed.pos}:${ed.col}`}
       value={ed.value}
-      top={ed.pos < 0 ? 0 : headerH + ed.pos * rowH}
+      top={ed.pos < 0 ? 0 : headerH + ed.pos * rowH + shift}
       left={gutterW + (colOffsets[ed.col] ?? colOffsets[nCols])}
       width={colWidths[ed.col] ?? DEFAULT_WIDTH}
       rowHeight={rowH}
@@ -564,7 +605,11 @@ export function Grid(props: GridProps) {
         role="row"
         aria-rowindex={r + 2}
         className="z-grid-row"
-        style={{ top: headerH + r * rowH, height: rowH, width: totalW }}
+        style={{
+          top: headerH + r * rowH + shift,
+          height: rowH,
+          width: totalW,
+        }}
       >
         <div
           role="rowheader"
@@ -620,7 +665,7 @@ export function Grid(props: GridProps) {
       <div
         role="presentation"
         className="relative"
-        style={{ width: totalW, height: headerH + nRows * rowH }}
+        style={{ width: totalW, height: headerH + spaceH }}
       >
         <div
           role="row"

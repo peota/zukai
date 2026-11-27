@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TextBridge } from "../editor/EditorHost";
 import type { TableInfo, TableUnreadable, TabState } from "../model/types";
 import { insertRows, type EditResult } from "./edits";
+import { cellHidden } from "./gridHelpers";
 import { charPx, Grid, type ColumnChange, type GridEditHandlers } from "./Grid";
 import { useTableModel } from "./useTableModel";
 import { guessWidths, NEXT_SORT, rowOrder, type TableSort } from "./view";
@@ -77,6 +78,7 @@ export default function TableHost(p: TableHostProps) {
   const seq = model.status === "ready" ? model.seq : -1;
   const readOnly = bridge ? bridge.readOnly(id) : true;
 
+  const hidden = bridge?.hidden(id) ?? NO_HIDDEN;
   // The row order changes with the Sort, Filter, Header row or a re-parse,
   // never after the grid's own edit (an edited row stays put).
   const [shown, setShown] = useState<Shown | null>(null);
@@ -89,7 +91,13 @@ export default function TableHost(p: TableHostProps) {
       shown.filter !== filter ||
       shown.header !== header)
   ) {
-    order = rowOrder(table, { header, sort, filter });
+    // The Filter never looks into a Hidden cell: it would tell which rows
+    // hold the hidden text.
+    const isMasked =
+      hidden.length > 0
+        ? (r: number, c: number) => cellHidden(table.rows[r], c, hidden)
+        : undefined;
+    order = rowOrder(table, { header, sort, filter, isMasked });
     setShown({ order, seq, sort, filter, header });
   }
 
@@ -150,7 +158,7 @@ export default function TableHost(p: TableHostProps) {
       undo: () => void bridge?.undo(id),
       redo: () => void bridge?.redo(id),
     }),
-    [bridge, id],
+    [bridge, id, setShown],
   );
 
   // An Unreadable Table goes to raw text, where TabPane shows the notice.
@@ -304,7 +312,7 @@ export default function TableHost(p: TableHostProps) {
               onTabPatch(id, { sort: NEXT_SORT(sort, col) })
             }
             onSort={(s) => onTabPatch(id, { sort: s })}
-            hidden={bridge?.hidden(id) ?? NO_HIDDEN}
+            hidden={hidden}
             filter={filter || undefined}
             readOnly={readOnly}
             focused={p.focused}
