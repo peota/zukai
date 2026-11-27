@@ -42,7 +42,6 @@ export interface TableHostProps {
 /** Typing in the Filter box applies after this pause. */
 const FILTER_DELAY_MS = 150;
 const NO_ROWS: number[] = [];
-const NO_HIDDEN: readonly [number, number][] = [];
 
 /**
  * Focus the grid may not take when it shows: a field in the sidebar (a new
@@ -75,12 +74,16 @@ export default function TableHost(p: TableHostProps) {
   const header = tab.header ?? true;
   const sort = tab.sort;
   const filter = tab.filter ?? "";
-  const { model, busy, apply } = useTableModel(bridge, id, path, tab.delimiter);
+  const { model, busy, hidden, apply } = useTableModel(
+    bridge,
+    id,
+    path,
+    tab.delimiter,
+  );
   const table = model.status === "ready" ? model.table : null;
   const seq = model.status === "ready" ? model.seq : -1;
   const readOnly = bridge ? bridge.readOnly(id) : true;
 
-  const hidden = bridge?.hidden(id) ?? NO_HIDDEN;
   // The row order changes with the Sort, Filter, Header row or a re-parse,
   // never after the grid's own edit (an edited row stays put).
   const [shown, setShown] = useState<Shown | null>(null);
@@ -309,7 +312,7 @@ export default function TableHost(p: TableHostProps) {
         {table && busy && (
           <span className="shrink-0 text-muted">Reading table…</span>
         )}
-        {table && rows === 0 && !filter && !readOnly && (
+        {table && rows === 0 && !filter && !readOnly && !busy && (
           <button
             type="button"
             onClick={addRow}
@@ -340,7 +343,7 @@ export default function TableHost(p: TableHostProps) {
             onSort={(s) => onTabPatch(id, { sort: s })}
             hidden={hidden}
             filter={filter || undefined}
-            readOnly={readOnly}
+            readOnly={readOnly || busy}
             focused={p.focused}
             fontSize={p.fontSize}
             edit={edit}

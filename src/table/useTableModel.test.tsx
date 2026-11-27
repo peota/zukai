@@ -40,6 +40,58 @@ const sync = vi.fn(async (t: string, p: string, o?: Delimiter) =>
 );
 
 describe("useTableModel", () => {
+  it("keeps the hidden ranges of the shown table while a re-parse is pending", async () => {
+    // "a,secret\n": the hidden range [2, 8) covers row 0's second cell.
+    const { bridge, outside } = setup("a,secret\n");
+    let ranges: [number, number][] = [[2, 8]];
+    bridge.hidden = () => ranges;
+    let release: (() => void) | undefined;
+    const slow = vi.fn(
+      (t: string, p: string, o?: Delimiter) =>
+        new Promise<ParseResult>((res) => {
+          release = () => res(readTable(t, p, o));
+        }),
+    );
+    const { result, rerender } = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, slow),
+    );
+    await waitFor(() => expect(slow).toHaveBeenCalledTimes(1));
+    await act(async () => release?.());
+    await waitFor(() => expect(result.current.model.status).toBe("ready"));
+    expect(result.current.hidden).toEqual([[2, 8]]);
+
+    // An outside change inserts a row above: the live range moves to [9, 15),
+    // which means nothing for the table still shown.
+    act(() => {
+      ranges = [[9, 15]];
+      outside("x,y\na,secret\n");
+    });
+    rerender();
+    expect(result.current.hidden).toEqual([[2, 8]]);
+
+    // Once the new text is read, the live ranges apply.
+    await waitFor(() => expect(slow).toHaveBeenCalledTimes(2));
+    await act(async () => release?.());
+    await waitFor(() => {
+      const m = result.current.model;
+      expect(m.status === "ready" && m.table.rows.length).toBe(2);
+    });
+    expect(result.current.hidden).toEqual([[9, 15]]);
+  });
+
+  it("follows live hidden ranges while nothing is pending", async () => {
+    const { bridge } = setup("a,secret\n");
+    let ranges: [number, number][] = [];
+    bridge.hidden = () => ranges;
+    const { result, rerender } = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, sync),
+    );
+    await waitFor(() => expect(result.current.model.status).toBe("ready"));
+    ranges = [[2, 8]];
+    rerender();
+    expect(result.current.hidden).toEqual([[2, 8]]);
+  });
+
   it("reports reading, then ready", async () => {
     sync.mockClear();
     const { bridge } = setup("a,b\n1,2\n");

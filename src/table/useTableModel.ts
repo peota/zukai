@@ -36,6 +36,12 @@ export function useTableModel(
   model: TableModel;
   busy: boolean;
   /**
+   * The Hidden ranges that line up with the shown table: the live ones,
+   * except while a re-parse is pending, when the live ones already point into
+   * the new text and the ones captured with the shown table are kept.
+   */
+  hidden: readonly [number, number][];
+  /**
    * Writes `edit`. `base` is the table the edit was built from: refused
    * unless it is the table the model shows now.
    */
@@ -53,6 +59,13 @@ export function useTableModel(
       : { status: "reading" },
   );
   const [busy, setBusy] = useState(false);
+  /**
+   * While a re-parse is pending: the Hidden ranges captured with the shown
+   * table (the live ones already point into the new text). Null otherwise.
+   */
+  const [frozenHidden, setFrozenHidden] = useState<
+    readonly [number, number][] | null
+  >(null);
   /** Bumped by every parse request; older parses are stale. */
   const version = useRef(0);
   const seq = useRef(kept ? 0 : -1);
@@ -63,6 +76,10 @@ export function useTableModel(
   const shown = useRef<ParsedTable | null>(kept?.table ?? null);
   /** True from a parse request until a current parse settles. */
   const pending = useRef(false);
+  /** The Hidden ranges as they were for `parsedFrom`. */
+  const hiddenFrom = useRef<readonly [number, number][]>(
+    kept ? (bridge?.hidden(id) ?? NO_HIDDEN) : NO_HIDDEN,
+  );
   const owner = useRef<{ bridge: TextBridge | null; id: string } | null>(
     kept ? { bridge, id } : null,
   );
@@ -89,6 +106,7 @@ export function useTableModel(
     const load = (text: string) => {
       const mine = ++version.current;
       pending.current = true;
+      setFrozenHidden(hiddenFrom.current);
       // The old table stays shown; a long read says so in the top bar.
       if (text.length > WORKER_THRESHOLD) setBusy(true);
       parse(text, path, override).then(
@@ -96,8 +114,10 @@ export function useTableModel(
           if (!alive || mine !== version.current) return;
           pending.current = false;
           setBusy(false);
+          setFrozenHidden(null);
           if (r.ok) {
             parsedFrom.current = text;
+            hiddenFrom.current = bridge.hidden(id);
             parsedWith.current = key;
             shown.current = r.table;
             seq.current += 1;
@@ -113,6 +133,7 @@ export function useTableModel(
           if (!alive || mine !== version.current) return;
           pending.current = false;
           setBusy(false);
+          setFrozenHidden(null);
           parsedFrom.current = null;
           shown.current = null;
           setModel({ status: "reading" });
@@ -127,6 +148,7 @@ export function useTableModel(
         if (text !== null) {
           if (text === parsedFrom.current && parsedWith.current === key) {
             // Already read (a kept table): nothing to parse.
+            hiddenFrom.current = bridge.hidden(id);
             version.current++;
             pending.current = false;
             setBusy(false);
@@ -155,6 +177,7 @@ export function useTableModel(
       bridge.change(id, edit.changes);
       const text = bridge.text(id);
       parsedFrom.current = text;
+      hiddenFrom.current = bridge.hidden(id);
       shown.current = edit.table;
       if (text !== null) rememberTable(id, text, path, override, edit.table);
       setModel({ status: "ready", table: edit.table, seq: seq.current });
@@ -163,5 +186,8 @@ export function useTableModel(
     [model.status],
   );
 
-  return { model, busy, apply };
+  const hidden = frozenHidden ?? bridge?.hidden(id) ?? NO_HIDDEN;
+  return { model, busy, hidden, apply };
 }
+
+const NO_HIDDEN: readonly [number, number][] = [];
