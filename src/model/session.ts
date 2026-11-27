@@ -324,7 +324,7 @@ function withTableKind(t: unknown): unknown {
 
 const TABLE_FIELDS: Record<string, (v: unknown) => boolean> = {
   tableView: (v) => v === "grid" || v === "raw",
-  delimiter: (v) => v === "," || v === ";" || v === "	" || v === "|",
+  delimiter: (v) => v === "," || v === ";" || v === "\t" || v === "|",
   header: (v) => typeof v === "boolean",
   sort: (v) =>
     isObject(v) &&

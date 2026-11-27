@@ -56,10 +56,16 @@ export interface ColumnChange {
 export interface GridEditHandlers {
   /**
    * Writes the edit (and the new row order, for row inserts and deletes, or
-   * the column it inserted or deleted). False when the model refused it: the
-   * grid then drops the edit.
+   * the column it inserted or deleted). `base` is the table the edit was
+   * built from. False when the model refused it (a stale base, a pending
+   * re-parse): the grid then drops the edit.
    */
-  apply(edit: EditResult, order?: number[], column?: ColumnChange): boolean;
+  apply(
+    edit: EditResult,
+    order?: number[],
+    column?: ColumnChange,
+    base?: ParsedTable,
+  ): boolean;
   undo(): void;
   redo(): void;
 }

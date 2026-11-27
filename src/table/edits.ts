@@ -210,7 +210,7 @@ function padRow(
   };
 }
 
-/** New empty rows (t.width cells, or 1 if width 0) inserted so the first one gets File-order index `at`. */
+/** New empty rows (the first row's cell count, or 1 in an empty table) inserted so the first one gets File-order index `at`. */
 export function insertRows(
   t: ParsedTable,
   at: number,
@@ -219,7 +219,8 @@ export function insertRows(
   if (at < 0 || at > t.rows.length) throw new Error(`Row ${at} out of range`);
   if (count < 1) throw new Error(`Cannot insert ${count} rows`);
   const d = t.delimiter;
-  const w = t.width || 1;
+  // Header-count cells: the first row's, not the widest row's.
+  const w = Math.max(1, t.rows[0]?.cells.length ?? 1);
   const cellText = encodeCell("", d, t.allQuoted);
   const rowText = Array<string>(w).fill(cellText).join(d);
   const n = t.rows.length;

@@ -330,6 +330,8 @@ describe("Grid editing", () => {
     expect(apply).toHaveBeenCalledWith(
       insertRows(table, 2, 1),
       orderAfterInsert(order, 2, 1, 1),
+      undefined,
+      table,
     );
   });
 
@@ -341,6 +343,8 @@ describe("Grid editing", () => {
     expect(apply).toHaveBeenCalledWith(
       insertRows(table, 1, 1),
       orderAfterInsert(order, 1, 1, 0),
+      undefined,
+      table,
     );
   });
 
@@ -355,6 +359,8 @@ describe("Grid editing", () => {
     expect(apply).toHaveBeenCalledWith(
       deleteRows(table, [0, 3]),
       orderAfterDelete(order, [0, 3]),
+      undefined,
+      table,
     );
   });
 
@@ -384,10 +390,12 @@ describe("Grid editing", () => {
     const { apply, table, props } = setup("a,b\n1,2\n", { header: true });
     fireEvent.contextMenu(screen.getAllByRole("columnheader")[1]);
     fireEvent.click(item("Delete column"));
-    expect(apply).toHaveBeenCalledWith(deleteColumn(table, 1), undefined, {
-      at: 1,
-      op: "delete",
-    });
+    expect(apply).toHaveBeenCalledWith(
+      deleteColumn(table, 1),
+      undefined,
+      { at: 1, op: "delete" },
+      table,
+    );
     fireEvent.contextMenu(screen.getAllByRole("columnheader")[1]);
     fireEvent.click(item("Sort descending"));
     expect(props.onSort).toHaveBeenCalledWith({ col: 1, dir: "desc" });
@@ -444,6 +452,24 @@ describe("Grid editing", () => {
     expect(selected(grid)).toEqual(["a", "b", "c"]);
     rerender({ order: [2, 1, 0] });
     expect(selected(grid)).toEqual(["c"]);
+  });
+
+  it("every apply names the table its edit was built from", () => {
+    const { grid, apply, table } = setup("name,age\nann,3\nbob,4\n", {
+      header: true,
+    });
+    fireEvent.keyDown(grid, { key: "F2" });
+    fireEvent.change(editor(), { target: { value: "x" } });
+    fireEvent.keyDown(editor(), { key: "Enter" });
+    fireEvent.keyDown(grid, { key: "Delete" });
+    fireEvent.contextMenu(gutter("1"));
+    fireEvent.click(item("Insert row below"));
+    fireEvent.contextMenu(gutter("1"));
+    fireEvent.click(item("Delete row"));
+    fireEvent.contextMenu(screen.getAllByRole("columnheader")[0]);
+    fireEvent.click(item("Delete column"));
+    expect(apply).toHaveBeenCalledTimes(5);
+    for (const call of apply.mock.calls) expect(call[3]).toBe(table);
   });
 
   it("Mod text-editing keys stay in the editor (no commit)", () => {

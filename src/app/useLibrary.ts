@@ -47,7 +47,7 @@ import {
 } from "../library/tree";
 import type { FileError } from "../files/api";
 import { baseName } from "../files/paths";
-import { kindOf } from "../model/kinds";
+import { isTextKind, kindOf } from "../model/kinds";
 import type { SidebarState, TabState, WorkspaceState } from "../model/types";
 import { movedPath } from "../model/workspace";
 import type { ScratchpadItem, NewItem } from "../ui/Sidebar";
@@ -821,8 +821,11 @@ export function useLibrary(d: LibraryDeps): LibraryApi {
           : name;
       // A file with no extension takes the typed one: it may not turn into
       // a drawing or an image, which its open Tab couldn't show or save.
+      // Text and Table swap, as on Save As (rewritePaths swaps the Tab).
       const newName = arg + ext;
-      if (!isDir && kindOf(newName) !== kindOf(baseName(path))) {
+      const into = kindOf(newName);
+      const was = kindOf(baseName(path));
+      if (!isDir && into !== was && !(isTextKind(into) && isTextKind(was))) {
         return Promise.resolve(`A text file can't become ${newName}`);
       }
       return withFlushed(path, "rename", async () => {

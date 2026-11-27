@@ -227,6 +227,14 @@ describe("insertRows", () => {
     check(text, insertRows(parse(text), 1, 1), '"a","b"\n"",""\n', [0]);
   });
 
+  it("gives new rows the header's cell count, not the widest row's", () => {
+    const text = "a,b\n1,2,3\n";
+    check(text, insertRows(parse(text), 2, 1), "a,b\n1,2,3\n,\n", [1]);
+    check(text, insertRows(parse(text), 1, 1), "a,b\n,\n1,2,3\n", [1]);
+    const q = '"a"\n"1","2"\n';
+    check(q, insertRows(parse(q), 1, 1), '"a"\n""\n"1","2"\n', [1]);
+  });
+
   it("into an empty table", () => {
     const r = insertRows(parse(""), 0, 2);
     expect(r.changes).toEqual([{ from: 0, to: 0, insert: "\n\n" }]);

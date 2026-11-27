@@ -15,7 +15,6 @@ import {
   kindOf,
   type Kind,
 } from "../../model/kinds";
-import type { TabState } from "../../model/types";
 import * as ws from "../../model/workspace";
 import { deleteScratchpad } from "../../storage/api";
 import { logError } from "../workspaceEffects";
@@ -121,35 +120,13 @@ export function useSave(c: FilesContext, d: SaveDeps) {
           );
         }
         const now = tabOf(id) ?? cur;
-        const into = kindOf(target);
-        const swap =
-          into !== now.kind && isTextKind(into) && isTextKind(now.kind);
-        const kindPatch: Partial<TabState> = !swap
-          ? {}
-          : into === "table"
-            ? {
-                kind: "table",
-                language: "plaintext",
-                languagePicked: true,
-                markdownMode: undefined,
-                preview: undefined,
-              }
-            : {
-                kind: "text",
-                tableView: undefined,
-                delimiter: undefined,
-                header: undefined,
-                sort: undefined,
-                filter: undefined,
-                colWidths: undefined,
-              };
         commit(
           ws.updateTab(stateRef.current, id, {
             title: baseName(target),
             renamed: false,
             language: now.languagePicked ? now.language : languageOf(target),
             languageGuessed: true,
-            ...kindPatch,
+            ...ws.kindSwap(now, target),
             file: {
               path: target,
               format,

@@ -17,7 +17,7 @@ import {
   type CellValue,
   type EditResult,
 } from "./edits";
-import type { GridEditHandlers, GridSelection } from "./Grid";
+import type { ColumnChange, GridEditHandlers, GridSelection } from "./Grid";
 import type { ParsedTable } from "./parse";
 import { columnMenu, rowMenu, type MenuCtx } from "./tableMenus";
 import { orderAfterDelete, orderAfterInsert, type TableSort } from "./view";
@@ -96,6 +96,10 @@ export function useGridEditing(a: GridEditingArgs) {
     setMenu(null);
   }
 
+  /** Writes an edit built from `table`: the model refuses it if that's stale. */
+  const put = (r: EditResult, next?: number[], column?: ColumnChange) =>
+    edit.apply(r, next, column, table);
+
   const open = (pos: number, col: number, initial?: string) => {
     if (readOnly || col < 0 || col >= Math.max(nCols, 1)) return;
     const fileRow = pos < 0 ? 0 : order[pos];
@@ -114,7 +118,7 @@ export function useGridEditing(a: GridEditingArgs) {
     const current = table.rows[ed.fileRow]?.cells[ed.col] ?? "";
     if (ed.value !== current) {
       const r = build(() => setCell(table, ed.fileRow, ed.col, ed.value));
-      if (!r || !edit.apply(r)) return;
+      if (!r || !put(r)) return;
     }
     if (!move || ed.pos < 0) return;
     const d = { down: [1, 0], up: [-1, 0], right: [0, 1], left: [0, -1] }[move];
@@ -151,7 +155,7 @@ export function useGridEditing(a: GridEditingArgs) {
     }
     if (cells.length === 0) return;
     const r = build(() => setCells(table, cells));
-    if (r) edit.apply(r);
+    if (r) put(r);
   };
 
   /** Grid keydown, before navigation. True when the key was handled. */
@@ -213,7 +217,7 @@ export function useGridEditing(a: GridEditingArgs) {
       const r = build(() => insertRows(table, at, 1));
       if (!r) return;
       const after = side === "above" ? p - 1 : p;
-      if (edit.apply(r, orderAfterInsert(order, at, 1, after)))
+      if (put(r, orderAfterInsert(order, at, 1, after)))
         a.select({ row: after + 1, col: s.col }, "cell");
     },
     deleteRows() {
@@ -221,13 +225,13 @@ export function useGridEditing(a: GridEditingArgs) {
       const rows = ps.map((p) => order[p]).filter((r) => r !== undefined);
       if (rows.length === 0) return;
       const r = build(() => deleteRows(table, rows));
-      if (r && edit.apply(r, orderAfterDelete(order, rows)))
+      if (r && put(r, orderAfterDelete(order, rows)))
         a.select({ row: Math.min(...ps), col: s.col }, "cell");
     },
     insertColumn(side) {
       const at = side === "left" ? s.col : s.col + 1;
       const r = build(() => insertColumn(table, at));
-      if (!r || !edit.apply(r, undefined, { at, op: "insert" })) return;
+      if (!r || !put(r, undefined, { at, op: "insert" })) return;
       if (header && table.rows.length > 0) {
         a.select({ row: s.row, col: at }, "cell");
         setEditor({ pos: -1, fileRow: 0, col: at, value: "" });
@@ -237,7 +241,7 @@ export function useGridEditing(a: GridEditingArgs) {
     },
     deleteColumn() {
       const r = build(() => deleteColumn(table, s.col));
-      if (r && edit.apply(r, undefined, { at: s.col, op: "delete" }))
+      if (r && put(r, undefined, { at: s.col, op: "delete" }))
         a.select({ row: s.row, col: s.col }, "cell");
     },
     renameColumn() {

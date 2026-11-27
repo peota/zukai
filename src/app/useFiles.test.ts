@@ -639,6 +639,19 @@ describe("useFiles save and save as", () => {
     expect(tab.sort).toBeUndefined();
   });
 
+  it("Save As from Table to Text takes the new name's Language", async () => {
+    const { result } = await mount();
+    f.filePickSave.mockResolvedValue("C:\\d\\data.csv");
+    await act(() => result.current.saveAs("a"));
+    f.filePickSave.mockResolvedValue("C:\\d\\script.py");
+    await act(() => result.current.saveAs("a"));
+    const tab = result.current.state.tabs.find((t) => t.id === "a")!;
+    expect(tab.kind).toBe("text");
+    expect(tab.language).toBe("python");
+    expect(tab.languagePicked).toBe(false);
+    expect(tab.languageGuessed).toBe(false);
+  });
+
   it("a Table is refused into a drawing, an image or a PDF", async () => {
     const { result } = await mount();
     act(() => result.current.updateTab("a", { kind: "table" }));

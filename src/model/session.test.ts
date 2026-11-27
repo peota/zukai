@@ -641,6 +641,13 @@ describe("table Kind", () => {
     expect(parse(tab)?.tabs).toEqual([tab]);
   });
 
+  it("each Delimiter round-trips, tab included", () => {
+    for (const delimiter of [",", ";", "\t", "|"] as const) {
+      const tab = { ...fileTab("p", "/a/b.csv"), kind: "table" as const };
+      expect(parse({ ...tab, delimiter })?.tabs[0].delimiter).toBe(delimiter);
+    }
+  });
+
   it("drops each malformed table field alone", () => {
     const r = parse({
       ...fileTab("p", "/a/b.csv"),

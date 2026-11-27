@@ -4,6 +4,7 @@ import type { TableInfo, TableUnreadable, TabState } from "../model/types";
 import { insertRows, type EditResult } from "./edits";
 import { cellHidden } from "./gridHelpers";
 import { charPx, Grid, type ColumnChange, type GridEditHandlers } from "./Grid";
+import type { ParsedTable } from "./parse";
 import { useTableModel } from "./useTableModel";
 import { guessWidths, NEXT_SORT, rowOrder, type TableSort } from "./view";
 
@@ -139,9 +140,14 @@ export default function TableHost(p: TableHostProps) {
 
   const edit = useMemo<GridEditHandlers>(
     () => ({
-      apply(e: EditResult, next?: number[], column?: ColumnChange) {
+      apply(
+        e: EditResult,
+        next?: number[],
+        column?: ColumnChange,
+        base?: ParsedTable,
+      ) {
         const l = live.current;
-        if (!l.apply(e)) return false;
+        if (!l.apply(e, base)) return false;
         if (next) setShown((s) => s && { ...s, order: next });
         if (column) {
           const w = [...l.widths];
@@ -245,7 +251,7 @@ export default function TableHost(p: TableHostProps) {
     } catch {
       return;
     }
-    edit.apply(r, [...order, at + count - 1]);
+    edit.apply(r, [...order, at + count - 1], undefined, table);
   };
 
   return (
