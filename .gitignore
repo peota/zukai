@@ -3,3 +3,11 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
+
+# Local-only docs and tooling, kept out of the public repo
+docs/
+CONTEXT.md
+DESIGN.md
+PRODUCT.md
+.claude/
+.impeccable/
