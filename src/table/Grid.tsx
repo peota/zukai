@@ -13,6 +13,7 @@ import {
 import { detectPlatform, letterOf } from "../app/shortcuts";
 import { Menu } from "../ui/Menu";
 import { CellEditor } from "./CellEditor";
+import { keepPlace, placeOf } from "./gridMemory";
 import type { EditResult } from "./edits";
 import {
   cellHidden,
@@ -85,6 +86,11 @@ export interface GridProps {
   /** Take the keyboard (after a status-bar action); then `onFocusDone`. */
   focusRequest?: boolean;
   onFocusDone?(): void;
+  /**
+   * The Tab id under which the grid keeps its scroll and active cell
+   * (`gridMemory`): a remount comes back to them.
+   */
+  memory?: string;
 }
 
 /** px at the default font size; scale with fontSize / 13. */
@@ -158,7 +164,23 @@ export function Grid(props: GridProps) {
     focusGrid();
     onFocusDone?.();
   }, [focusRequest, onFocusDone, focusGrid]);
-  const [view, setView] = useState({ top: 0, left: 0, w: 0, h: 0 });
+  const { memory } = props;
+  // Where this Tab's grid was when it last unmounted.
+  const [place] = useState(() => (memory ? placeOf(memory) : undefined));
+  const [view, setView] = useState({
+    top: place?.scrollTop ?? 0,
+    left: place?.scrollLeft ?? 0,
+    w: 0,
+    h: 0,
+  });
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !place) return;
+    el.scrollTop = place.scrollTop;
+    el.scrollLeft = place.scrollLeft;
+    // Mount only: the place is read once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Viewport size: clientWidth/Height, kept current with a ResizeObserver.
   useLayoutEffect(() => {
@@ -180,6 +202,7 @@ export function Grid(props: GridProps) {
   const onScroll = () => {
     const el = scroller.current;
     if (!el) return;
+    remember();
     setView((v) =>
       v.top === el.scrollTop && v.left === el.scrollLeft
         ? v
@@ -215,10 +238,10 @@ export function Grid(props: GridProps) {
   const pageRows = Math.max(1, Math.floor(bodyH / rowH));
 
   // Selection, clamped to the current shape.
-  const [rawSel, setSel] = useState<SelState>({
-    active: { row: 0, col: 0 },
-    head: { row: 0, col: 0 },
-    mode: "cell",
+  const [rawSel, setSel] = useState<SelState>(() => {
+    const at = place ? order.indexOf(place.row) : -1;
+    const active = { row: Math.max(0, at), col: place?.col ?? 0 };
+    return { active, head: active, mode: "cell" };
   });
   const fit = (p: Pos): Pos => clampPos(p, nRows, nCols);
   // Rebuilt only when the selection or the shape changes.
@@ -268,6 +291,25 @@ export function Grid(props: GridProps) {
   useEffect(() => {
     onSelection.current?.(sel);
   }, [sel]);
+
+  /** The active cell as a File-order row, for `gridMemory`. */
+  const activeAt = useRef({ row: 0, col: 0 });
+  const remember = () => {
+    const el = scroller.current;
+    if (!memory || !el) return;
+    keepPlace(memory, {
+      scrollTop: el.scrollTop,
+      scrollLeft: el.scrollLeft,
+      ...activeAt.current,
+    });
+  };
+  const fileRowOfActive = order[sel.row];
+  useEffect(() => {
+    activeAt.current = { row: fileRowOfActive ?? 0, col: sel.col };
+    remember();
+    // remember reads only refs and the memory key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileRowOfActive, sel.col, memory]);
 
   /** Scrolls so (row, col) is fully in view. */
   const reveal = (p: Pos) => {

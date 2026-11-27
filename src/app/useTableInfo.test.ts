@@ -1,7 +1,10 @@
-import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import type { TableInfo, TabState } from "../model/types";
 import { useTableInfo } from "./useTableInfo";
+
+const forget = vi.hoisted(() => vi.fn());
+vi.mock("../table/gridMemory", () => ({ forget }));
 
 const info: TableInfo = {
   rows: 3,
@@ -52,5 +55,35 @@ describe("useTableInfo", () => {
     act(() => result.current.onTableInfo("a", null));
     expect(result.current.infoOf("a")).toBeUndefined();
     expect(result.current.delimiterOf("a")).toBe(";");
+  });
+
+  it("keeps each Tab's Unreadable notice", () => {
+    const { result } = renderHook(() => useTableInfo([tab()]));
+    const n = { line: 2, reason: "unclosedQuote" as const };
+    act(() => result.current.onTableNotice("a", n));
+    expect(result.current.noticeOf("a")).toEqual(n);
+    act(() => result.current.onTableNotice("a", null));
+    expect(result.current.noticeOf("a")).toBeNull();
+  });
+
+  it("a closed Tab's counts, notice and grid memory go", async () => {
+    let tabs = [tab(), tab({ id: "b", title: "b.csv" })];
+    const { result, rerender } = renderHook(() => useTableInfo(tabs));
+    act(() => result.current.onTableInfo("a", info));
+    act(() =>
+      result.current.onTableNotice("a", { line: 1, reason: "inconsistent" }),
+    );
+    act(() => result.current.onTableInfo("b", info));
+    forget.mockClear();
+    tabs = [tab({ id: "b", title: "b.csv" })];
+    rerender();
+    expect(result.current.noticeOf("a")).toBeNull();
+    // A Tab with that id opening again starts with nothing.
+    tabs = [tab(), tab({ id: "b", title: "b.csv" })];
+    rerender();
+    expect(result.current.infoOf("a")).toBeUndefined();
+    expect(result.current.delimiterOf("a")).toBeUndefined();
+    await waitFor(() => expect(forget).toHaveBeenCalledWith("a"));
+    expect(forget).not.toHaveBeenCalledWith("b");
   });
 });

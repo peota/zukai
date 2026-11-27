@@ -41,6 +41,20 @@ const FILTER_DELAY_MS = 150;
 const NO_ROWS: number[] = [];
 const NO_HIDDEN: readonly [number, number][] = [];
 
+/**
+ * Focus the grid may not take when it shows: a field in the sidebar (a new
+ * item's name, the search), a dialog, or another text input. EditorHost
+ * keeps the same rule for a Text Tab's view.
+ */
+function focusIsTaken(): boolean {
+  const a = document.activeElement;
+  if (!(a instanceof HTMLElement) || a === document.body) return false;
+  if (a.closest("[data-z-sidebar]") && a instanceof HTMLInputElement)
+    return true;
+  if (a.closest('[role="dialog"]')) return true;
+  return a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement;
+}
+
 /** The shown rows, and what they were computed from. */
 interface Shown {
   order: number[];
@@ -58,7 +72,7 @@ export default function TableHost(p: TableHostProps) {
   const header = tab.header ?? true;
   const sort = tab.sort;
   const filter = tab.filter ?? "";
-  const { model, apply } = useTableModel(bridge, id, path, tab.delimiter);
+  const { model, busy, apply } = useTableModel(bridge, id, path, tab.delimiter);
   const table = model.status === "ready" ? model.table : null;
   const seq = model.status === "ready" ? model.seq : -1;
   const readOnly = bridge ? bridge.readOnly(id) : true;
@@ -188,6 +202,18 @@ export default function TableHost(p: TableHostProps) {
     setFocusSeen(p.focusSignal);
     if (p.focused) setFocusGrid(true);
   }
+  // Shown in the focused Tab (or its Tab becomes the focused one): the grid
+  // takes the keyboard once it's read, as EditorHost does for a Text Tab.
+  const [wasFocused, setWasFocused] = useState(p.focused);
+  const [showFocus, setShowFocus] = useState(p.focused);
+  if (p.focused !== wasFocused) {
+    setWasFocused(p.focused);
+    setShowFocus(p.focused);
+  }
+  if (showFocus && table) {
+    setShowFocus(false);
+    if (p.focused && !focusIsTaken()) setFocusGrid(true);
+  }
   const onFocusDone = useCallback(() => setFocusGrid(false), []);
   const filterBox = useRef<HTMLInputElement>(null);
   const signal = useRef(p.filterSignal);
@@ -246,6 +272,9 @@ export default function TableHost(p: TableHostProps) {
           spellCheck={false}
           className="w-56 min-w-0 rounded-[6px] bg-sunken px-2 py-1 text-text outline-none placeholder:text-faint focus:shadow-[0_0_0_1px_var(--z-accent)]"
         />
+        {table && busy && (
+          <span className="shrink-0 text-muted">Reading table…</span>
+        )}
         {table && order.length === 0 && !readOnly && (
           <button
             type="button"
@@ -283,6 +312,7 @@ export default function TableHost(p: TableHostProps) {
             edit={edit}
             focusRequest={focusGrid}
             onFocusDone={onFocusDone}
+            memory={id}
           />
         )}
       </div>

@@ -6,12 +6,23 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { useState } from "react";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { TextBridge } from "../editor/EditorHost";
 import type { TableInfo, TableUnreadable, TabState } from "../model/types";
 import { TabPane, type TabPaneProps } from "../app/TabPane";
 import TableHost, { type TableHostProps } from "./TableHost";
 import type { TextChange } from "./edits";
+import { forget, placeOf } from "./gridMemory";
+
+afterEach(() => forget("t"));
 
 vi.mock("../app/shortcuts", async (orig) => ({
   ...(await orig<typeof import("../app/shortcuts")>()),
@@ -217,6 +228,7 @@ describe("TableHost", () => {
     const h = host("name\nann\n");
     await ready();
     const grid = screen.getByRole("grid");
+    act(() => grid.blur());
     expect(document.activeElement).not.toBe(grid);
     h.focus(1);
     expect(document.activeElement).toBe(grid);
@@ -235,10 +247,108 @@ describe("TableHost", () => {
     expect(document.activeElement).toBe(screen.getByRole("grid"));
   });
 
-  it("a grid mounted with nothing pending leaves focus alone", async () => {
+  it("a newly shown grid in the focused Tab takes the keyboard once read", async () => {
     host("name\nann\n", {}, { focusSignal: 4, focusSeen: 4 });
     await ready();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("grid")),
+    );
+  });
+
+  it("a newly shown grid in the unfocused Split half leaves focus alone", async () => {
+    host("name\nann\n", {}, { focused: false });
+    await ready();
+    await act(async () => {});
     expect(document.activeElement).not.toBe(screen.getByRole("grid"));
+  });
+
+  it("a newly shown grid leaves focus in a sidebar field or another input", async () => {
+    const side = document.createElement("div");
+    side.setAttribute("data-z-sidebar", "");
+    const field = document.createElement("input");
+    side.appendChild(field);
+    document.body.appendChild(side);
+    try {
+      field.focus();
+      host("name\nann\n");
+      await ready();
+      await act(async () => {});
+      expect(document.activeElement).toBe(field);
+    } finally {
+      side.remove();
+    }
+  });
+
+  it("the grid takes the keyboard when its Tab becomes the focused one", async () => {
+    let setFocused: (f: boolean) => void = () => {};
+    const b = fakeBridge("name\nann\n");
+    function W() {
+      const [f, setF] = useState(false);
+      setFocused = setF;
+      return (
+        <TableHost
+          tab={baseTab()}
+          bridge={b.bridge}
+          focused={f}
+          fontSize={13}
+          filterSignal={0}
+          onTabPatch={() => {}}
+          onInfo={() => {}}
+          onNotice={() => {}}
+        />
+      );
+    }
+    render(<W />);
+    await ready();
+    await act(async () => {});
+    expect(document.activeElement).not.toBe(screen.getByRole("grid"));
+    act(() => setFocused(true));
+    expect(document.activeElement).toBe(screen.getByRole("grid"));
+  });
+
+  it("a remount keeps the scroll and the active cell (File-order row)", async () => {
+    let text = "name\n";
+    for (let i = 0; i < 200; i++) text += `r${String(i).padStart(3, "0")}\n`;
+    const h = host(text, { sort: { col: 0, dir: "desc" } });
+    await ready();
+    const grid = screen.getByRole("grid");
+    grid.scrollTop = 1400;
+    fireEvent.scroll(grid);
+    fireEvent.mouseDown(cell("r150"));
+    expect(placeOf("t")).toMatchObject({ scrollTop: 1400, row: 151, col: 0 });
+    h.unmount();
+    const again = fakeBridge(text);
+    render(
+      <TableHost
+        tab={baseTab({ sort: { col: 0, dir: "desc" } })}
+        bridge={again.bridge}
+        focused
+        fontSize={13}
+        filterSignal={0}
+        onTabPatch={() => {}}
+        onInfo={() => {}}
+        onNotice={() => {}}
+      />,
+    );
+    // The kept table shows at once: no Reading table… in between.
+    expect(screen.queryByText("Reading table…")).toBeNull();
+    const g2 = screen.getByRole("grid");
+    expect(g2.scrollTop).toBe(1400);
+    expect(activeCell()).toBe("r150");
+  });
+
+  it("a large outside change keeps the same grid (and its place) shown", async () => {
+    const h = host("name\nann\nbob\n");
+    await ready();
+    const before = screen.getByRole("grid");
+    fireEvent.mouseDown(cell("bob"));
+    const big = "name\nann\nbob\n" + "cat\n".repeat(500_001);
+    await h.outside(big);
+    await waitFor(() =>
+      expect(screen.getAllByRole("rowheader").length).toBeGreaterThan(2),
+    );
+    expect(screen.getByRole("grid")).toBe(before);
+    expect(activeCell()).toBe("bob");
   });
 
   it("header click cycles Sort and patches it", async () => {

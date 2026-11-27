@@ -1,10 +1,14 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TextBridge } from "../editor/EditorHost";
 import { fakeBridge } from "../rich/richTestKit";
 import type { EditResult } from "./edits";
 import { readTable, type Delimiter, type ParseResult } from "./parse";
+import { forget, MAX_TABLES, recallTable, rememberTable } from "./gridMemory";
+import { WORKER_THRESHOLD } from "./parseAsync";
 import { useTableModel } from "./useTableModel";
+
+afterEach(() => forget("a"));
 
 function setup(text: string) {
   const texts: Record<string, string> = { a: text };
@@ -311,6 +315,160 @@ describe("useTableModel", () => {
     });
     expect(ok1 && ok2).toBe(true);
     expect(base.change).toHaveBeenCalledTimes(2);
+  });
+
+  it("a large outside change keeps the old table while it is read (busy)", async () => {
+    const { bridge, outside } = setup("a,b\n1,2\n");
+    const waiting: Array<() => void> = [];
+    let first = true;
+    const fn = vi.fn((t: string, p: string) => {
+      if (first) {
+        first = false;
+        return Promise.resolve(readTable(t, p));
+      }
+      return new Promise<ParseResult>((res) =>
+        waiting.push(() => res(readTable("a,b\n1,2\n3,4\n", p))),
+      );
+    });
+    const { result } = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, fn),
+    );
+    await waitFor(() => expect(result.current.model.status).toBe("ready"));
+    const before = result.current.model;
+    act(() => outside("a,b\n" + "1,2\n".repeat(WORKER_THRESHOLD / 4 + 1)));
+    expect(result.current.model).toBe(before);
+    expect(result.current.busy).toBe(true);
+    let ok = true;
+    act(() => {
+      ok = result.current.apply(edit("a,b\n1,9\n"));
+    });
+    expect(ok).toBe(false);
+    await act(async () => waiting.splice(0).forEach((f) => f()));
+    expect(result.current.busy).toBe(false);
+    const m = result.current.model;
+    expect(m.status === "ready" && m.seq).toBe(1);
+  });
+
+  it("a remount over unchanged text adopts the kept table without a parse", async () => {
+    const { bridge } = setup("a,b\n1,2\n");
+    const parse = vi.fn(sync);
+    const first = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, parse),
+    );
+    await waitFor(() =>
+      expect(first.result.current.model.status).toBe("ready"),
+    );
+    const table =
+      first.result.current.model.status === "ready" &&
+      first.result.current.model.table;
+    first.unmount();
+    parse.mockClear();
+    const again = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, parse),
+    );
+    // Ready on the first render: no Reading table… flash.
+    const m = again.result.current.model;
+    expect(m.status === "ready" && m.table).toBe(table);
+    await act(async () => {});
+    expect(parse).not.toHaveBeenCalled();
+    // An edit still goes through.
+    let ok = false;
+    act(() => {
+      ok = again.result.current.apply(edit("a,b\n1,9\n"));
+    });
+    expect(ok).toBe(true);
+  });
+
+  it("a remount over changed text (or another override) parses again", async () => {
+    const { bridge, outside } = setup("a,b\n1,2\n");
+    const parse = vi.fn(sync);
+    const first = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, parse),
+    );
+    await waitFor(() =>
+      expect(first.result.current.model.status).toBe("ready"),
+    );
+    first.unmount();
+    outside("a,b\n1,2\n3,4\n");
+    parse.mockClear();
+    const again = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, parse),
+    );
+    expect(again.result.current.model.status).toBe("reading");
+    await waitFor(() =>
+      expect(again.result.current.model.status).toBe("ready"),
+    );
+    expect(parse).toHaveBeenCalledTimes(1);
+    again.unmount();
+    parse.mockClear();
+    const third = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", ";", parse),
+    );
+    expect(third.result.current.model.status).toBe("reading");
+    await waitFor(() => expect(parse).toHaveBeenCalledTimes(1));
+  });
+
+  it("forget drops the kept table", async () => {
+    const { bridge } = setup("a,b\n1,2\n");
+    const first = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, sync),
+    );
+    await waitFor(() =>
+      expect(first.result.current.model.status).toBe("ready"),
+    );
+    first.unmount();
+    forget("a");
+    const again = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, sync),
+    );
+    expect(again.result.current.model.status).toBe("reading");
+  });
+
+  it("keeps at most a few tables", () => {
+    const r = readTable("a\n", "x.csv");
+    if (!r.ok) throw new Error("bad");
+    for (let i = 0; i <= MAX_TABLES; i++)
+      rememberTable(`k${i}`, "a\n", "x.csv", undefined, r.table);
+    expect(recallTable("k0", "a\n", "x.csv", undefined)).toBeNull();
+    expect(recallTable(`k${MAX_TABLES}`, "a\n", "x.csv", undefined)).toBe(
+      r.table,
+    );
+    for (let i = 0; i <= MAX_TABLES; i++) forget(`k${i}`);
+  });
+
+  it("refuses an edit built from a table the model no longer shows", async () => {
+    const { bridge, base } = setup("a,b\n1,2\n");
+    const { result } = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, sync),
+    );
+    await waitFor(() => expect(result.current.model.status).toBe("ready"));
+    const m = result.current.model;
+    const shown = m.status === "ready" ? m.table : null;
+    const stale = readTable("a,b\n1,2\n", "x.csv");
+    if (!stale.ok || !shown) throw new Error("bad");
+    let ok = true;
+    act(() => {
+      ok = result.current.apply(edit("a,b\n1,9\n"), stale.table);
+    });
+    expect(ok).toBe(false);
+    expect(base.change).not.toHaveBeenCalled();
+    act(() => {
+      ok = result.current.apply(edit("a,b\n1,9\n"), shown);
+    });
+    expect(ok).toBe(true);
+  });
+
+  it("apply reads the text once before and once after the change", async () => {
+    const { bridge } = setup("a,b\n1,2\n");
+    const { result } = renderHook(() =>
+      useTableModel(bridge, "a", "x.csv", undefined, sync),
+    );
+    await waitFor(() => expect(result.current.model.status).toBe("ready"));
+    const text = vi.spyOn(bridge, "text");
+    act(() => {
+      result.current.apply(edit("a,b\n1,9\n"));
+    });
+    expect(text.mock.calls.length).toBeLessThanOrEqual(2);
   });
 
   it("unsubscribes on unmount", async () => {
