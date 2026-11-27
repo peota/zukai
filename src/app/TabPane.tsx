@@ -4,6 +4,8 @@ import type {
   MarkdownMode,
   PdfInfo,
   PdfZoom,
+  TableInfo,
+  TableUnreadable,
   TabState,
 } from "../model/types";
 import type { FindRequest } from "../find/findExtension";
@@ -27,6 +29,8 @@ const RichEditor = lazy(() => import("../rich/RichEditor"));
 const PdfHost = lazy(() => import("../pdf/PdfHost"));
 /** The Table grid stays out of the main bundle until a Table is shown. */
 const TableHost = lazy(() => import("../table/TableHost"));
+/** An Unreadable Table's notice (it reads the text again on Try table view). */
+const TableNotice = lazy(() => import("../table/TableNotice"));
 
 export interface TabPaneProps
   extends
@@ -74,6 +78,13 @@ export interface TabPaneProps
   gitStatus(folder: string): FolderGit | undefined;
   /** A diff Tab's Open file: the real File in a normal Tab. */
   onOpenFile(path: string): void;
+  /** A Table Tab's rows, columns and Delimiter, from its grid. */
+  onTableInfo?(id: string, info: TableInfo | null): void;
+  /** This Table Tab's Unreadable notice, if its text didn't read. */
+  tableNotice?: TableUnreadable | null;
+  onTableNotice?(id: string, notice: TableUnreadable | null): void;
+  /** Bumped by Mod+F on this Table Tab: its grid focuses the Filter box. */
+  filterSignal?: number;
 }
 
 /**
@@ -126,6 +137,15 @@ export function TabPane(p: TabPaneProps) {
     (info: PdfInfo | null) => onPdfInfo?.(id, reloadSeq, info),
     [onPdfInfo, id, reloadSeq],
   );
+  const { onTableInfo, onTableNotice } = p;
+  const onTableTabInfo = useCallback(
+    (info: TableInfo | null) => onTableInfo?.(id, info),
+    [onTableInfo, id],
+  );
+  const onTableTabNotice = useCallback(
+    (notice: TableUnreadable | null) => onTableNotice?.(id, notice),
+    [onTableNotice, id],
+  );
 
   return (
     <div
@@ -147,6 +167,18 @@ export function TabPane(p: TabPaneProps) {
         onReveal={p.onReveal}
         revealLabel={p.revealLabel}
       />
+      {tab.kind === "table" && p.tableNotice && (
+        <Suspense fallback={null}>
+          <TableNotice
+            key={id}
+            tab={tab}
+            bridge={p.bridge}
+            notice={p.tableNotice}
+            onNotice={onTableTabNotice}
+            onTabPatch={p.onTabPatch}
+          />
+        </Suspense>
+      )}
       <div className="min-h-0 flex-1 bg-editor">
         {isText && (
           <div className="flex size-full">
@@ -167,7 +199,17 @@ export function TabPane(p: TabPaneProps) {
             />
             {grid && (
               <Suspense fallback={<div className="size-full bg-editor" />}>
-                <TableHost key={id} tab={tab} />
+                <TableHost
+                  key={id}
+                  tab={tab}
+                  bridge={p.bridge}
+                  focused={focused}
+                  fontSize={p.fontSize}
+                  onTabPatch={p.onTabPatch}
+                  onInfo={onTableTabInfo}
+                  onNotice={onTableTabNotice}
+                  filterSignal={p.filterSignal ?? 0}
+                />
               </Suspense>
             )}
             {rich && (

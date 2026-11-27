@@ -365,6 +365,7 @@ describe("Grid editing", () => {
     expect(apply).toHaveBeenCalledTimes(1);
     expect(apply.mock.calls[0][0]).toEqual(insertColumn(table, 1));
     expect(apply.mock.calls[0][1]).toBeUndefined();
+    expect(apply.mock.calls[0][2]).toEqual({ at: 1, op: "insert" });
     expect(editor()).not.toBeNull();
     expect(editor().value).toBe("");
     expect(document.activeElement).toBe(editor());
@@ -383,7 +384,10 @@ describe("Grid editing", () => {
     const { apply, table, props } = setup("a,b\n1,2\n", { header: true });
     fireEvent.contextMenu(screen.getAllByRole("columnheader")[1]);
     fireEvent.click(item("Delete column"));
-    expect(apply).toHaveBeenCalledWith(deleteColumn(table, 1));
+    expect(apply).toHaveBeenCalledWith(deleteColumn(table, 1), undefined, {
+      at: 1,
+      op: "delete",
+    });
     fireEvent.contextMenu(screen.getAllByRole("columnheader")[1]);
     fireEvent.click(item("Sort descending"));
     expect(props.onSort).toHaveBeenCalledWith({ col: 1, dir: "desc" });

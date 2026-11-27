@@ -1,11 +1,287 @@
-import type { TabState } from "../model/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { TextBridge } from "../editor/EditorHost";
+import type { TableInfo, TableUnreadable, TabState } from "../model/types";
+import { insertRows, type EditResult } from "./edits";
+import { charPx, Grid, type ColumnChange, type GridEditHandlers } from "./Grid";
+import { useTableModel } from "./useTableModel";
+import { guessWidths, NEXT_SORT, rowOrder, type TableSort } from "./view";
 
 export interface TableHostProps {
   tab: TabState;
+  bridge: TextBridge | null;
+  focused: boolean;
+  fontSize: number;
+  onTabPatch(id: string, patch: Partial<TabState>): void;
+  onInfo(info: TableInfo | null): void;
+  /** Bumped by Mod+F on this Tab: focus the Filter box. */
+  filterSignal: number;
+  /**
+   * The text can't be read as a table (the Tab then goes to raw text), or
+   * null once it is read as one. TabPane shows the notice in either View.
+   */
+  onNotice(notice: TableUnreadable | null): void;
 }
 
-/** A Table Tab's grid View. A placeholder until the grid lands. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function TableHost(_props: TableHostProps) {
-  return <div data-testid="table-host" className="size-full bg-editor" />;
+/** Typing in the Filter box applies after this pause. */
+const FILTER_DELAY_MS = 150;
+const NO_ROWS: number[] = [];
+const NO_HIDDEN: readonly [number, number][] = [];
+
+/** The shown rows, and what they were computed from. */
+interface Shown {
+  order: number[];
+  seq: number;
+  sort?: TableSort;
+  filter: string;
+  header: boolean;
+}
+
+/** A Table Tab's grid View: top bar (View switch, Filter) over the grid. */
+export default function TableHost(p: TableHostProps) {
+  const { tab, bridge, onTabPatch } = p;
+  const id = tab.id;
+  const path = tab.file?.path ?? tab.title;
+  const header = tab.header ?? true;
+  const sort = tab.sort;
+  const filter = tab.filter ?? "";
+  const { model, apply } = useTableModel(bridge, id, path, tab.delimiter);
+  const table = model.status === "ready" ? model.table : null;
+  const seq = model.status === "ready" ? model.seq : -1;
+  const readOnly = bridge ? bridge.readOnly(id) : true;
+
+  // The row order changes with the Sort, Filter, Header row or a re-parse,
+  // never after the grid's own edit (an edited row stays put).
+  const [shown, setShown] = useState<Shown | null>(null);
+  let order = shown?.order ?? NO_ROWS;
+  if (
+    table &&
+    (!shown ||
+      shown.seq !== seq ||
+      shown.sort !== sort ||
+      shown.filter !== filter ||
+      shown.header !== header)
+  ) {
+    order = rowOrder(table, { header, sort, filter });
+    setShown({ order, seq, sort, filter, header });
+  }
+
+  // Widths: the Tab's, else guessed once per parse (not on every own edit).
+  const cpx = charPx(p.fontSize);
+  const [guess, setGuess] = useState<{
+    seq: number;
+    header: boolean;
+    cpx: number;
+    widths: number[];
+  } | null>(null);
+  let guessed = guess?.widths ?? NO_ROWS;
+  if (
+    table &&
+    (!guess ||
+      guess.seq !== seq ||
+      guess.header !== header ||
+      guess.cpx !== cpx)
+  ) {
+    guessed = guessWidths(table, header, cpx);
+    setGuess({ seq, header, cpx, widths: guessed });
+  }
+  const width = table?.width ?? 0;
+  const colWidths = tab.colWidths;
+  const widths = useMemo(
+    () =>
+      Array.from(
+        { length: width },
+        (_, c) => colWidths?.[c] ?? guessed[c] ?? cpx * 8,
+      ),
+    [width, colWidths, guessed, cpx],
+  );
+
+  // Latest values for the edit handlers, which the grid may hold on to.
+  const live = useRef({ widths, header, cpx, apply, onTabPatch });
+  useEffect(() => {
+    live.current = { widths, header, cpx, apply, onTabPatch };
+  });
+
+  const edit = useMemo<GridEditHandlers>(
+    () => ({
+      apply(e: EditResult, next?: number[], column?: ColumnChange) {
+        const l = live.current;
+        if (!l.apply(e)) return false;
+        if (next) setShown((s) => s && { ...s, order: next });
+        if (column) {
+          const w = [...l.widths];
+          if (column.op === "insert") {
+            const g = guessWidths(e.table, l.header, l.cpx)[column.at];
+            w.splice(column.at, 0, g ?? l.cpx * 8);
+          } else {
+            w.splice(column.at, 1);
+          }
+          l.onTabPatch(id, { colWidths: w });
+        }
+        return true;
+      },
+      undo: () => void bridge?.undo(id),
+      redo: () => void bridge?.redo(id),
+    }),
+    [bridge, id],
+  );
+
+  // An Unreadable Table goes to raw text, where TabPane shows the notice.
+  const report = useRef({ onNotice: p.onNotice, onTabPatch });
+  useEffect(() => {
+    report.current = { onNotice: p.onNotice, onTabPatch };
+  });
+  useEffect(() => {
+    const r = report.current;
+    if (model.status === "unreadable") {
+      r.onNotice({ line: model.line, reason: model.reason });
+      r.onTabPatch(id, { tableView: "raw" });
+    } else if (model.status === "ready") {
+      r.onNotice(null);
+    }
+  }, [model, id]);
+
+  const rows = table
+    ? table.rows.length - (header && table.rows.length ? 1 : 0)
+    : 0;
+  const delimiter = table?.delimiter;
+  const info = useMemo<TableInfo | null>(
+    () =>
+      delimiter
+        ? { rows, shown: order.length, cols: width, delimiter, header }
+        : null,
+    [rows, order.length, width, delimiter, header],
+  );
+  const { onInfo } = p;
+  useEffect(() => {
+    onInfo(info);
+  }, [info, onInfo]);
+
+  // The Filter box: typed text applies (and is stored) after a pause.
+  const [query, setQuery] = useState(filter);
+  useEffect(() => {
+    if (query === filter) return;
+    const t = setTimeout(
+      () => report.current.onTabPatch(id, { filter: query || undefined }),
+      FILTER_DELAY_MS,
+    );
+    return () => clearTimeout(t);
+  }, [query, filter, id]);
+  const filterBox = useRef<HTMLInputElement>(null);
+  const signal = useRef(p.filterSignal);
+  useEffect(() => {
+    if (p.filterSignal === signal.current) return;
+    signal.current = p.filterSignal;
+    filterBox.current?.focus();
+    filterBox.current?.select();
+  }, [p.filterSignal]);
+
+  /** With no data row shown, a way to add one: at the end of the file. */
+  const addRow = () => {
+    if (!table) return;
+    const at = table.rows.length;
+    // An empty file with a header row needs the header line first.
+    const count = header && at === 0 ? 2 : 1;
+    let r: EditResult;
+    try {
+      r = insertRows(table, at, count);
+    } catch {
+      return;
+    }
+    edit.apply(r, [...order, at + count - 1]);
+  };
+
+  return (
+    <div
+      data-testid="table-host"
+      className="flex size-full min-w-0 flex-col bg-editor"
+    >
+      <div className="flex shrink-0 select-none items-center gap-2 border-b border-hairline px-3 py-1.5 text-ui-sm">
+        <div
+          role="group"
+          aria-label="View"
+          className="flex shrink-0 rounded-[6px] bg-sunken p-0.5"
+        >
+          <ViewButton pressed>Grid</ViewButton>
+          <ViewButton onClick={() => onTabPatch(id, { tableView: "raw" })}>
+            Raw text
+          </ViewButton>
+        </div>
+        <input
+          ref={filterBox}
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && query) {
+              e.preventDefault();
+              setQuery("");
+            }
+          }}
+          placeholder="Filter rows…"
+          aria-label="Filter rows"
+          spellCheck={false}
+          className="w-56 min-w-0 rounded-[6px] bg-sunken px-2 py-1 text-text outline-none placeholder:text-faint focus:shadow-[0_0_0_1px_var(--z-accent)]"
+        />
+        {table && order.length === 0 && !readOnly && (
+          <button
+            type="button"
+            onClick={addRow}
+            className="shrink-0 rounded-[6px] px-2 py-1 text-muted hover:bg-row-hover hover:text-text"
+          >
+            Add row
+          </button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1">
+        {model.status === "reading" && (
+          <div className="flex size-full items-center justify-center text-ui-sm text-muted">
+            Reading table…
+          </div>
+        )}
+        {table && (
+          <Grid
+            table={table}
+            seq={seq}
+            order={order}
+            header={header}
+            widths={widths}
+            onWidths={(w) => onTabPatch(id, { colWidths: w })}
+            sort={sort}
+            onSortClick={(col) =>
+              onTabPatch(id, { sort: NEXT_SORT(sort, col) })
+            }
+            onSort={(s) => onTabPatch(id, { sort: s })}
+            hidden={bridge?.hidden(id) ?? NO_HIDDEN}
+            filter={filter || undefined}
+            readOnly={readOnly}
+            focused={p.focused}
+            fontSize={p.fontSize}
+            edit={edit}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ViewButton(p: {
+  pressed?: boolean;
+  onClick?(): void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={p.pressed ?? false}
+      onClick={p.onClick}
+      className={
+        "rounded-[5px] px-2 py-0.5 " +
+        (p.pressed
+          ? "bg-editor text-text shadow-[0_0_0_1px_var(--z-hairline)]"
+          : "text-muted hover:text-text")
+      }
+    >
+      {p.children}
+    </button>
+  );
 }

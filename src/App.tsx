@@ -29,6 +29,8 @@ import type {
   PdfZoom,
   LanguageId,
   SplitOrientation,
+  TableInfo,
+  TableUnreadable,
   TabState,
 } from "./model/types";
 import { otherHalf, splitOf } from "./model/split";
@@ -437,6 +439,36 @@ export default function App() {
       ),
     [],
   );
+  /** Each Table Tab's rows, columns and Delimiter, from its grid. */
+  const [, setTableInfo] = useState<Readonly<Record<string, TableInfo | null>>>(
+    {},
+  );
+  const onTableInfo = useCallback(
+    (id: string, info: TableInfo | null) =>
+      setTableInfo((m) => (m[id] === info ? m : { ...m, [id]: info })),
+    [],
+  );
+  /** Each Table Tab whose text didn't read as a table: its notice. */
+  const [tableNotices, setTableNotices] = useState<
+    Readonly<Record<string, TableUnreadable>>
+  >({});
+  const onTableNotice = useCallback(
+    (id: string, notice: TableUnreadable | null) =>
+      setTableNotices((m) => {
+        const was = m[id];
+        if (!notice) {
+          if (!was) return m;
+          const next = { ...m };
+          delete next[id];
+          return next;
+        }
+        if (was?.line === notice.line && was.reason === notice.reason) return m;
+        return { ...m, [id]: notice };
+      }),
+    [],
+  );
+  /** Mod+F on a Table Tab in the grid: focus its Filter box (Task 10 bumps it). */
+  const [filterSignal] = useState(0);
   /** Go to a page of the active PDF Tab: `seq` makes each request new. */
   const [goToPage, setGoToPage] = useState<{
     tabId: string;
@@ -679,6 +711,10 @@ export default function App() {
       reloadSeq={reloadSeqOf(tab.id)}
       onImageInfo={onImageInfo}
       onPdfInfo={onPdfInfo}
+      onTableInfo={onTableInfo}
+      tableNotice={tableNotices[tab.id] ?? null}
+      onTableNotice={onTableNotice}
+      filterSignal={filterSignal}
       goToPage={goToPage}
       zoomRequest={zoomRequest}
       findRequest={w.findRequest}

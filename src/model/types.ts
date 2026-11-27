@@ -132,6 +132,13 @@ export interface TableInfo {
   header: boolean;
 }
 
+/** Why a Table Tab's text can't be read as a table, for its notice. */
+export interface TableUnreadable {
+  /** The physical line (1-based) where reading failed. */
+  line: number;
+  reason: "unclosedQuote" | "inconsistent";
+}
+
 export type MarkdownMode = "rich" | "markdown";
 
 export type PreviewMode = "split" | "only";

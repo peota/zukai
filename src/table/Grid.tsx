@@ -46,12 +46,19 @@ export interface GridSelection {
   cols?: [number, number];
 }
 
+/** A column the edit inserted or deleted, at File column index `at`. */
+export interface ColumnChange {
+  at: number;
+  op: "insert" | "delete";
+}
+
 export interface GridEditHandlers {
   /**
-   * Writes the edit (and the new row order, for row inserts and deletes).
-   * False when the model refused it: the grid then drops the edit.
+   * Writes the edit (and the new row order, for row inserts and deletes, or
+   * the column it inserted or deleted). False when the model refused it: the
+   * grid then drops the edit.
    */
-  apply(edit: EditResult, order?: number[]): boolean;
+  apply(edit: EditResult, order?: number[], column?: ColumnChange): boolean;
   undo(): void;
   redo(): void;
 }
@@ -221,11 +228,22 @@ export function Grid(props: GridProps) {
     rowSet ? rowSet.has(r) : st.mode === "cols" || (r >= br0 && r <= br1);
   const inCols = (c: number) => c >= sc0 && c <= sc1;
 
-  // A new order reinterprets positions: keep only the active cell.
-  const [seenOrder, setSeenOrder] = useState(order);
-  if (order !== seenOrder) {
-    setSeenOrder(order);
-    setSel((s) => ({ active: s.active, head: s.active, mode: "cell" }));
+  // A new order reinterprets positions: keep only the active cell. After a
+  // re-parse (new seq) it stays on the same File-order row while that row is
+  // shown, else it goes to the last shown row.
+  const [seen, setSeen] = useState({ order, seq: props.seq });
+  if (order !== seen.order) {
+    const before = seen;
+    setSeen({ order, seq: props.seq });
+    setSel((s) => {
+      let active = s.active;
+      if (props.seq !== before.seq) {
+        const fileRow = before.order[s.active.row];
+        const at = fileRow === undefined ? -1 : order.indexOf(fileRow);
+        active = { row: at >= 0 ? at : order.length - 1, col: s.active.col };
+      }
+      return { active, head: active, mode: "cell" };
+    });
   }
 
   const onSelection = useRef(props.onSelection);

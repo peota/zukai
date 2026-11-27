@@ -159,7 +159,7 @@ export function Bar({
   );
 }
 
-function BarButton({
+export function BarButton({
   primary = false,
   disabled = false,
   onClick,

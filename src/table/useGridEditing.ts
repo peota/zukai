@@ -222,7 +222,7 @@ export function useGridEditing(a: GridEditingArgs) {
     insertColumn(side) {
       const at = side === "left" ? s.col : s.col + 1;
       const r = build(() => insertColumn(table, at));
-      if (!r || !edit.apply(r)) return;
+      if (!r || !edit.apply(r, undefined, { at, op: "insert" })) return;
       if (header && table.rows.length > 0) {
         a.select({ row: s.row, col: at }, "cell");
         setEditor({ pos: -1, fileRow: 0, col: at, value: "" });
@@ -232,7 +232,8 @@ export function useGridEditing(a: GridEditingArgs) {
     },
     deleteColumn() {
       const r = build(() => deleteColumn(table, s.col));
-      if (r && edit.apply(r)) a.select({ row: s.row, col: s.col }, "cell");
+      if (r && edit.apply(r, undefined, { at: s.col, op: "delete" }))
+        a.select({ row: s.row, col: s.col }, "cell");
     },
     renameColumn() {
       open(-1, s.col);
