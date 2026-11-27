@@ -50,7 +50,7 @@ import type { FileInfo, MarkdownMode, PreviewMode } from "../model/types";
 import { inShadow } from "../files/fileState";
 import { baseName } from "../files/paths";
 import { parseScene } from "../canvas/scene";
-import type { Kind } from "../model/kinds";
+import { isTextKind, type Kind } from "../model/kinds";
 
 /**
  * Whether a Scratchpad holds nothing worth asking about on close: blank
@@ -1100,9 +1100,9 @@ export function useWorkspace(): Workspace {
         }
         case "zoom": {
           // A canvas, an image or a PDF zooms itself (Excalidraw, the viewers); a
-          // diff shows text at the editor's size.
+          // diff (and a Table) shows text at the editor's size.
           const kind = s.tabs.find((t) => t.id === s.activeId)?.kind;
-          if (kind === "text" || kind === "diff") zoomEditor(cmd.dir);
+          if (isTextKind(kind) || kind === "diff") zoomEditor(cmd.dir);
           return;
         }
       }

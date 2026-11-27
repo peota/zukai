@@ -123,3 +123,52 @@ describe("TabPane zoom", () => {
     expect(seen.calls[seen.calls.length - 1]?.zoomRequest).toEqual(req);
   });
 });
+
+describe("TabPane Table Tab", () => {
+  const tableTab = (over: Partial<TabState> = {}) =>
+    ({
+      id: "t",
+      kind: "table",
+      title: "t.csv",
+      language: "plaintext",
+      file: { path: "/t.csv", held: "none" },
+      ...over,
+    }) as unknown as TabState;
+
+  function tablePane(t: TabState) {
+    let slot: HTMLElement | null = null;
+    const r = render(
+      <TabPane
+        {...({
+          tab: t,
+          focused: true,
+          tabs: [],
+          slotRef: (_id: string, el: HTMLElement | null) => {
+            if (el) slot = el;
+          },
+          reloadSeq: 0,
+          onImageInfo: () => {},
+          mode: null,
+          bridge: null,
+        } as unknown as TabPaneProps)}
+      />,
+    );
+    return { ...r, slot: () => slot! };
+  }
+
+  it("shows the editor slot in raw View", () => {
+    const { slot, queryByTestId } = tablePane(tableTab({ tableView: "raw" }));
+    expect(slot()).not.toBeNull();
+    expect(slot().className).not.toContain("hidden");
+    expect(queryByTestId("table-host")).toBeNull();
+  });
+
+  it.each([undefined, "grid" as const])(
+    "hides the slot and shows the grid when tableView is %s",
+    async (tableView) => {
+      const { slot, findByTestId } = tablePane(tableTab({ tableView }));
+      expect(slot().className).toBe("hidden");
+      expect(await findByTestId("table-host")).toBeTruthy();
+    },
+  );
+});

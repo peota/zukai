@@ -35,6 +35,9 @@ function fakeBridge(texts: Record<string, string>) {
       set.add(cb);
       return () => set.delete(cb);
     },
+    change: vi.fn(),
+    undo: () => false,
+    redo: () => false,
     clearHistory: vi.fn(),
     hidden: () => [],
     readOnly: () => false,

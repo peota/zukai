@@ -1188,3 +1188,72 @@ describe("EditorHost text bridge", () => {
     await expect(ready).rejects.toThrow(/closed/);
   });
 });
+
+describe("EditorHost Table Tabs", () => {
+  function tableHost() {
+    let bridge: TextBridge | null = null;
+    const r = setup({
+      tabs: [tab("a", { kind: "table" })],
+      loadContent: () => Promise.resolve("a,b\n1,2\n"),
+      bridgeRef: (b) => (bridge = b),
+    });
+    return { ...r, bridge: () => bridge! };
+  }
+
+  it("bridge_change_is_one_undoable_edit_kept_from_outside_listeners", async () => {
+    const { container, props, bridge } = tableHost();
+    await activeView(container, "a,b\n1,2\n");
+    const heard = vi.fn();
+    bridge().onOutsideChange("a", heard);
+    act(() => bridge().change("a", [{ from: 6, to: 7, insert: "9" }]));
+    expect(bridge().text("a")).toBe("a,b\n1,9\n");
+    expect(props.onChange).toHaveBeenLastCalledWith("a", "a,b\n1,9\n");
+    expect(heard).not.toHaveBeenCalled();
+    let undone = false;
+    act(() => void (undone = bridge().undo("a")));
+    expect(undone).toBe(true);
+    expect(bridge().text("a")).toBe("a,b\n1,2\n");
+    expect(heard).toHaveBeenLastCalledWith("a,b\n1,2\n");
+    let redone = false;
+    act(() => void (redone = bridge().redo("a")));
+    expect(redone).toBe(true);
+    expect(heard).toHaveBeenLastCalledWith("a,b\n1,9\n");
+    // Nothing left to redo; an empty change is a no-op.
+    expect(bridge().redo("a")).toBe(false);
+    vi.mocked(props.onChange).mockClear();
+    act(() => bridge().change("a", []));
+    expect(props.onChange).not.toHaveBeenCalled();
+    expect(bridge().undo("nope")).toBe(false);
+  });
+
+  it("bridge_change_refuses_read_only", async () => {
+    let bridge: TextBridge | null = null;
+    const { container, props } = setup({
+      tabs: [tab("a", { kind: "table", file: { ...FILE, held: "readonly" } })],
+      loadContent: () => Promise.resolve("a,b\n1,2\n"),
+      bridgeRef: (b) => (bridge = b),
+    });
+    await activeView(container, "a,b\n1,2\n");
+    act(() => bridge!.change("a", [{ from: 6, to: 7, insert: "9" }]));
+    expect(bridge!.text("a")).toBe("a,b\n1,2\n");
+    expect(props.onChange).not.toHaveBeenCalled();
+  });
+
+  it("typing in a Table Tab's view is an outside change and never guesses", async () => {
+    const { container, props, bridge } = tableHost();
+    const v = await activeView(container, "a,b\n1,2\n");
+    const heard = vi.fn();
+    bridge().onOutsideChange("a", heard);
+    act(() =>
+      v.dispatch({
+        changes: { from: 0, insert: "x,y\n" },
+        userEvent: "input.paste",
+      }),
+    );
+    expect(heard).toHaveBeenLastCalledWith("x,y\na,b\n1,2\n");
+    expect(props.onTabPatch).not.toHaveBeenCalledWith(
+      "a",
+      expect.objectContaining({ languageGuessed: true }),
+    );
+  });
+});

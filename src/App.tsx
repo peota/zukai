@@ -53,7 +53,7 @@ import { createTextFeed } from "./markdown/MarkdownPreview";
 import { baseName, languageRename } from "./files/paths";
 import { inShadow } from "./files/fileState";
 import { asFileError } from "./app/files/context";
-import { isViewerKind } from "./model/kinds";
+import { isTextKind, isViewerKind } from "./model/kinds";
 import { Sidebar } from "./ui/Sidebar";
 import { GitPanel } from "./ui/git/GitPanel";
 import { SidebarToggle } from "./ui/SidebarToggle";
@@ -383,9 +383,12 @@ export default function App() {
       `${uiFontSize}px`,
     );
   }, [uiFontSize]);
-  /** The text editor only sees text (a Canvas is JSON, an Image bytes). */
+  /**
+   * The text editor only sees text (a Canvas is JSON, an Image bytes); a
+   * Table's text lives there too, under its grid.
+   */
   const editorTabs = useMemo(
-    () => w.state.tabs.filter((t) => t.kind === "text"),
+    () => w.state.tabs.filter((t) => isTextKind(t.kind)),
     [w.state.tabs],
   );
   /** The Split the active Tab is in: both its Tabs are shown. */
@@ -844,9 +847,9 @@ export default function App() {
                 <div className="hidden">
                   <EditorHost
                     tabs={editorTabs}
-                    activeId={active?.kind === "text" ? activeId : ""}
+                    activeId={isTextKind(active?.kind) ? activeId : ""}
                     shown={visible
-                      .filter((t) => t.kind === "text")
+                      .filter((t) => isTextKind(t.kind))
                       .map((t) => t.id)}
                     slots={slots}
                     loadContent={w.loadContent}

@@ -18,6 +18,9 @@ export function fakeBridge(texts: Record<string, string>) {
       texts[id] = text;
     }),
     onOutsideChange: () => () => {},
+    change: vi.fn(),
+    undo: () => false,
+    redo: () => false,
     clearHistory: vi.fn(),
     hidden: () => [],
     readOnly: () => false,

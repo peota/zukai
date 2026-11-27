@@ -9,6 +9,7 @@ import type {
 import type { FindRequest } from "../find/findExtension";
 import type { TextBridge } from "../editor/EditorHost";
 import type { RichSync } from "../rich/RichEditor";
+import { isTextKind } from "../model/kinds";
 import { FileBar, type FileBarProps } from "../ui/FileBar";
 import { CanvasHost, type CanvasHostProps } from "../canvas/CanvasHost";
 import { ImageHost, type ImageHostProps } from "../image/ImageHost";
@@ -24,6 +25,8 @@ import type { FolderGit } from "../git/api";
 const RichEditor = lazy(() => import("../rich/RichEditor"));
 /** pdf.js and its viewer stay out of the main bundle until a PDF is shown. */
 const PdfHost = lazy(() => import("../pdf/PdfHost"));
+/** The Table grid stays out of the main bundle until a Table is shown. */
+const TableHost = lazy(() => import("../table/TableHost"));
 
 export interface TabPaneProps
   extends
@@ -103,8 +106,11 @@ export function TabPane(p: TabPaneProps) {
   const { tab, focused, onFocus, slotRef, onImageInfo, onPdfInfo, reloadSeq } =
     p;
   const id = tab.id;
-  const isText = tab.kind === "text";
-  const isMarkdown = isText && tab.language === "markdown";
+  /** A Text or Table Tab: either way its text is in the editor's slot. */
+  const isText = isTextKind(tab.kind);
+  /** A Table Tab in its grid View: the slot stays, hidden, under the grid. */
+  const grid = tab.kind === "table" && tab.tableView !== "raw";
+  const isMarkdown = tab.kind === "text" && tab.language === "markdown";
   const rich = isMarkdown && p.mode === "rich";
   /** A Markdown Tab's preview; any other Tab is just edited. */
   const previewMode = (isMarkdown && !rich && tab.preview) || "edit";
@@ -147,7 +153,7 @@ export function TabPane(p: TabPaneProps) {
             <div
               ref={slot}
               className={
-                rich || previewMode === "only"
+                grid || rich || previewMode === "only"
                   ? "hidden"
                   : previewMode === "split"
                     ? "relative size-full min-w-0 shrink-0"
@@ -159,6 +165,11 @@ export function TabPane(p: TabPaneProps) {
                   : undefined
               }
             />
+            {grid && (
+              <Suspense fallback={<div className="size-full bg-editor" />}>
+                <TableHost key={id} tab={tab} />
+              </Suspense>
+            )}
             {rich && (
               <Suspense fallback={<div className="size-full bg-editor" />}>
                 {p.bridge ? (
