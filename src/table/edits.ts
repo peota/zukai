@@ -67,10 +67,10 @@ function finish(t: ParsedTable, all: Row[]): ParsedTable {
   return { rows, delimiter: t.delimiter, allQuoted, width };
 }
 
-/** A row edited in its own original coordinates, plus the one change that did it. */
+/** A row edited in its own original coordinates, plus the change(s) that did it (sorted). */
 interface RowEdit {
   row: Row;
-  change: TextChange;
+  change: TextChange | TextChange[];
 }
 
 function editRows(
@@ -86,9 +86,11 @@ function editRows(
       rows.push(shift(row, delta));
       return;
     }
-    changes.push(e.change);
     rows.push(shift(e.row, delta));
-    delta += e.change.insert.length - (e.change.to - e.change.from);
+    for (const c of Array.isArray(e.change) ? e.change : [e.change]) {
+      changes.push(c);
+      delta += c.insert.length - (c.to - c.from);
+    }
   });
   return { changes, table: finish(t, rows) };
 }
@@ -99,56 +101,113 @@ export function setCell(
   col: number,
   value: string,
 ): EditResult {
-  if (row < 0 || row >= t.rows.length)
-    throw new Error(`Row ${row} out of range`);
-  if (col < 0) throw new Error(`Column ${col} out of range`);
-  const d = t.delimiter;
+  return setCells(t, [{ row, col, value }]);
+}
+
+export interface CellValue {
+  row: number;
+  col: number;
+  value: string;
+}
+
+/**
+ * Several cell edits as one result (one change per edited cell, or per
+ * padded run). A repeated cell takes its last value.
+ */
+export function setCells(
+  t: ParsedTable,
+  cells: readonly CellValue[],
+): EditResult {
+  const byRow = new Map<number, Map<number, string>>();
+  for (const { row, col, value } of cells) {
+    if (row < 0 || row >= t.rows.length)
+      throw new Error(`Row ${row} out of range`);
+    if (col < 0) throw new Error(`Column ${col} out of range`);
+    let m = byRow.get(row);
+    if (!m) byRow.set(row, (m = new Map()));
+    m.set(col, value);
+  }
+  if (byRow.size === 0) return { changes: [], table: t };
   return editRows(t, (r, i) => {
-    if (i !== row) return null;
-    if (col < r.cells.length) {
-      let raw = encodeCell(value, d, r.quoted[col]);
-      // A blank last row without a line ending would not survive a re-parse.
-      if (raw === "" && r.eol === "" && r.cells.length === 1) raw = '""';
-      const delta = raw.length - (r.cellEnd[col] - r.cellStart[col]);
-      const cells = r.cells.slice();
-      cells[col] = value;
-      const quoted = r.quoted.slice();
-      quoted[col] = raw.startsWith('"');
-      return {
-        row: {
-          ...r,
-          end: r.end + delta,
-          cells,
-          quoted,
-          cellStart: r.cellStart.map((p, k) => (k > col ? p + delta : p)),
-          cellEnd: r.cellEnd.map((p, k) => (k >= col ? p + delta : p)),
-        },
-        change: { from: r.cellStart[col], to: r.cellEnd[col], insert: raw },
-      };
+    const edits = byRow.get(i);
+    if (!edits) return null;
+    // Highest column first, so each change's offsets are still original.
+    const cols = [...edits.keys()].sort((a, b) => b - a);
+    const changes: TextChange[] = [];
+    let row = r;
+    const pads = cols.filter((c) => c >= r.cells.length);
+    if (pads.length > 0) {
+      const e = padRow(t, row, pads[0], edits);
+      row = e.row;
+      changes.push(e.change);
     }
-    // Pad the short row up to `col`, then fill it.
-    const cells = r.cells.slice();
-    const quoted = r.quoted.slice();
-    const cellStart = r.cellStart.slice();
-    const cellEnd = r.cellEnd.slice();
-    let insert = "";
-    let pos = r.end;
-    for (let k = r.cells.length; k <= col; k++) {
-      const v = k === col ? value : "";
-      const raw = encodeCell(v, d, t.allQuoted);
-      insert += d + raw;
-      pos += 1;
-      cells.push(v);
-      quoted.push(raw.startsWith('"'));
-      cellStart.push(pos);
-      pos += raw.length;
-      cellEnd.push(pos);
+    for (const col of cols) {
+      if (col >= r.cells.length) continue;
+      const e = editCell(t, row, col, edits.get(col)!);
+      row = e.row;
+      changes.push(e.change);
     }
-    return {
-      row: { ...r, end: pos, cells, quoted, cellStart, cellEnd },
-      change: { from: r.end, to: r.end, insert },
-    };
+    return { row, change: changes.reverse() };
   });
+}
+
+/** Cell `col` (< cells.length) of `r` set to `value`; cells after it shift. */
+function editCell(
+  t: ParsedTable,
+  r: Row,
+  col: number,
+  value: string,
+): { row: Row; change: TextChange } {
+  let raw = encodeCell(value, t.delimiter, r.quoted[col]);
+  // A blank last row without a line ending would not survive a re-parse.
+  if (raw === "" && r.eol === "" && r.cells.length === 1) raw = '""';
+  const delta = raw.length - (r.cellEnd[col] - r.cellStart[col]);
+  const cells = r.cells.slice();
+  cells[col] = value;
+  const quoted = r.quoted.slice();
+  quoted[col] = raw.startsWith('"');
+  return {
+    row: {
+      ...r,
+      end: r.end + delta,
+      cells,
+      quoted,
+      cellStart: r.cellStart.map((p, k) => (k > col ? p + delta : p)),
+      cellEnd: r.cellEnd.map((p, k) => (k >= col ? p + delta : p)),
+    },
+    change: { from: r.cellStart[col], to: r.cellEnd[col], insert: raw },
+  };
+}
+
+/** Pads short row `r` up to `last`, filling from `values` (else ""). */
+function padRow(
+  t: ParsedTable,
+  r: Row,
+  last: number,
+  values: ReadonlyMap<number, string>,
+): { row: Row; change: TextChange } {
+  const d = t.delimiter;
+  const cells = r.cells.slice();
+  const quoted = r.quoted.slice();
+  const cellStart = r.cellStart.slice();
+  const cellEnd = r.cellEnd.slice();
+  let insert = "";
+  let pos = r.end;
+  for (let k = r.cells.length; k <= last; k++) {
+    const v = values.get(k) ?? "";
+    const raw = encodeCell(v, d, t.allQuoted);
+    insert += d + raw;
+    pos += 1;
+    cells.push(v);
+    quoted.push(raw.startsWith('"'));
+    cellStart.push(pos);
+    pos += raw.length;
+    cellEnd.push(pos);
+  }
+  return {
+    row: { ...r, end: pos, cells, quoted, cellStart, cellEnd },
+    change: { from: r.end, to: r.end, insert },
+  };
 }
 
 /** New empty rows (t.width cells, or 1 if width 0) inserted so the first one gets File-order index `at`. */

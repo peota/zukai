@@ -11,6 +11,8 @@ import {
   type ReactNode,
 } from "react";
 import { detectPlatform, letterOf } from "../app/shortcuts";
+import { Menu } from "../ui/Menu";
+import { CellEditor } from "./CellEditor";
 import type { EditResult } from "./edits";
 import {
   cellHidden,
@@ -24,6 +26,11 @@ import {
   uniformRange,
 } from "./gridHelpers";
 import type { ParsedTable } from "./parse";
+import {
+  useGridEditing,
+  type CellPos,
+  type SelectMode,
+} from "./useGridEditing";
 import { numericColumns, type TableSort } from "./view";
 import { visibleRange } from "./windowing";
 import "./table.css";
@@ -40,19 +47,27 @@ export interface GridSelection {
 }
 
 export interface GridEditHandlers {
-  apply(edit: EditResult, order?: number[]): void;
+  /**
+   * Writes the edit (and the new row order, for row inserts and deletes).
+   * False when the model refused it: the grid then drops the edit.
+   */
+  apply(edit: EditResult, order?: number[]): boolean;
   undo(): void;
   redo(): void;
 }
 
 export interface GridProps {
   table: ParsedTable;
+  /** The model's parse sequence: a new value means the text was re-parsed. */
+  seq: number;
   order: number[];
   header: boolean;
   widths: number[];
   onWidths(w: number[]): void;
   sort?: TableSort;
   onSortClick(col: number): void;
+  /** Sets the sort from the header menu. */
+  onSort(sort: TableSort): void;
   hidden: readonly [number, number][];
   filter?: string;
   readOnly: boolean;
@@ -78,11 +93,8 @@ export const charPx = (fontSize: number): number => fontSize * 0.6;
 
 const platform = detectPlatform();
 
-interface Pos {
-  row: number;
-  col: number;
-}
-type Mode = "cell" | "rows" | "cols";
+type Pos = CellPos;
+type Mode = SelectMode;
 /**
  * `active` is the anchor (the active cell); `head` is the moving end of a
  * range. In "rows" mode `rows` is the selected positions, sorted and unique.
@@ -127,6 +139,9 @@ export function Grid(props: GridProps) {
   const cpx = charPx(fontSize);
 
   const scroller = useRef<HTMLDivElement>(null);
+  const focusGrid = useCallback(() => {
+    scroller.current?.focus({ preventScroll: true });
+  }, []);
   const [view, setView] = useState({ top: 0, left: 0, w: 0, h: 0 });
 
   // Viewport size: clientWidth/Height, kept current with a ResizeObserver.
@@ -206,6 +221,13 @@ export function Grid(props: GridProps) {
     rowSet ? rowSet.has(r) : st.mode === "cols" || (r >= br0 && r <= br1);
   const inCols = (c: number) => c >= sc0 && c <= sc1;
 
+  // A new order reinterprets positions: keep only the active cell.
+  const [seenOrder, setSeenOrder] = useState(order);
+  if (order !== seenOrder) {
+    setSeenOrder(order);
+    setSel((s) => ({ active: s.active, head: s.active, mode: "cell" }));
+  }
+
   const onSelection = useRef(props.onSelection);
   useEffect(() => {
     onSelection.current = props.onSelection;
@@ -235,6 +257,27 @@ export function Grid(props: GridProps) {
     }
     setView((v) => ({ ...v, top, left }));
   };
+
+  /** Kept unclamped, so a row or column the pending edit adds can be the target. */
+  const select = (active: Pos, mode: Mode, rows?: number[]) => {
+    setSel({ active, head: active, mode, rows });
+    if (mode === "cell") reveal(fit(active));
+  };
+
+  const editing = useGridEditing({
+    table,
+    seq: props.seq,
+    order,
+    header,
+    readOnly: props.readOnly,
+    sort,
+    onSort: props.onSort,
+    edit: props.edit,
+    platform,
+    sel,
+    select,
+    focusGrid,
+  });
 
   const textOf = (fileRow: number, col: number): string => {
     const row = table.rows[fileRow];
@@ -268,6 +311,7 @@ export function Grid(props: GridProps) {
       copy();
       return;
     }
+    if (editing.onKey(e)) return;
     if (e.key === "Escape" && (sel.rows || sel.cols)) {
       e.preventDefault();
       setSel({ active: st.active, head: st.active, mode: "cell" });
@@ -410,10 +454,7 @@ export function Grid(props: GridProps) {
     return parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : p));
   };
 
-  const focusGrid = useCallback(() => {
-    scroller.current?.focus({ preventScroll: true });
-  }, []);
-
+  const ed = editing.editor;
   const leftPad = colOffsets[c0];
   const cols: number[] = [];
   for (let c = c0; c < c1; c++) cols.push(c);
@@ -437,6 +478,7 @@ export function Grid(props: GridProps) {
           data-selected={rowSelected ? "" : undefined}
           style={{ width: gutterW, minWidth: gutterW }}
           onMouseDown={(e) => pick(e, { row: r, col: st.active.col }, "rows")}
+          onContextMenu={(e) => editing.onGutterMenu(e, r)}
         >
           {recordNumber(fileRow, header)}
         </div>
@@ -518,6 +560,7 @@ export function Grid(props: GridProps) {
                 title={headerMasked(c) ? undefined : label || undefined}
                 className="z-grid-hcell"
                 style={{ width: colWidths[c] }}
+                onContextMenu={(e) => editing.onHeaderMenu(e, c)}
                 onClick={() => {
                   if (dragged.current) {
                     dragged.current = false;
@@ -566,7 +609,31 @@ export function Grid(props: GridProps) {
           })}
         </div>
         {rows}
+        {ed && (
+          <CellEditor
+            key={`${ed.pos}:${ed.col}`}
+            value={ed.value}
+            top={ed.pos < 0 ? view.top : headerH + ed.pos * rowH}
+            left={gutterW + (colOffsets[ed.col] ?? colOffsets[nCols])}
+            width={colWidths[ed.col] ?? DEFAULT_WIDTH}
+            rowHeight={rowH}
+            fontSize={fontSize}
+            onChange={editing.setEditorValue}
+            onCommit={editing.commit}
+            onCancel={editing.cancel}
+            onLostFocus={focusGrid}
+          />
+        )}
       </div>
+      {editing.menu && (
+        <Menu
+          label={editing.menu.label}
+          x={editing.menu.x}
+          y={editing.menu.y}
+          items={editing.menu.items}
+          onDismiss={editing.dismissMenu}
+        />
+      )}
     </div>
   );
 }

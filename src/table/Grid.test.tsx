@@ -76,16 +76,18 @@ function setup(text: string, over: Partial<GridProps> = {}) {
     );
   const props: GridProps = {
     table,
+    seq: 0,
     order,
     header,
     widths: Array.from({ length: table.width }, () => 100),
     onWidths: vi.fn(),
     onSortClick: vi.fn(),
+    onSort: vi.fn(),
     hidden: [],
     readOnly: false,
     focused: true,
     fontSize: 13,
-    edit: { apply: noop, undo: noop, redo: noop },
+    edit: { apply: () => true, undo: noop, redo: noop },
     ...over,
   };
   const utils = render(<Grid {...props} />);

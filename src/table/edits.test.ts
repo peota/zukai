@@ -6,6 +6,7 @@ import {
   insertColumn,
   insertRows,
   setCell,
+  setCells,
   type EditResult,
 } from "./edits";
 import { parseTable, type Delimiter, type ParsedTable } from "./parse";
@@ -118,6 +119,77 @@ describe("setCell", () => {
     check(text, setCell(parse(text), 0, 0, ""), "\nb\n", [0]);
     const mixed = '"a"\nb\n';
     check(mixed, setCell(parse(mixed), 1, 0, "x,y"), '"a"\n"x,y"\n', [1]);
+  });
+});
+
+describe("setCells", () => {
+  const sorted = (r: EditResult) =>
+    r.changes.every((c, i) => i === 0 || r.changes[i - 1].to <= c.from);
+
+  it("several cells in one row and across rows, one result", () => {
+    const text = "a,b,c\n1,2,3\n4,5,6\n";
+    const r = setCells(parse(text), [
+      { row: 2, col: 2, value: "z" },
+      { row: 1, col: 0, value: "x" },
+      { row: 1, col: 2, value: "y,y" },
+    ]);
+    check(text, r, 'a,b,c\nx,2,"y,y"\n4,5,z\n', [1, 2]);
+    expect(sorted(r)).toBe(true);
+    expect(r.changes).toHaveLength(3);
+  });
+
+  it("clears a block, keeping quotes and untouched bytes", () => {
+    const text = 'a,"b",c\r\n"1",2,3\r\n';
+    const r = setCells(parse(text), [
+      { row: 0, col: 0, value: "" },
+      { row: 0, col: 1, value: "" },
+      { row: 1, col: 0, value: "" },
+      { row: 1, col: 1, value: "" },
+    ]);
+    check(text, r, ',"",c\r\n"",,3\r\n', [0, 1]);
+    expect(sorted(r)).toBe(true);
+  });
+
+  it("pads a ragged row and edits an existing cell of it", () => {
+    const text = "a,b,c,d\n1\n";
+    const r = setCells(parse(text), [
+      { row: 1, col: 0, value: "" },
+      { row: 1, col: 3, value: "x" },
+      { row: 1, col: 2, value: "q" },
+    ]);
+    check(text, r, "a,b,c,d\n,,q,x\n", [1]);
+    expect(sorted(r)).toBe(true);
+  });
+
+  it("the last value wins for a repeated cell; none is a no-op", () => {
+    const text = "a,b\n";
+    const r = setCells(parse(text), [
+      { row: 0, col: 1, value: "x" },
+      { row: 0, col: 1, value: "y" },
+    ]);
+    check(text, r, "a,y\n", [0]);
+    expect(setCells(parse(text), []).changes).toEqual([]);
+  });
+
+  it("emptying a lone last cell without newline stays a row", () => {
+    const text = "a\nb";
+    const r = setCells(parse(text), [{ row: 1, col: 0, value: "" }]);
+    check(text, r, 'a\n""', [1]);
+  });
+
+  it("allQuoted pads quoted; multi-line values", () => {
+    const text = '"a","b","c"\n"1"\n';
+    const r = setCells(parse(text), [
+      { row: 1, col: 0, value: "l1\nl2" },
+      { row: 1, col: 2, value: "x" },
+    ]);
+    check(text, r, '"a","b","c"\n"l1\nl2","","x"\n', [1]);
+  });
+
+  it("throws for out-of-range input", () => {
+    const t = parse("a\n");
+    expect(() => setCells(t, [{ row: 1, col: 0, value: "" }])).toThrow();
+    expect(() => setCells(t, [{ row: 0, col: -1, value: "" }])).toThrow();
   });
 });
 
