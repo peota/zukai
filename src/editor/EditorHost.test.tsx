@@ -1226,6 +1226,27 @@ describe("EditorHost Table Tabs", () => {
     expect(bridge().undo("nope")).toBe(false);
   });
 
+  it("bridge_change_is_its_own_undo_step_even_when_touching", async () => {
+    const { container, bridge } = tableHost();
+    const v = await activeView(container, "a,b\n1,2\n");
+    act(() => bridge().change("a", [{ from: 6, to: 7, insert: "9" }]));
+    act(() => bridge().change("a", [{ from: 7, to: 7, insert: "9" }]));
+    expect(bridge().text("a")).toBe("a,b\n1,99\n");
+    act(() => void bridge().undo("a"));
+    expect(bridge().text("a")).toBe("a,b\n1,9\n");
+    // Raw typing right before a change stays its own step too.
+    act(() =>
+      v.dispatch({
+        changes: { from: 0, insert: "x" },
+        userEvent: "input.type",
+      }),
+    );
+    act(() => bridge().change("a", [{ from: 1, to: 2, insert: "A" }]));
+    expect(bridge().text("a")).toBe("xA,b\n1,9\n");
+    act(() => void bridge().undo("a"));
+    expect(bridge().text("a")).toBe("xa,b\n1,9\n");
+  });
+
   it("bridge_change_refuses_read_only", async () => {
     let bridge: TextBridge | null = null;
     const { container, props } = setup({

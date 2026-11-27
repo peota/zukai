@@ -1058,7 +1058,8 @@ export function EditorHost(props: EditorHostProps) {
             to,
             insert,
           })),
-          annotations: fromTable.of(true),
+          // Its own undo step: never joined with typing or another change.
+          annotations: [fromTable.of(true), isolateHistory.of("full")],
         });
       },
       undo: (id) => {
