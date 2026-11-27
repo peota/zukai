@@ -159,6 +159,11 @@ export interface Workspace extends FilesApi {
   isClosing(id: string): boolean;
   /** The latest Mod+F / Mod+H request; `seq` changes on every press. */
   findRequest: FindRequest | null;
+  /**
+   * The latest Mod+F on a Table Tab in the grid: its Filter box takes the
+   * keyboard. `seq` changes on every press; `tabId` names the Tab.
+   */
+  tableFilterRequest: { tabId: string; seq: number } | null;
   saveStatus: SaveStatus;
   /** Writes everything an exit would, without exiting (before an update installs). */
   flushForExit(): Promise<void>;
@@ -240,6 +245,10 @@ export function useWorkspace(): Workspace {
   const [state, setState] = useState<WorkspaceState>(EMPTY);
   const [ready, setReady] = useState(false);
   const [findRequest, setFindRequest] = useState<FindRequest | null>(null);
+  const [tableFilterRequest, setTableFilterRequest] = useState<{
+    tabId: string;
+    seq: number;
+  } | null>(null);
   const [grantsUnchecked, setGrantsUnchecked] = useState(false);
   const [sidebar, setSidebar] = useState<SidebarState>(defaultSidebar);
   const sidebarRef = useRef(sidebar);
@@ -1046,6 +1055,17 @@ export function useWorkspace(): Workspace {
             }));
             return;
           }
+          if (tab?.kind === "table" && tab.tableView !== "raw") {
+            // The grid's Mod+F is its Filter box; replace is raw text's.
+            if (cmd.type === "find") {
+              setTableFilterRequest((r) => ({
+                tabId: tab.id,
+                seq: (r?.seq ?? 0) + 1,
+              }));
+              return;
+            }
+            commit(ws.updateTab(s, tab.id, { tableView: "raw" }));
+          }
           if (tab && effectiveMode(tab, settingsRef.current) === "rich") {
             await setMarkdownMode(tab.id, "markdown");
           }
@@ -1094,6 +1114,11 @@ export function useWorkspace(): Workspace {
         }
         case "toggleRichMarkdown": {
           const tab = s.tabs.find((t) => t.id === s.activeId);
+          if (tab?.kind === "table") {
+            // The same keys flip a Table between its grid and raw text.
+            const view = tab.tableView === "raw" ? "grid" : "raw";
+            return commit(ws.updateTab(s, tab.id, { tableView: view }));
+          }
           const mode = tab && effectiveMode(tab, settingsRef.current);
           if (!tab || !mode) return;
           return setMarkdownMode(tab.id, mode === "rich" ? "markdown" : "rich");
@@ -1316,6 +1341,7 @@ export function useWorkspace(): Workspace {
     rename,
     isClosing,
     findRequest,
+    tableFilterRequest,
     saveStatus,
     ready,
     library,

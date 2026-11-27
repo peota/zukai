@@ -9,7 +9,10 @@ import type {
   PdfInfo,
   PdfZoom,
   PreviewMode,
+  TableInfo,
 } from "../model/types";
+import type { Delimiter } from "../table/parse";
+import { DELIMITER_NAMES } from "../model/kinds";
 import type { SaveStatus } from "../storage/autosave";
 import { encodingLabel, lineEndingLabel } from "./encodings";
 import { Menu } from "./Menu";
@@ -77,6 +80,11 @@ export interface StatusBarProps {
     onChange(mode: MarkdownMode): void;
     hint?: string;
   };
+  /**
+   * A Table Tab: its View switch (`viewHint` is its shortcut), Delimiter and
+   * Header row. The grid has no line and column; raw text, a text editor, has.
+   */
+  table?: TableStatus;
   /** The gear at the far left; its tooltip shows `settingsHint`. */
   onSettings?(): void;
   /** A newer Zukai is out: the gear carries a dot. */
@@ -101,6 +109,19 @@ export interface StatusBarProps {
     hint?: string;
     onToggle(): void;
   };
+}
+
+export interface TableStatus {
+  view: "grid" | "raw";
+  onView(view: "grid" | "raw"): void;
+  viewHint?: string;
+  /** Rows and columns, only while the last count is still the text's. */
+  info?: TableInfo;
+  /** The Tab's Delimiter, or the one last read; absent until read. */
+  delimiter?: Delimiter;
+  header: boolean;
+  onDelimiter(delimiter: Delimiter): void;
+  onHeader(on: boolean): void;
 }
 
 const PANEL_TOGGLE =
@@ -156,10 +177,16 @@ export function StatusBar({
   updateVersion,
   preview,
   markdownMode,
+  table,
   agent,
   git,
 }: StatusBarProps) {
   const rich = markdownMode?.mode === "rich";
+  const tableGrid = table?.view === "grid";
+  const [delimiterAt, setDelimiterAt] = useState<DOMRect | null>(null);
+  const closeDelimiter = useCallback(() => setDelimiterAt(null), []);
+  // Another Tab: its Delimiter menu goes with it.
+  if (delimiterAt && !table) setDelimiterAt(null);
   const [formatAt, setFormatAt] = useState<DOMRect | null>(null);
   const closeFormat = useCallback(() => {
     setFormatAt(null);
@@ -198,7 +225,7 @@ export function StatusBar({
           )}
         </button>
       )}
-      {kindLabel === undefined && !rich ? (
+      {kindLabel === undefined && !rich && !tableGrid ? (
         <span>{file?.readonly ? "Read-only" : `Ln ${line}, Col ${col}`}</span>
       ) : (
         file?.readonly && <span>Read-only</span>
@@ -286,6 +313,71 @@ export function StatusBar({
         </div>
       ) : kindLabel !== undefined ? (
         <span className="ml-auto px-2.5 py-1">{kindLabel}</span>
+      ) : table ? (
+        <div className="ml-auto flex items-center gap-2">
+          <ViewSwitch
+            mode={table.view}
+            onChange={table.onView}
+            hint={table.viewHint}
+          />
+          <span
+            aria-hidden="true"
+            className="mx-1 h-4 w-px bg-hairline-strong"
+          />
+          <span className="px-2.5 py-1">Table</span>
+          {table.info && (
+            <>
+              <span className="px-2.5 py-1 tabular-nums">
+                {rowCount(table.info.rows, table.info.shown)}
+              </span>
+              <span className="px-2.5 py-1 tabular-nums">
+                {count(table.info.cols, "column")}
+              </span>
+            </>
+          )}
+          <Chip
+            anchor="delimiter"
+            expanded={delimiterAt !== null}
+            onClick={(r) =>
+              delimiterAt ? closeDelimiter() : setDelimiterAt(r)
+            }
+          >
+            <span className="flex items-center gap-1">
+              {table.delimiter ? DELIMITER_NAMES[table.delimiter] : "Delimiter"}
+              <Icon name="chevronDown" size={12} className="text-faint" />
+            </span>
+          </Chip>
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-pressed={table.header}
+            onClick={() => table.onHeader(!table.header)}
+            className={CHIP + " flex items-center gap-1"}
+          >
+            Header row
+            {table.header && (
+              <Icon name="check" size={12} className="text-accent" />
+            )}
+          </button>
+          {file && (
+            <>
+              <Chip
+                anchor="encoding"
+                expanded={openMenu === "encoding"}
+                onClick={onEncodingMenu}
+              >
+                {encodingLabel(file.format)}
+              </Chip>
+              <Chip
+                anchor="lineEnding"
+                expanded={openMenu === "lineEnding"}
+                onClick={onLineEndingMenu}
+              >
+                {lineEndingLabel(file.format)}
+              </Chip>
+            </>
+          )}
+        </div>
       ) : (
         <div className="ml-auto flex items-center gap-2">
           {markdownMode && <ModeSwitch {...markdownMode} />}
@@ -424,6 +516,21 @@ export function StatusBar({
           ]}
         />
       )}
+      {delimiterAt && table && (
+        <Menu
+          label="Delimiter"
+          x={delimiterAt.left}
+          y={delimiterAt.top - 4}
+          side="above"
+          ignoreSelector='[data-menu-anchor="delimiter"]'
+          onDismiss={closeDelimiter}
+          items={DELIMITERS.map((d) => ({
+            label: DELIMITER_NAMES[d],
+            checked: d === table.delimiter,
+            onSelect: () => table.onDelimiter(d),
+          }))}
+        />
+      )}
       {formatAt && kindLabel === undefined && (
         <Menu
           label="Format"
@@ -454,6 +561,21 @@ export function fileSize(bytes: number): string {
   if (kb < 1024) return `${Number(kb.toFixed(1))} KB`;
   return `${Number((kb / 1024).toFixed(1))} MB`;
 }
+
+/** "1 row", "52,113 rows". */
+function count(n: number, noun: string): string {
+  return `${n.toLocaleString("en-US")} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** "52,113 rows", or "1,204 of 52,113 rows" under a Filter. */
+function rowCount(rows: number, shown: number): string {
+  return shown < rows
+    ? `${shown.toLocaleString("en-US")} of ${count(rows, "row")}`
+    : count(rows, "row");
+}
+
+/** The Delimiter menu's order. */
+const DELIMITERS = Object.keys(DELIMITER_NAMES) as Delimiter[];
 
 /** A zoom this close to a limit is at it (scales come back inexact). */
 const ZOOM_EPSILON = 1e-3;
@@ -602,6 +724,32 @@ function ModeSwitch({
       hint={hint}
       value={mode}
       options={MARKDOWN_MODES}
+      onChange={onChange}
+    />
+  );
+}
+
+const TABLE_VIEWS: { id: "grid" | "raw"; label: string }[] = [
+  { id: "grid", label: "Grid" },
+  { id: "raw", label: "Raw text" },
+];
+
+/** The grid or the raw text, for a Table Tab. */
+function ViewSwitch({
+  mode,
+  onChange,
+  hint,
+}: {
+  mode: "grid" | "raw";
+  onChange(mode: "grid" | "raw"): void;
+  hint?: string;
+}) {
+  return (
+    <Radios
+      label="Table view"
+      hint={hint}
+      value={mode}
+      options={TABLE_VIEWS}
       onChange={onChange}
     />
   );

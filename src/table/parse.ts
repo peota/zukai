@@ -29,12 +29,8 @@ export type ParseResult =
   | { ok: true; table: ParsedTable }
   | { ok: false; line: number; reason: "unclosedQuote" | "inconsistent" };
 
-export const DELIMITER_NAMES: Record<Delimiter, string> = {
-  ",": "Comma",
-  ";": "Semicolon",
-  "\t": "Tab",
-  "|": "Pipe",
-};
+// In kinds.ts, so the status bar names them without loading the parser.
+export { DELIMITER_NAMES } from "../model/kinds";
 
 /** Tie-break order for the guess. */
 const CANDIDATES: Delimiter[] = [",", ";", "\t", "|"];

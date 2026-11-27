@@ -1,3 +1,5 @@
+import type { Delimiter } from "../table/parse";
+
 /**
  * What a Tab edits: text, an Excalidraw drawing, or a read-only image or PDF; or
  * what it shows: a read-only diff of a File against its last commit.
@@ -7,6 +9,13 @@ export type Kind = "text" | "canvas" | "image" | "pdf" | "table" | "diff";
 export const CANVAS_EXT = ".excalidraw";
 export const PDF_EXT = ".pdf";
 export const TABLE_EXTS: readonly string[] = [".csv", ".tsv"];
+/** A Table's Delimiters by name, in the status bar's menu order. */
+export const DELIMITER_NAMES: Record<Delimiter, string> = {
+  ",": "Comma",
+  ";": "Semicolon",
+  "\t": "Tab",
+  "|": "Pipe",
+};
 export const IMAGE_EXTS: readonly string[] = [
   ".png",
   ".jpg",

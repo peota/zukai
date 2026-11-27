@@ -13,7 +13,10 @@ export interface TableHostProps {
   fontSize: number;
   onTabPatch(id: string, patch: Partial<TabState>): void;
   onInfo(info: TableInfo | null): void;
-  /** Bumped by Mod+F on this Tab: focus the Filter box. */
+  /**
+   * Bumped by Mod+F on this Tab: focus the Filter box. 0 when the last
+   * request was for another Tab (never a request).
+   */
   filterSignal: number;
   /**
    * The text can't be read as a table (the Tab then goes to raw text), or
@@ -171,6 +174,7 @@ export default function TableHost(p: TableHostProps) {
   useEffect(() => {
     if (p.filterSignal === signal.current) return;
     signal.current = p.filterSignal;
+    if (!p.filterSignal) return;
     filterBox.current?.focus();
     filterBox.current?.select();
   }, [p.filterSignal]);

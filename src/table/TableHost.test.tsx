@@ -189,6 +189,17 @@ describe("TableHost", () => {
     expect(document.activeElement).toBe(box);
   });
 
+  it("a filterSignal back to 0 (a request for another Tab) doesn't focus it", async () => {
+    const h = host("name\nann\n", {}, { filterSignal: 3 });
+    await ready();
+    const box = screen.getByPlaceholderText("Filter rows…");
+    expect(document.activeElement).not.toBe(box);
+    h.signal(0);
+    expect(document.activeElement).not.toBe(box);
+    h.signal(5);
+    expect(document.activeElement).toBe(box);
+  });
+
   it("header click cycles Sort and patches it", async () => {
     const h = host("name\nb\na\nc\n");
     await ready();

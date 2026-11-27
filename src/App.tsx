@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { useWorkspace } from "./app/useWorkspace";
+import { useTableInfo } from "./app/useTableInfo";
 import { isTerminalTarget, routeKey } from "./terminal/keys";
 import { defaultFolder, plusFolder } from "./terminal/defaultFolder";
 import { useTerminals } from "./terminal/useTerminals";
@@ -29,7 +30,6 @@ import type {
   PdfZoom,
   LanguageId,
   SplitOrientation,
-  TableInfo,
   TableUnreadable,
   TabState,
 } from "./model/types";
@@ -440,14 +440,8 @@ export default function App() {
     [],
   );
   /** Each Table Tab's rows, columns and Delimiter, from its grid. */
-  const [, setTableInfo] = useState<Readonly<Record<string, TableInfo | null>>>(
-    {},
-  );
-  const onTableInfo = useCallback(
-    (id: string, info: TableInfo | null) =>
-      setTableInfo((m) => (m[id] === info ? m : { ...m, [id]: info })),
-    [],
-  );
+  const tableInfo = useTableInfo(w.state.tabs);
+  const { onTableInfo } = tableInfo;
   /** Each Table Tab whose text didn't read as a table: its notice. */
   const [tableNotices, setTableNotices] = useState<
     Readonly<Record<string, TableUnreadable>>
@@ -467,8 +461,6 @@ export default function App() {
       }),
     [],
   );
-  /** Mod+F on a Table Tab in the grid: focus its Filter box (Task 10 bumps it). */
-  const [filterSignal] = useState(0);
   /** Go to a page of the active PDF Tab: `seq` makes each request new. */
   const [goToPage, setGoToPage] = useState<{
     tabId: string;
@@ -714,7 +706,7 @@ export default function App() {
       onTableInfo={onTableInfo}
       tableNotice={tableNotices[tab.id] ?? null}
       onTableNotice={onTableNotice}
-      filterSignal={filterSignal}
+      tableFilterRequest={w.tableFilterRequest}
       goToPage={goToPage}
       zoomRequest={zoomRequest}
       findRequest={w.findRequest}
@@ -1079,6 +1071,30 @@ export default function App() {
                     gitChip && !gitOpen
                       ? w.showGitFor(gitChip.folder)
                       : void run({ type: "toggleGit" }),
+                }
+              : undefined
+          }
+          table={
+            active?.kind === "table"
+              ? {
+                  view: active.tableView === "raw" ? "raw" : "grid",
+                  viewHint: RICH_HINT,
+                  onView: (view) => {
+                    updateTab(active.id, { tableView: view });
+                    refocus();
+                  },
+                  info: tableInfo.infoOf(active.id),
+                  delimiter:
+                    active.delimiter ?? tableInfo.delimiterOf(active.id),
+                  header: active.header ?? true,
+                  onDelimiter: (delimiter) => {
+                    updateTab(active.id, { delimiter });
+                    refocus();
+                  },
+                  onHeader: (header) => {
+                    updateTab(active.id, { header });
+                    refocus();
+                  },
                 }
               : undefined
           }

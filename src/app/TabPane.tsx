@@ -83,8 +83,11 @@ export interface TabPaneProps
   /** This Table Tab's Unreadable notice, if its text didn't read. */
   tableNotice?: TableUnreadable | null;
   onTableNotice?(id: string, notice: TableUnreadable | null): void;
-  /** Bumped by Mod+F on this Table Tab: its grid focuses the Filter box. */
-  filterSignal?: number;
+  /**
+   * Mod+F on a Table Tab in the grid; it names its Tab, so it never reaches
+   * the other Split half's grid.
+   */
+  tableFilterRequest?: { tabId: string; seq: number } | null;
 }
 
 /**
@@ -211,7 +214,11 @@ export function TabPane(p: TabPaneProps) {
                   onTabPatch={p.onTabPatch}
                   onInfo={onTableTabInfo}
                   onNotice={onTableTabNotice}
-                  filterSignal={p.filterSignal ?? 0}
+                  filterSignal={
+                    p.tableFilterRequest?.tabId === id
+                      ? p.tableFilterRequest.seq
+                      : 0
+                  }
                 />
               </Suspense>
             )}

@@ -172,3 +172,42 @@ describe("TabPane Table Tab", () => {
     },
   );
 });
+
+const filterSeen = vi.hoisted(() => ({ calls: [] as number[] }));
+vi.mock("../table/TableHost", () => ({
+  default: (p: { filterSignal: number }) => {
+    filterSeen.calls.push(p.filterSignal);
+    return <div data-testid="table-host" />;
+  },
+}));
+
+describe("TabPane Table Filter request", () => {
+  const tableTab = { id: "a", kind: "table", title: "a.csv" } as TabState;
+  const tablePane = (req: TabPaneProps["tableFilterRequest"]) => (
+    <TabPane
+      {...({
+        tab: tableTab,
+        focused: true,
+        tableFilterRequest: req,
+        tabs: [],
+        slotRef: () => {},
+        reloadSeq: 0,
+        onImageInfo: () => {},
+      } as unknown as TabPaneProps)}
+    />
+  );
+
+  it("a Filter request for another Table Tab never reaches this grid", async () => {
+    filterSeen.calls.length = 0;
+    render(tablePane({ tabId: "b", seq: 3 }));
+    await vi.waitFor(() => expect(filterSeen.calls.length).toBeGreaterThan(0));
+    expect(filterSeen.calls.every((s) => s === 0)).toBe(true);
+  });
+
+  it("a Filter request for this Tab reaches its grid", async () => {
+    filterSeen.calls.length = 0;
+    render(tablePane({ tabId: "a", seq: 4 }));
+    await vi.waitFor(() => expect(filterSeen.calls.length).toBeGreaterThan(0));
+    expect(filterSeen.calls[filterSeen.calls.length - 1]).toBe(4);
+  });
+});
