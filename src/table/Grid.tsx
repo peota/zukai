@@ -82,6 +82,9 @@ export interface GridProps {
   fontSize: number;
   edit: GridEditHandlers;
   onSelection?(sel: GridSelection): void;
+  /** Take the keyboard (after a status-bar action); then `onFocusDone`. */
+  focusRequest?: boolean;
+  onFocusDone?(): void;
 }
 
 /** px at the default font size; scale with fontSize / 13. */
@@ -149,6 +152,12 @@ export function Grid(props: GridProps) {
   const focusGrid = useCallback(() => {
     scroller.current?.focus({ preventScroll: true });
   }, []);
+  const { focusRequest, onFocusDone } = props;
+  useEffect(() => {
+    if (!focusRequest) return;
+    focusGrid();
+    onFocusDone?.();
+  }, [focusRequest, onFocusDone, focusGrid]);
   const [view, setView] = useState({ top: 0, left: 0, w: 0, h: 0 });
 
   // Viewport size: clientWidth/Height, kept current with a ResizeObserver.

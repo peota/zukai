@@ -673,10 +673,16 @@ describe("StatusBar on a Table Tab", () => {
     expect(t.onView).toHaveBeenCalledWith("grid");
   });
 
-  it("a Delimiter not read yet shows a plain Delimiter chip", () => {
+  it("raw text shows no Delimiter chip unless the user set one", () => {
     setup({
       table: table({ view: "raw", info: undefined, delimiter: undefined }),
     });
+    expect(screen.queryByRole("button", { name: "Delimiter" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Header row" })).toBeTruthy();
+  });
+
+  it("a grid whose Delimiter isn't read yet shows a plain Delimiter chip", () => {
+    setup({ table: table({ info: undefined, delimiter: undefined }) });
     fireEvent.click(screen.getByRole("button", { name: "Delimiter" }));
     const menu = screen.getByRole("menu", { name: "Delimiter" });
     expect(within(menu).getAllByRole("menuitem")).toHaveLength(4);

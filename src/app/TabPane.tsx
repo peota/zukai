@@ -147,6 +147,12 @@ export function TabPane(p: TabPaneProps) {
     (info: TableInfo | null) => onTableInfo?.(id, info),
     [onTableInfo, id],
   );
+  // The focusSignal as last seen in raw text: a newer one reaching a grid
+  // that just mounted came with the switch to it (Raw text → Grid).
+  const [rawSignal, setRawSignal] = useState<number | undefined>(
+    rawTable ? p.focusSignal : undefined,
+  );
+  if (rawTable && rawSignal !== p.focusSignal) setRawSignal(p.focusSignal);
   const onTableTabNotice = useCallback(
     (notice: TableUnreadable | null) => onTableNotice?.(id, notice),
     [onTableNotice, id],
@@ -214,6 +220,8 @@ export function TabPane(p: TabPaneProps) {
                   onTabPatch={p.onTabPatch}
                   onInfo={onTableTabInfo}
                   onNotice={onTableTabNotice}
+                  focusSignal={p.focusSignal}
+                  focusSeen={rawSignal}
                   filterSignal={
                     p.tableFilterRequest?.tabId === id
                       ? p.tableFilterRequest.seq

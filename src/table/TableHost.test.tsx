@@ -93,7 +93,14 @@ const baseTab = (over: Partial<TabState> = {}): TabState =>
 function host(
   text: string,
   over: Partial<TabState> = {},
-  o: { readOnly?: boolean; ready?: boolean; filterSignal?: number } = {},
+  o: {
+    readOnly?: boolean;
+    ready?: boolean;
+    filterSignal?: number;
+    focused?: boolean;
+    focusSignal?: number;
+    focusSeen?: number;
+  } = {},
 ) {
   const b = fakeBridge(text, o);
   const patches: Partial<TabState>[] = [];
@@ -101,11 +108,14 @@ function host(
   const notices: (TableUnreadable | null)[] = [];
   let tab = baseTab(over);
   let setSignal: (n: number) => void = () => {};
+  let setFocus: (n: number) => void = () => {};
   let patchTab: (p: Partial<TabState>) => void = () => {};
   function Wrapper() {
     const [t, setT] = useState(tab);
     const [signal, setS] = useState(o.filterSignal ?? 0);
     setSignal = setS;
+    const [focusSignal, setF] = useState(o.focusSignal ?? 0);
+    setFocus = setF;
     patchTab = (p) => {
       tab = { ...tab, ...p };
       setT(tab);
@@ -113,9 +123,11 @@ function host(
     const props: TableHostProps = {
       tab: t,
       bridge: b.bridge,
-      focused: true,
+      focused: o.focused ?? true,
       fontSize: 13,
       filterSignal: signal,
+      focusSignal,
+      focusSeen: o.focusSeen,
       onTabPatch: (_id, p) => {
         patches.push(p);
         patchTab(p);
@@ -134,6 +146,7 @@ function host(
     notices,
     tab: () => tab,
     signal: (n: number) => act(() => setSignal(n)),
+    focus: (n: number) => act(() => setFocus(n)),
     patch: (p: Partial<TabState>) => act(() => patchTab(p)),
   };
 }
@@ -198,6 +211,34 @@ describe("TableHost", () => {
     expect(document.activeElement).not.toBe(box);
     h.signal(5);
     expect(document.activeElement).toBe(box);
+  });
+
+  it("a focusSignal bump gives the grid the keyboard", async () => {
+    const h = host("name\nann\n");
+    await ready();
+    const grid = screen.getByRole("grid");
+    expect(document.activeElement).not.toBe(grid);
+    h.focus(1);
+    expect(document.activeElement).toBe(grid);
+  });
+
+  it("a focusSignal bump in the other Split half's grid doesn't take focus", async () => {
+    const h = host("name\nann\n", {}, { focused: false });
+    await ready();
+    h.focus(1);
+    expect(document.activeElement).not.toBe(screen.getByRole("grid"));
+  });
+
+  it("a grid mounted with a newer focusSignal (Raw text → Grid) takes focus once read", async () => {
+    host("name\nann\n", {}, { focusSignal: 4, focusSeen: 3 });
+    await ready();
+    expect(document.activeElement).toBe(screen.getByRole("grid"));
+  });
+
+  it("a grid mounted with nothing pending leaves focus alone", async () => {
+    host("name\nann\n", {}, { focusSignal: 4, focusSeen: 4 });
+    await ready();
+    expect(document.activeElement).not.toBe(screen.getByRole("grid"));
   });
 
   it("header click cycles Sort and patches it", async () => {

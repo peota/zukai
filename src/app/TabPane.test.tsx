@@ -173,10 +173,21 @@ describe("TabPane Table Tab", () => {
   );
 });
 
-const filterSeen = vi.hoisted(() => ({ calls: [] as number[] }));
+const filterSeen = vi.hoisted(() => ({
+  calls: [] as number[],
+  focus: [] as { focusSignal?: number; focusSeen?: number }[],
+}));
 vi.mock("../table/TableHost", () => ({
-  default: (p: { filterSignal: number }) => {
+  default: (p: {
+    filterSignal: number;
+    focusSignal?: number;
+    focusSeen?: number;
+  }) => {
     filterSeen.calls.push(p.filterSignal);
+    filterSeen.focus.push({
+      focusSignal: p.focusSignal,
+      focusSeen: p.focusSeen,
+    });
     return <div data-testid="table-host" />;
   },
 }));
@@ -209,5 +220,42 @@ describe("TabPane Table Filter request", () => {
     render(tablePane({ tabId: "a", seq: 4 }));
     await vi.waitFor(() => expect(filterSeen.calls.length).toBeGreaterThan(0));
     expect(filterSeen.calls[filterSeen.calls.length - 1]).toBe(4);
+  });
+});
+
+describe("TabPane Table focus", () => {
+  const tab = (tableView: "grid" | "raw") =>
+    ({ id: "a", kind: "table", title: "a.csv", tableView }) as TabState;
+  const tablePane = (view: "grid" | "raw", focusSignal: number) => (
+    <TabPane
+      {...({
+        tab: tab(view),
+        focused: true,
+        focusSignal,
+        tabs: [],
+        slotRef: () => {},
+        reloadSeq: 0,
+        onImageInfo: () => {},
+      } as unknown as TabPaneProps)}
+    />
+  );
+
+  it("Raw text → Grid with a focus bump hands the grid the signal it hasn't handled", async () => {
+    filterSeen.focus.length = 0;
+    const { rerender } = render(tablePane("raw", 2));
+    // The View switch and its refocus land in one render.
+    rerender(tablePane("grid", 3));
+    await vi.waitFor(() => expect(filterSeen.focus.length).toBeGreaterThan(0));
+    expect(filterSeen.focus[0]).toEqual({ focusSignal: 3, focusSeen: 2 });
+  });
+
+  it("a Tab opened in the grid has nothing pending", async () => {
+    filterSeen.focus.length = 0;
+    render(tablePane("grid", 5));
+    await vi.waitFor(() => expect(filterSeen.focus.length).toBeGreaterThan(0));
+    expect(filterSeen.focus[0]).toEqual({
+      focusSignal: 5,
+      focusSeen: undefined,
+    });
   });
 });

@@ -1084,8 +1084,12 @@ export default function App() {
                     refocus();
                   },
                   info: tableInfo.infoOf(active.id),
+                  // Raw text names only a Delimiter the user set: a guess
+                  // could be stale there.
                   delimiter:
-                    active.delimiter ?? tableInfo.delimiterOf(active.id),
+                    active.tableView === "raw"
+                      ? active.delimiter
+                      : (active.delimiter ?? tableInfo.delimiterOf(active.id)),
                   header: active.header ?? true,
                   onDelimiter: (delimiter) => {
                     updateTab(active.id, { delimiter });

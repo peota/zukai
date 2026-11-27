@@ -117,7 +117,10 @@ export interface TableStatus {
   viewHint?: string;
   /** Rows and columns, only while the last count is still the text's. */
   info?: TableInfo;
-  /** The Tab's Delimiter, or the one last read; absent until read. */
+  /**
+   * The grid: the Tab's Delimiter, or the one last read (absent until read).
+   * Raw text: only one the user set; without it there is no Delimiter chip.
+   */
   delimiter?: Delimiter;
   header: boolean;
   onDelimiter(delimiter: Delimiter): void;
@@ -335,18 +338,22 @@ export function StatusBar({
               </span>
             </>
           )}
-          <Chip
-            anchor="delimiter"
-            expanded={delimiterAt !== null}
-            onClick={(r) =>
-              delimiterAt ? closeDelimiter() : setDelimiterAt(r)
-            }
-          >
-            <span className="flex items-center gap-1">
-              {table.delimiter ? DELIMITER_NAMES[table.delimiter] : "Delimiter"}
-              <Icon name="chevronDown" size={12} className="text-faint" />
-            </span>
-          </Chip>
+          {(tableGrid || table.delimiter) && (
+            <Chip
+              anchor="delimiter"
+              expanded={delimiterAt !== null}
+              onClick={(r) =>
+                delimiterAt ? closeDelimiter() : setDelimiterAt(r)
+              }
+            >
+              <span className="flex items-center gap-1">
+                {table.delimiter
+                  ? DELIMITER_NAMES[table.delimiter]
+                  : "Delimiter"}
+                <Icon name="chevronDown" size={12} className="text-faint" />
+              </span>
+            </Chip>
+          )}
           <button
             type="button"
             tabIndex={-1}

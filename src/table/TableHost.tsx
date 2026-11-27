@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TextBridge } from "../editor/EditorHost";
 import type { TableInfo, TableUnreadable, TabState } from "../model/types";
 import { insertRows, type EditResult } from "./edits";
@@ -23,6 +23,17 @@ export interface TableHostProps {
    * null once it is read as one. TabPane shows the notice in either View.
    */
   onNotice(notice: TableUnreadable | null): void;
+  /**
+   * Bumped to give the keyboard back (after a status-bar action): the grid
+   * takes it when this Tab is the focused one.
+   */
+  focusSignal?: number;
+  /**
+   * The `focusSignal` already handled when this grid mounts; a newer one is
+   * a bump that came with the switch to the grid, and the grid takes the
+   * keyboard once it's read. Absent: the current `focusSignal`.
+   */
+  focusSeen?: number;
 }
 
 /** Typing in the Filter box applies after this pause. */
@@ -169,6 +180,15 @@ export default function TableHost(p: TableHostProps) {
     );
     return () => clearTimeout(t);
   }, [query, filter, id]);
+  // A focusSignal bump in the focused Tab: the grid takes the keyboard as
+  // soon as it shows (now, or once the text is read).
+  const [focusSeen, setFocusSeen] = useState(p.focusSeen ?? p.focusSignal);
+  const [focusGrid, setFocusGrid] = useState(false);
+  if (p.focusSignal !== focusSeen) {
+    setFocusSeen(p.focusSignal);
+    if (p.focused) setFocusGrid(true);
+  }
+  const onFocusDone = useCallback(() => setFocusGrid(false), []);
   const filterBox = useRef<HTMLInputElement>(null);
   const signal = useRef(p.filterSignal);
   useEffect(() => {
@@ -261,6 +281,8 @@ export default function TableHost(p: TableHostProps) {
             focused={p.focused}
             fontSize={p.fontSize}
             edit={edit}
+            focusRequest={focusGrid}
+            onFocusDone={onFocusDone}
           />
         )}
       </div>
