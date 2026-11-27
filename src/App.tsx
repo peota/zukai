@@ -62,6 +62,7 @@ import { useGoneClosed } from "./app/useGoneClosed";
 import { useColorScheme } from "./ui/useColorScheme";
 import { SaveChangesDialog } from "./ui/SaveChangesDialog";
 import { SettingsDialog } from "./ui/SettingsDialog";
+import { RELEASES_URL, useUpdater } from "./app/useUpdater";
 import { QuickOpen, type QuickTab } from "./ui/QuickOpen";
 import { fileIcon } from "./ui/icons";
 import { libraryQuickOpen } from "./library/api";
@@ -131,6 +132,9 @@ export default function App() {
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [picking, setPicking] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The gear opens straight to About while an update waits there. */
+  const [settingsAbout, setSettingsAbout] = useState(false);
+  const updater = useUpdater(w.flushForExit);
   const [quickOpen, setQuickOpen] = useState(false);
   /** Edits reach a Markdown preview without re-rendering the App. */
   const [feed] = useState(createTextFeed);
@@ -1018,8 +1022,12 @@ export default function App() {
           onFormatClose={refocus}
           beautifyHint={BEAUTIFY_HINT}
           notice={w.notice ?? undefined}
-          onSettings={() => setSettingsOpen(true)}
+          onSettings={() => {
+            setSettingsAbout(updater.newVersion != null);
+            setSettingsOpen(true);
+          }}
           settingsHint={SETTINGS_HINT}
+          updateVersion={updater.newVersion}
           git={
             w.git.enabled
               ? {
@@ -1073,8 +1081,16 @@ export default function App() {
           platform={platform}
           onSettings={w.setSettings}
           onFontSize={w.setFontSize}
+          updater={updater}
+          onOpenReleases={() =>
+            void openUrl(RELEASES_URL).catch(() =>
+              w.showNotice(`Can't open ${RELEASES_URL}`),
+            )
+          }
+          initialSection={settingsAbout ? "about" : undefined}
           onClose={() => {
             setSettingsOpen(false);
+            setSettingsAbout(false);
             refocus();
           }}
         />

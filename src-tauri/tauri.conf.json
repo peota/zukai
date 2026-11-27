@@ -113,6 +113,18 @@
         "role": "Editor",
         "ext": ["sh", "bash", "zsh", "bat", "cmd", "ps1"]
       }
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE3MEFDMkQ0QTRFOUM1NkQKUldSdHhlbWsxTUlLRisremVsblRyNHB3TU9IQjRMUE52TnBjcktXbHlvVTB6dS9BeEtDZjZhMkYK",
+      "endpoints": [
+        "https://github.com/peota/zukai/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
