@@ -55,6 +55,8 @@ export function CellEditor(p: CellEditorProps) {
   useLayoutEffect(() => {
     const ta = el.current;
     if (!ta) return;
+    // StrictMode's simulated unmount ran the cleanup below: open again.
+    done.current = false;
     ta.focus({ preventScroll: true });
     const end = ta.value.length;
     ta.setSelectionRange(end, end);

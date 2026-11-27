@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   deleteColumn,
@@ -45,7 +46,11 @@ function tableOf(text: string): ParsedTable {
   return r.table;
 }
 
-function setup(text: string, over: Partial<GridProps> = {}) {
+function setup(
+  text: string,
+  over: Partial<GridProps> = {},
+  o: { strict?: boolean } = {},
+) {
   const table = over.table ?? tableOf(text);
   const header = over.header ?? false;
   const order =
@@ -73,11 +78,13 @@ function setup(text: string, over: Partial<GridProps> = {}) {
     edit: { apply, undo, redo },
     ...over,
   };
-  const utils = render(<Grid {...props} />);
+  const wrap = (g: React.ReactElement) =>
+    o.strict ? <StrictMode>{g}</StrictMode> : g;
+  const utils = render(wrap(<Grid {...props} />));
   const grid = screen.getByRole("grid");
   grid.focus();
   const rerender = (p: Partial<GridProps>) =>
-    utils.rerender(<Grid {...props} {...p} />);
+    utils.rerender(wrap(<Grid {...props} {...p} />));
   return { ...utils, rerender, props, grid, table, order, apply, undo, redo };
 }
 
@@ -588,5 +595,38 @@ describe("Grid editing", () => {
     expect(document.activeElement).toBe(editor());
     // The composition must land in the editor: the key isn't cancelled.
     expect(down.defaultPrevented).toBe(false);
+  });
+
+  describe("under React.StrictMode (dev)", () => {
+    it("Enter commits and moves down", () => {
+      const { grid, apply, table } = setup("a\nb\n", {}, { strict: true });
+      fireEvent.keyDown(grid, { key: "F2" });
+      fireEvent.change(editor(), { target: { value: "x" } });
+      fireEvent.keyDown(editor(), { key: "Enter" });
+      expect(apply).toHaveBeenCalledTimes(1);
+      expect(apply.mock.calls[0][0]).toEqual(setCell(table, 0, 0, "x"));
+      expect(editor()).toBeNull();
+      expect(selected(grid)).toEqual(["b"]);
+    });
+
+    it("Esc cancels", () => {
+      const { grid, apply } = setup("a\nb\n", {}, { strict: true });
+      fireEvent.keyDown(grid, { key: "F2" });
+      fireEvent.change(editor(), { target: { value: "x" } });
+      fireEvent.keyDown(editor(), { key: "Escape" });
+      expect(editor()).toBeNull();
+      expect(apply).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(grid);
+    });
+
+    it("blur commits in place", () => {
+      const { grid, apply, table } = setup("a\nb\n", {}, { strict: true });
+      fireEvent.keyDown(grid, { key: "F2" });
+      fireEvent.change(editor(), { target: { value: "x" } });
+      fireEvent.blur(editor());
+      expect(apply).toHaveBeenCalledTimes(1);
+      expect(apply.mock.calls[0][0]).toEqual(setCell(table, 0, 0, "x"));
+      expect(editor()).toBeNull();
+    });
   });
 });
